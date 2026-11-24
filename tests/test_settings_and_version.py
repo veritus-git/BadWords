@@ -73,7 +73,7 @@ class TestSettingsAndVersion(unittest.TestCase):
     # 2. Dynamic UI Scaling Tests
     # -------------------------------------------------------------------------
     def test_ui_scaling_ranges_and_clamping(self):
-        """Verify UI scaling clamped between 75% and 150%."""
+        """Verify UI scaling clamped between 75% and 200%."""
         config.set_ui_scale(100)
         self.assertEqual(config.UI_SCALE_PERCENT, 100)
         self.assertAlmostEqual(config.SCALE_FACTOR, 1.0, places=2)
@@ -89,15 +89,20 @@ class TestSettingsAndVersion(unittest.TestCase):
         self.assertAlmostEqual(config.SCALE_FACTOR, 1.5, places=2)
         self.assertEqual(config.S(20), 30)
 
+        config.set_ui_scale(200)
+        self.assertEqual(config.UI_SCALE_PERCENT, 200)
+        self.assertAlmostEqual(config.SCALE_FACTOR, 2.0, places=2)
+        self.assertEqual(config.S(20), 40)
+
         # Underflow clamped to 75
         config.set_ui_scale(40)
         self.assertEqual(config.UI_SCALE_PERCENT, 75)
         self.assertAlmostEqual(config.SCALE_FACTOR, 0.75, places=2)
 
-        # Overflow clamped to 150
-        config.set_ui_scale(220)
-        self.assertEqual(config.UI_SCALE_PERCENT, 150)
-        self.assertAlmostEqual(config.SCALE_FACTOR, 1.5, places=2)
+        # Overflow clamped to 200
+        config.set_ui_scale(250)
+        self.assertEqual(config.UI_SCALE_PERCENT, 200)
+        self.assertAlmostEqual(config.SCALE_FACTOR, 2.0, places=2)
 
     # -------------------------------------------------------------------------
     # 3. AssemblyModeSelector Tests

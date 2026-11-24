@@ -16,4 +16,5 @@ from .analysis_params import *
 from .palette import *
 from .settings_defaults import *
 from .languages import *
+from . import runtime_data
 from i18n import get_trans, TRANS, SUPPORTED_LANGS

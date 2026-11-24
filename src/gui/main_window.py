@@ -169,12 +169,12 @@ class WorkspaceWarningOverlay(QFrame):
         c_layout.setSpacing(config.S(20))
         
         lbl_title = QLabel(title)
-        lbl_title.setStyleSheet(f"font-size: {config.FS(18)}pt; font-weight: bold; color: white; background: transparent; font-family: '{config.UI_FONT_NAME}';")
+        lbl_title.setStyleSheet(f"font-size: {config.FS_PX(18)}px; font-weight: bold; color: white; background: transparent; font-family: '{config.UI_FONT_NAME}';")
         lbl_title.setAlignment(Qt.AlignCenter)
         c_layout.addWidget(lbl_title)
         
         lbl_desc = QLabel(description)
-        lbl_desc.setStyleSheet(f"font-size: {config.FS(10.5)}pt; color: #cccccc; background: transparent; line-height: 1.5; font-family: '{config.UI_FONT_NAME}';")
+        lbl_desc.setStyleSheet(f"font-size: {config.FS_PX(10.5)}px; color: #cccccc; background: transparent; line-height: 1.5; font-family: '{config.UI_FONT_NAME}';")
         lbl_desc.setWordWrap(True)
         lbl_desc.setAlignment(Qt.AlignCenter)
         c_layout.addWidget(lbl_desc)
@@ -195,7 +195,7 @@ class WorkspaceWarningOverlay(QFrame):
                     border: 1px solid #555555;
                     border-radius: {config.S(4)}px;
                     padding: {config.S(8)}px {config.S(16)}px;
-                    font-size: {config.FS(10)}pt;
+                    font-size: {config.FS_PX(10)}px;
                     font-family: "{config.UI_FONT_NAME}";
                     font-weight: bold;
                 }}
@@ -214,7 +214,7 @@ class WorkspaceWarningOverlay(QFrame):
                 border: none;
                 border-radius: {config.S(4)}px;
                 padding: {config.S(8)}px {config.S(16)}px;
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
                 font-family: "{config.UI_FONT_NAME}";
                 font-weight: bold;
             }}
@@ -236,7 +236,7 @@ class WorkspaceWarningOverlay(QFrame):
                     border: none;
                     text-decoration: underline;
                     padding: {config.S(8)}px {config.S(16)}px;
-                    font-size: {config.FS(10)}pt;
+                    font-size: {config.FS_PX(10)}px;
                     font-family: "{config.UI_FONT_NAME}";
                 }}
                 QPushButton:hover {{ color: white; }}
@@ -270,6 +270,44 @@ class WorkspaceWarningOverlay(QFrame):
         self._stack.removeWidget(self)
         self.deleteLater()
         return self._result
+
+def compute_sidebar_panel_width(
+    win_w: int,
+    win_h: int,
+    screen_aspect: float,
+    content_min_w: int = 0,
+) -> int:
+    """
+    Computes responsive sidebar panel width from window size, display aspect ratio,
+    scaled design baseline, and central workspace protection.
+    # INVARIANT: Narrower display/window aspect ratios (16:10, 3:2, half-screen) narrow
+    # side panels instead of widening them, and two open panels never starve center canvas.
+    """
+    w = max(640, int(win_w or 1280))
+    h = max(480, int(win_h or 720))
+    win_aspect = float(w) / float(h)
+    scr_aspect = float(screen_aspect or 1.778)
+    eff_aspect = min(scr_aspect, win_aspect) if win_aspect < scr_aspect else scr_aspect
+
+    # Proportional base (280px at 1920px wide), bounded by scaled tokens
+    base_raw = int(round(w * (280.0 / 1920.0)))
+    base_w = max(config.S(210), min(config.S(340), base_raw))
+
+    if eff_aspect < 1.68:
+        # Narrower monitors (16:10 = 1.60, 3:2 = 1.50, 4:3 = 1.33, half-screen split)
+        aspect_mult = max(0.76, min(0.96, eff_aspect / (16.0 / 9.0)))
+    elif eff_aspect > 1.95:
+        # Ultrawide displays (21:9+): modest breathing room without bloating sidebars
+        aspect_mult = min(1.10, 1.0 + (eff_aspect - (16.0 / 9.0)) * 0.10)
+    else:
+        aspect_mult = 1.0
+
+    desired = int(round(base_w * aspect_mult))
+    min_cw = max(config.S(200), int(content_min_w or config.S(260)))
+    # Preserve at least 42% width for the central workspace when both panels are open
+    max_panel_w = max(config.S(180), int(w * 0.29))
+    return max(min(min_cw, max_panel_w), min(max_panel_w, max(desired, min(min_cw, max_panel_w))))
+
 
 class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     """
@@ -322,9 +360,35 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         # --- Window basics ---
         self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
         self.setWindowIcon(_app_icon())
-        self.setMinimumSize(config.S(330), config.S(400))
         from gui.views.welcome_view import is_embedded_in_resolve
         self.is_standalone = not is_embedded_in_resolve()
+
+        self._init_workspace_ui(prefs, is_rebuild=False)
+
+        # --- Maximize on the monitor the cursor is on ---
+        self._maximize_on_active_screen(show=False)
+
+        prefs_init = self.engine.load_preferences() or {}
+        if prefs_init.get('always_on_top'):
+            self._apply_always_on_top(True)
+
+        # --- Telemetry check fires 500 ms after first paint ---
+        QTimer.singleShot(500, self.check_telemetry)
+
+        # --- Auto-update check fires 1500 ms after first paint (after telemetry) ---
+        QTimer.singleShot(1500, self._start_update_check)
+
+        # --- Populate timeline/track dropdowns synchronously since Resolve API is fast ---
+        self._populate_timeline_track_combos()
+
+        self._settings_dialog = None
+        QTimer.singleShot(200, self._preload_settings)
+
+    def _init_workspace_ui(self, prefs: dict, is_rebuild: bool = False):
+        """Constructs or cleanly reconstructs visual chrome/panels/pages without touching engine or Resolve."""
+        self.setMinimumSize(config.S(330), config.S(400))
+        if hasattr(self, 'shared_tooltip') and self.shared_tooltip:
+            self.shared_tooltip.refresh_scale()
 
         # --- Global QSS ---
         self.setStyleSheet(f"""
@@ -336,12 +400,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 background-color: {config.BG_COLOR};
                 color: {config.FG_COLOR};
                 font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
             }}
             {config.scrollbar_qss(8)}
         """)
 
-        # ── CSD: root frame (wraps title bar + content, owns border-radius) ──
+        # ── CSD: root frame (wraps title bar + content) ──
         self.setCursor(Qt.ArrowCursor)
         self._root_frame = QFrame()
         self._root_frame.setObjectName("RootFrame")
@@ -370,87 +434,65 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.top_island = TopStatusIsland(parent_frame=self._root_frame, main_window=self)
 
         # On macOS: hide custom CSD title bar - native title bar handles close/min/max/fullscreen.
-        # The native window title is set to show source timeline info (updated dynamically).
         if _is_mac_root:
             self._title_bar.setVisible(False)
             self._title_bar.setFixedHeight(0)
-            from PySide6.QtWidgets import QMenuBar
-            self._mac_menu_bar = QMenuBar(self)
-            
-            # Project Menu
-            self._mac_menu_project = self._mac_menu_bar.addMenu(self.txt("titlebar_project"))
-            self._mac_action_export_proj = self._mac_menu_project.addAction(self.txt("titlebar_export_project"))
-            self._mac_action_export_proj.triggered.connect(self._on_export_project)
-            self._mac_action_import_proj = self._mac_menu_project.addAction(self.txt("titlebar_import_project"))
-            self._mac_action_import_proj.triggered.connect(self._on_import_project)
-            self._mac_menu_project.menuAction().setVisible(False)
+            if not is_rebuild or not hasattr(self, '_mac_menu_bar'):
+                from PySide6.QtWidgets import QMenuBar
+                self._mac_menu_bar = QMenuBar(self)
 
-            # Transcript Menu
-            self._mac_menu_transcript = self._mac_menu_bar.addMenu(self.txt("titlebar_transcript"))
-            self._mac_action_export_txt = self._mac_menu_transcript.addAction(self.txt("titlebar_export_txt"))
-            self._mac_action_export_txt.triggered.connect(self._on_export_transcript_txt)
-            self._mac_action_copy = self._mac_menu_transcript.addAction(self.txt("titlebar_copy_clipboard"))
-            self._mac_action_copy.triggered.connect(self._on_copy_transcript_clipboard)
-            self._mac_menu_transcript.menuAction().setVisible(False)
+                self._mac_menu_project = self._mac_menu_bar.addMenu(self.txt("titlebar_project"))
+                self._mac_action_export_proj = self._mac_menu_project.addAction(self.txt("titlebar_export_project"))
+                self._mac_action_export_proj.triggered.connect(self._on_export_project)
+                self._mac_action_import_proj = self._mac_menu_project.addAction(self.txt("titlebar_import_project"))
+                self._mac_action_import_proj.triggered.connect(self._on_import_project)
+                self._mac_menu_project.menuAction().setVisible(False)
 
-            # Source Info Menu
-            self._mac_menu_source = self._mac_menu_bar.addMenu(self.txt("menu_source", "Source"))
-            self._mac_action_timeline = self._mac_menu_source.addAction(
-                self.txt("menu_timeline", "Timeline: {name}").format(name="-")
-            )
-            self._mac_action_timeline.setEnabled(False)
-            self._mac_action_track = self._mac_menu_source.addAction(
-                self.txt("menu_track", "Track: {name}").format(name="-")
-            )
-            self._mac_action_track.setEnabled(False)
-            self._mac_menu_source.menuAction().setVisible(False)
-            
-            # Edit Menu
-            self._mac_menu_edits = self._mac_menu_bar.addMenu(self.txt("titlebar_edit"))
-            self._mac_menu_edits.menuAction().setVisible(False)
-            
-            self._mac_menu_bar.setNativeMenuBar(True)
-            try:
-                if self.is_standalone:
-                    from .utils import setup_macos_standalone_identity
-                    setup_macos_standalone_identity(config.APP_NAME)
-            except Exception:
-                pass
+                self._mac_menu_transcript = self._mac_menu_bar.addMenu(self.txt("titlebar_transcript"))
+                self._mac_action_export_txt = self._mac_menu_transcript.addAction(self.txt("titlebar_export_txt"))
+                self._mac_action_export_txt.triggered.connect(self._on_export_transcript_txt)
+                self._mac_action_copy = self._mac_menu_transcript.addAction(self.txt("titlebar_copy_clipboard"))
+                self._mac_action_copy.triggered.connect(self._on_copy_transcript_clipboard)
+                self._mac_menu_transcript.menuAction().setVisible(False)
 
+                self._mac_menu_source = self._mac_menu_bar.addMenu(self.txt("menu_source", "Source"))
+                self._mac_action_timeline = self._mac_menu_source.addAction(
+                    self.txt("menu_timeline", "Timeline: {name}").format(name="-")
+                )
+                self._mac_action_timeline.setEnabled(False)
+                self._mac_action_track = self._mac_menu_source.addAction(
+                    self.txt("menu_track", "Track: {name}").format(name="-")
+                )
+                self._mac_action_track.setEnabled(False)
+                self._mac_menu_source.menuAction().setVisible(False)
+
+                self._mac_menu_edits = self._mac_menu_bar.addMenu(self.txt("titlebar_edit"))
+                self._mac_menu_edits.menuAction().setVisible(False)
+
+                self._mac_menu_bar.setNativeMenuBar(True)
+                try:
+                    if self.is_standalone:
+                        from .utils import setup_macos_standalone_identity
+                        setup_macos_standalone_identity(config.APP_NAME)
+                except Exception:
+                    pass
 
         # --- Build UI --- (sidebars + central workspace sit below title bar)
-        self._build_sidebars()         # left + right activity frames
-        self._build_central_workspace() # QStackedWidget central area + panels
-
+        self._build_sidebars(run_crash_check=not is_rebuild)
+        self._build_central_workspace()
 
         self.search_overlay = SearchOverlayWidget(self.scroll_area, self)
 
-        self.undo_manager = UndoManager(self, self.text_canvas)
-        self._setup_hardcoded_shortcuts()
-        
-        # Install global app event filter for robust media shortcuts
-        QApplication.instance().installEventFilter(self)
+        if not is_rebuild or not hasattr(self, 'undo_manager') or self.undo_manager is None:
+            self.undo_manager = UndoManager(self, self.text_canvas)
+            self._setup_hardcoded_shortcuts()
+            QApplication.instance().installEventFilter(self)
+            self._active_shortcuts = []
+        else:
+            self.undo_manager.canvas = self.text_canvas
 
-        self._active_shortcuts = []  # track dynamic QShortcuts for cleanup
         self._apply_dynamic_shortcuts()
-
-        # --- Maximize on the monitor the cursor is on ---
-        self._maximize_on_active_screen(show=False)
-
-        prefs_init = self.engine.load_preferences() or {}
-        if prefs_init.get('always_on_top'):
-            self._apply_always_on_top(True)
-
-        # --- Telemetry check fires 500 ms after first paint ---
-        QTimer.singleShot(500, self.check_telemetry)
-
-        # --- Auto-update check fires 1500 ms after first paint (after telemetry) ---
-        QTimer.singleShot(1500, self._start_update_check)
-
-        # --- Populate timeline/track dropdowns synchronously since Resolve API is fast ---
-        self._populate_timeline_track_combos()
-        
-        self._bind_prefs()
+        self._bind_prefs(manage_settings_dialog=False)
 
     def _update_mac_chapter_menu(self):
         if not getattr(self, '_is_mac', False) or not hasattr(self, '_mac_menu_edits'):
@@ -479,7 +521,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         prefs[key] = value
         self.engine.save_preferences(prefs)
 
-    def _bind_prefs(self):
+    def _bind_prefs(self, manage_settings_dialog: bool = True):
         prefs = self.engine.load_preferences() or {}
         
         toggles = [
@@ -539,8 +581,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if fav_id in self._pin_buttons:
                 self._pin_buttons[fav_id].click()
 
-        self._settings_dialog = None
-        QTimer.singleShot(200, self._preload_settings)
+        if manage_settings_dialog:
+            self._settings_dialog = None
+            QTimer.singleShot(200, self._preload_settings)
 
     def _get_settings_dialog(self):
         if not hasattr(self, '_settings_dialog') or self._settings_dialog is None:
@@ -583,6 +626,294 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         super().showEvent(event)
         self._enforce_native_always_on_top()
         self._sync_script_edit_height(animated=False)
+        self._ensure_screen_scale_tracking()
+
+    def _ensure_screen_scale_tracking(self):
+        """Hooks windowHandle().screenChanged & logicalDotsPerInchChanged (debounced) for multi-DPI monitors."""
+        if getattr(self, '_scale_screen_tracked', False):
+            return
+        handle = self.windowHandle() if hasattr(self, 'windowHandle') else None
+        if not handle:
+            return
+        self._scale_screen_tracked = True
+        if not hasattr(self, '_screen_scale_timer') or self._screen_scale_timer is None:
+            self._screen_scale_timer = QTimer(self)
+            self._screen_scale_timer.setSingleShot(True)
+            self._screen_scale_timer.setInterval(120)
+            self._screen_scale_timer.timeout.connect(self._on_screen_scale_settled)
+
+        def _schedule(_=None):
+            if hasattr(self, '_screen_scale_timer') and self._screen_scale_timer is not None:
+                self._screen_scale_timer.start()
+
+        handle.screenChanged.connect(lambda scr: (_schedule(scr), self._hook_screen_dpi_signal(scr)))
+        self._hook_screen_dpi_signal(handle.screen() or self.screen())
+
+    def _hook_screen_dpi_signal(self, scr):
+        if scr is None:
+            return
+        hooked = getattr(self, '_hooked_dpi_screens', None)
+        if hooked is None:
+            hooked = set()
+            self._hooked_dpi_screens = hooked
+        sid = id(scr)
+        if sid in hooked:
+            return
+        hooked.add(sid)
+        try:
+            scr.logicalDotsPerInchChanged.connect(
+                lambda _dpi: self._screen_scale_timer.start() if hasattr(self, '_screen_scale_timer') and self._screen_scale_timer else None
+            )
+        except Exception:
+            pass
+
+    def _on_screen_scale_settled(self):
+        """Re-evaluates OS/Qt scale ratio when window moves between displays with different DPI."""
+        if getattr(self, '_rebuilding_scale', False):
+            return
+        scr = (self.windowHandle().screen() if self.windowHandle() else None) or self.screen()
+        if scr is None:
+            return
+        prefs = self.engine.load_preferences() or {}
+        mode = str(prefs.get('ui_scale_mode', config.UI_SCALE_MODE)).strip().lower()
+        if mode not in ('auto', 'manual'):
+            mode = 'auto'
+        pct = prefs.get('ui_scale_pct', config.UI_SCALE_PERCENT)
+        old_factor = config.SCALE_FACTOR
+        old_os = config.OS_SCALE_PERCENT
+        new_os = config.detect_os_scale_pct(scr)
+        new_qt = config.get_qt_base_scale_pct(scr)
+        target_pct = new_os if mode == 'auto' else max(config.UI_SCALE_MIN, min(config.UI_SCALE_MAX, int(pct)))
+        new_factor = float(target_pct) / float(max(50, new_qt))
+
+        if abs(new_factor - old_factor) < 0.01 and new_os == old_os:
+            return
+
+        config.apply_ui_scaling(mode=mode, pct=(None if mode == 'auto' else target_pct), screen=scr)
+        app = QApplication.instance()
+        if app is not None:
+            app.setFont(config.make_font(config.UI_FONT_NAME, config.BASE_FONT_PT, weight=QFont.Weight.Normal))
+
+        if abs(config.SCALE_FACTOR - old_factor) >= 0.01:
+            self.rebuild_ui_for_scale()
+
+        dlg = getattr(self, '_settings_dialog', None)
+        if dlg is not None:
+            try:
+                if abs(config.SCALE_FACTOR - old_factor) >= 0.01 and hasattr(dlg, 'rebuild_ui_for_scale'):
+                    dlg.rebuild_ui_for_scale()
+                elif mode == 'auto' and hasattr(dlg, 'sync_auto_os_scale_display'):
+                    dlg.sync_auto_os_scale_display(new_os)
+            except RuntimeError:
+                pass
+
+    def rebuild_ui_for_scale(self):
+        """
+        Live-rebuilds all visual Qt widgets at the current SCALE_FACTOR WITHOUT restarting the
+        process, interrupting background workers, or disconnecting DaVinci Resolve IPC.
+        """
+        if getattr(self, '_rebuilding_scale', False):
+            return
+        self._rebuilding_scale = True
+        self.setUpdatesEnabled(False)
+        try:
+            prefs = self.engine.load_preferences() or {}
+
+            # 1. Capture state before tearing down old widgets
+            page_idx = self._stack.currentIndex() if hasattr(self, '_stack') and self._stack else 0
+            welcome_idx = self.welcome_page._current_idx if hasattr(self, 'welcome_page') else 0
+            source_type = getattr(self, 'current_source_type', 'resolve')
+
+            combo_state = {}
+            for cname in ('combo_tl_0', 'combo_tl_1', 'combo_tr_0', 'combo_tr_1'):
+                c = getattr(self, cname, None)
+                if c is not None:
+                    combo_state[cname] = {
+                        'options': list(getattr(c, 'options_list', [])),
+                        'text': c.text() if hasattr(c, 'text') else (c.currentText() if hasattr(c, 'currentText') else ''),
+                        'selected': set(getattr(c, 'selected_items', set())),
+                    }
+
+            drop0_files = self.drop_zone_0.get_files() if hasattr(self, 'drop_zone_0') and self.drop_zone_0 else []
+            drop1_files = self.drop_zone_1.get_files() if hasattr(self, 'drop_zone_1') and self.drop_zone_1 else []
+            welcome_script_txt = self.welcome_script_edit.toPlainText() if hasattr(self, 'welcome_script_edit') else ''
+            editor_script_txt = self.text_script.toPlainText() if hasattr(self, 'text_script') else ''
+            more_acc = self.tgl_more_accurate.isChecked() if hasattr(self, 'tgl_more_accurate') else False
+
+            chapters = list(getattr(self, '_chapters', []) or [])
+            cur_chap_idx = getattr(self, '_current_chapter_idx', -1)
+            tb_chaps = list(self._title_bar.chapter_dropdown.options_list) if hasattr(self, '_title_bar') else []
+            tb_chap_txt = self._title_bar.chapter_dropdown.currentText() if hasattr(self, '_title_bar') else ''
+            tx_source = getattr(self, '_transcription_source', None)
+            clips_layout = getattr(self, '_current_clips_layout', None)
+            is_sbs_active = getattr(self, '_is_sbs_active', False)
+
+            old_canvas = getattr(self, 'text_canvas', None)
+            words_data = list(getattr(old_canvas, 'words_data', []) or []) if old_canvas else []
+            for w in words_data:
+                for k in ('_rect', '_ts_rect', '_calc_w', '_ts_calc_w'):
+                    w.pop(k, None)
+            sbs_mode = getattr(old_canvas, 'is_sbs_mode', False) if old_canvas else False
+            sbs_rows = getattr(old_canvas, 'sbs_rows', None) if old_canvas else None
+            sbs_hash = getattr(old_canvas, '_sbs_last_script_hash', None) if old_canvas else None
+
+            scroll_ratio = 0.0
+            if hasattr(self, 'scroll_area') and self.scroll_area:
+                vbar = self.scroll_area.verticalScrollBar()
+                if vbar and vbar.maximum() > 0:
+                    scroll_ratio = float(vbar.value()) / float(vbar.maximum())
+
+            active_left_id = None
+            active_right_id = None
+            for btn in self.findChildren(SidebarButton):
+                if getattr(btn, 'is_active', False):
+                    if btn.is_right_side:
+                        active_right_id = btn.activity_id
+                    else:
+                        active_left_id = btn.activity_id
+
+            active_marker_id = "bad"
+            if hasattr(self, 'marker_btn_group') and self.marker_btn_group and self.marker_btn_group.checkedButton():
+                active_marker_id = self.marker_btn_group.checkedButton().property("status_id") or "bad"
+
+            ap_state = None
+            if hasattr(self, 'audio_preview') and self.audio_preview:
+                ap_state = self.audio_preview.export_state_for_rebuild()
+
+            island_state = None
+            if hasattr(self, 'top_island') and self.top_island:
+                island_state = (
+                    getattr(self.top_island, '_state', 'idle'),
+                    getattr(self.top_island, '_title_text', ''),
+                    getattr(self.top_island, '_percent_text', ''),
+                )
+
+            # 2. Tear down old central visual hierarchy cleanly (keep resolve_handler/engine untouched!)
+            old_central = self.takeCentralWidget()
+            if old_central is not None:
+                try:
+                    from PySide6.QtCore import QAbstractAnimation
+                    for anim in old_central.findChildren(QAbstractAnimation):
+                        try:
+                            anim.stop()
+                        except Exception:
+                            pass
+                    for tmr in old_central.findChildren(QTimer):
+                        try:
+                            tmr.stop()
+                        except Exception:
+                            pass
+                    if hasattr(self, 'top_island') and self.top_island is not None:
+                        old_central.removeEventFilter(self.top_island)
+                except Exception:
+                    pass
+                old_central.hide()
+                old_central.setParent(None)
+                QTimer.singleShot(50, old_central.deleteLater)
+
+            # 3. Rebuild workspace UI cleanly at new SCALE_FACTOR
+            self._init_workspace_ui(prefs, is_rebuild=True)
+
+            # 4. Restore dropdown caches, files, scripts, chapters, canvas & media without Resolve queries
+            self.current_source_type = source_type
+            if hasattr(self, 'welcome_page'):
+                if hasattr(self.welcome_page, '_apply_source_mode'):
+                    self.welcome_page._apply_source_mode(source_type, animated=False)
+                self.welcome_page.switch_workspace_instant(welcome_idx)
+            for cname, st in combo_state.items():
+                c = getattr(self, cname, None)
+                if c is not None and st.get('options'):
+                    c.options_list = list(st['options'])
+                    if hasattr(c, 'selected_items'):
+                        c.selected_items = set(st['selected'])
+                    if hasattr(c, 'setText') and st.get('text'):
+                        c.setText(st['text'])
+            if drop0_files and hasattr(self, 'drop_zone_0'):
+                for fpath in drop0_files:
+                    if os.path.exists(fpath):
+                        self.drop_zone_0.set_file(fpath)
+                        break
+            if drop1_files and hasattr(self, 'drop_zone_1'):
+                for fpath in drop1_files:
+                    if os.path.exists(fpath):
+                        self.drop_zone_1.set_file(fpath)
+                        break
+            if hasattr(self, 'tgl_more_accurate'):
+                self.tgl_more_accurate.setChecked(more_acc, animated=False)
+            if welcome_script_txt and hasattr(self, 'welcome_script_edit'):
+                self.welcome_script_edit.setPlainText(welcome_script_txt)
+            if editor_script_txt and hasattr(self, 'text_script'):
+                self.text_script.setPlainText(editor_script_txt)
+
+            self._chapters = chapters
+            self._current_chapter_idx = cur_chap_idx
+            self._transcription_source = tx_source
+            self._current_clips_layout = clips_layout
+            self._is_sbs_active = is_sbs_active
+
+            if tx_source and hasattr(self, '_title_bar'):
+                tl_name = tx_source.get('timeline_name', '')
+                tr_name = tx_source.get('tracks_summary', '')
+                if tl_name or tr_name:
+                    self._title_bar.set_source_info(tl_name, tr_name)
+            if tb_chaps and hasattr(self, '_title_bar'):
+                self._title_bar.chapter_dropdown.options_list = tb_chaps
+                if tb_chap_txt:
+                    self._title_bar.chapter_dropdown.setText(tb_chap_txt)
+                self._title_bar.chapter_dropdown.setVisible(len(tb_chaps) > 1)
+
+            if words_data and hasattr(self, 'text_canvas'):
+                self.text_canvas.words_data = words_data
+                if sbs_mode and sbs_rows is not None:
+                    self.text_canvas.is_sbs_mode = True
+                    self.text_canvas.sbs_rows = sbs_rows
+                    self.text_canvas._sbs_last_script_hash = sbs_hash
+                self.text_canvas.invalidate_font_cache()
+                self.text_canvas._calculate_layout()
+                self.text_canvas.update()
+
+            if hasattr(self, 'marker_btn_group') and self.marker_btn_group:
+                for btn in self.marker_btn_group.buttons():
+                    if btn.property("status_id") == active_marker_id:
+                        btn.setChecked(True)
+                        break
+
+            if ap_state and hasattr(self, 'audio_preview'):
+                self.audio_preview.restore_state_after_rebuild(ap_state)
+
+            self.go_to_page(page_idx)
+
+            if page_idx == 2:
+                if active_left_id:
+                    self._toggle_activity(active_left_id)
+                if active_right_id:
+                    self._toggle_activity(active_right_id)
+
+            if scroll_ratio > 0.0 and hasattr(self, 'scroll_area') and self.scroll_area:
+                vbar = self.scroll_area.verticalScrollBar()
+                if vbar and vbar.maximum() > 0:
+                    vbar.setValue(int(round(scroll_ratio * vbar.maximum())))
+
+            if island_state and island_state[0] in ("working", "completed") and hasattr(self, 'top_island'):
+                st_name, st_title, st_pct = island_state
+                if st_name == "working":
+                    try:
+                        pct_int = int(str(st_pct).rstrip("%")) if st_pct else -1
+                    except Exception:
+                        pct_int = -1
+                    self.top_island.show_progress(st_title, pct_int)
+                else:
+                    self.top_island.show()
+                    self.top_island.set_completed(st_title)
+
+            if hasattr(self, '_ensure_border_overlay'):
+                self._ensure_border_overlay()
+            self._sync_script_edit_height(animated=False)
+            self._update_open_panel_widths()
+        finally:
+            self.setUpdatesEnabled(True)
+            self.update()
+            self._rebuilding_scale = False
 
     def moveEvent(self, event):
         super().moveEvent(event)
@@ -590,8 +921,47 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._sync_script_edit_height(animated=False)
+        self._update_open_panel_widths()
         if hasattr(self, 'audio_preview') and self.audio_preview:
+            if hasattr(self.audio_preview, '_apply_modularity_state') and (
+                getattr(self.audio_preview, 'show_video', False) or getattr(self.audio_preview, 'show_timeline', False)
+            ):
+                self.audio_preview._apply_modularity_state()
             self.audio_preview.update_seek_margins()
+
+    def _update_open_panel_widths(self):
+        """Keeps open sidebar panel widths proportional to aspect ratio and never starves central canvas."""
+        if not hasattr(self, '_main_h_splitter') or self._main_h_splitter is None:
+            return
+        left_open = getattr(self, '_panel_left', None) is not None and self._panel_left.isVisible()
+        right_open = getattr(self, '_panel_right', None) is not None and self._panel_right.isVisible()
+        if not left_open and not right_open:
+            return
+        sizes = self._main_h_splitter.sizes()
+        if len(sizes) != 3:
+            return
+        win_w = max(640, self.width())
+        win_h = max(480, self.height())
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen:
+            sg = screen.geometry()
+            scr_aspect = float(sg.width()) / float(sg.height()) if sg.height() > 0 else (16.0 / 9.0)
+        else:
+            scr_aspect = float(win_w) / float(win_h)
+        min_center = max(config.S(300), int(win_w * 0.42))
+        avail_for_sides = max(0, win_w - min_center)
+        if left_open and right_open:
+            max_each = avail_for_sides // 2
+            sizes[0] = min(sizes[0], max_each) if sizes[0] > 0 else compute_sidebar_panel_width(win_w, win_h, scr_aspect)
+            sizes[2] = min(sizes[2], max_each) if sizes[2] > 0 else compute_sidebar_panel_width(win_w, win_h, scr_aspect)
+            sizes[1] = max(min_center, win_w - sizes[0] - sizes[2])
+        elif left_open and sizes[0] > avail_for_sides:
+            sizes[0] = avail_for_sides
+            sizes[1] = max(min_center, win_w - sizes[0])
+        elif right_open and sizes[2] > avail_for_sides:
+            sizes[2] = avail_for_sides
+            sizes[1] = max(min_center, win_w - sizes[2])
+        self._main_h_splitter.setSizes(sizes)
 
     def animate_script_edit_height(self, target_h: int, duration: int = 260):
         if not hasattr(self, 'welcome_script_edit'):
@@ -706,7 +1076,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     # UI Construction
     # ------------------------------------------------------------------
 
-    def _build_sidebars(self):
+    def _build_sidebars(self, run_crash_check: bool = True):
         """
         Left and right vertical activity frames overlaying the main window.
         """
@@ -769,8 +1139,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._sidebar_right.hide()
         self._restore_sidebar_layout()
         
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(1000, self._check_crash_recovery)
+        if run_crash_check:
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(1000, self._check_crash_recovery)
 
         
     def _check_crash_recovery(self):
@@ -949,34 +1320,30 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             target_splitter.show()
             if was_hidden:
                 sizes = self._main_h_splitter.sizes()
-                win_w = max(800, self.width())
-                
-                # Check monitor's physical aspect ratio (geometry), NOT window height minus taskbar
+                win_w = max(640, self.width())
+                win_h = max(480, self.height())
+
                 screen = self.screen() or QGuiApplication.primaryScreen()
                 if screen:
                     s_geo = screen.geometry()
-                    screen_aspect = float(s_geo.width()) / float(s_geo.height()) if s_geo.height() > 0 else 1.777
+                    screen_aspect = float(s_geo.width()) / float(s_geo.height()) if s_geo.height() > 0 else (16.0 / 9.0)
                 else:
-                    screen_aspect = float(win_w) / float(max(600, self.height()))
-                
-                # Base panel width (280px on standard 1920x1080 display)
-                base_w = int(win_w * (280.0 / 1920.0))
-                
-                # Standard 16:9 displays: ratio ~1.70 - 1.85
-                is_16_9 = 1.70 <= screen_aspect <= 1.85
+                    screen_aspect = float(win_w) / float(win_h)
 
-                # Dynamic minimum width from content to prevent clipping drawers
-                min_content_w = config.S(270)
+                min_content_w = config.S(250)
                 try:
-                    if activity_widget and activity_widget.layout():
-                        min_content_w = max(min_content_w, activity_widget.layout().minimumSize().width())
+                    content_w = getattr(activity_widget, '_content_widget', activity_widget)
+                    if content_w and content_w.layout():
+                        min_content_w = max(min_content_w, content_w.layout().minimumSize().width())
                 except Exception:
                     pass
 
-                if is_16_9:
-                    target_w = max(min_content_w, base_w)
-                else:
-                    target_w = max(min_content_w, int(base_w * 1.05))
+                target_w = compute_sidebar_panel_width(
+                    win_w=win_w,
+                    win_h=win_h,
+                    screen_aspect=screen_aspect,
+                    content_min_w=min_content_w,
+                )
 
                 if target_splitter == self._panel_left:
                     diff = target_w - sizes[0]
@@ -987,6 +1354,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     sizes[2] = target_w
                     sizes[1] = max(0, sizes[1] - diff)
                 self._main_h_splitter.setSizes(sizes)
+                self._update_open_panel_widths()
                 current_page = self._stack.currentWidget()
                 if current_page and hasattr(current_page, 'resizeEvent'):
                     current_page.resizeEvent(None)
@@ -1562,10 +1930,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.lbl_filler_count.setText(f"{count} / 150 {self.txt('lbl_words')}")
         
         if count > 150:
-            self.lbl_filler_count.setStyleSheet("color: #ed4245; font-size: 9pt; font-weight: bold;")
+            self.lbl_filler_count.setStyleSheet(f"color: #ed4245; font-size: {config.FS_PX(9)}px; font-weight: bold;")
             self.btn_save_fillers.setEnabled(False)
         else:
-            self.lbl_filler_count.setStyleSheet("color: #888888; font-size: 9pt;")
+            self.lbl_filler_count.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(9)}px;")
             self.btn_save_fillers.setEnabled(True)
 
     def _get_clean_words_data(self):
@@ -2717,7 +3085,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if hasattr(pin_btn, 'setChecked'):
                 pin_btn.setChecked(False)
             else:
-                pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #555555; font-size: 11pt; padding: 0; } QPushButton:hover { color: #aaaaaa; }")
+                pin_btn.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: #555555; font-size: {config.FS_PX(11)}px; padding: 0; }} QPushButton:hover {{ color: #aaaaaa; }}")
             # Persist removal
             prefs = self.engine.load_preferences() or {}
             favs = prefs.get('favorites', [])
@@ -2742,7 +3110,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             row_widget = _QWidget()
             row_layout = QHBoxLayout(row_widget)
             row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(6)
+            row_layout.setSpacing(config.S(6))
             
             prx_conn, src_conn = None, None
             proxy_toggle = None
@@ -2766,18 +3134,18 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
                 # Cut Now Button (proxy)
                 btn_cut_now_proxy = QPushButton()
-                btn_cut_now_proxy.setFixedSize(24, 24)
+                btn_cut_now_proxy.setFixedSize(config.S(24), config.S(24))
                 btn_cut_now_proxy.setCursor(Qt.PointingHandCursor)
                 btn_cut_now_proxy.setStyleSheet("background: transparent; border: none;")
                 btn_cut_now_proxy.setIcon(QIcon(get_layout_icon_path("cut.png")))
-                btn_cut_now_proxy.setIconSize(QSize(20, 20))
+                btn_cut_now_proxy.setIconSize(QSize(config.S(20), config.S(20)))
                 btn_cut_now_proxy.setToolTip(self.txt("tooltip_cut_now"))
                 btn_cut_now_proxy.clicked.connect(lambda _, c=color_name_title: self._on_cut_now_clicked(c))
                 row_layout.addWidget(btn_cut_now_proxy)
 
                 if source_toggle: # Has auto button
                     proxy_auto = QPushButton()
-                    proxy_auto.setFixedSize(24, 24)
+                    proxy_auto.setFixedSize(config.S(24), config.S(24))
                     proxy_auto.setCursor(Qt.PointingHandCursor)
                     proxy_auto.setStyleSheet("background: transparent; border: none;")
                     proxy_auto.setCheckable(True)
@@ -2787,7 +3155,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     def _update_proxy_icon(checked, b=proxy_auto):
                         icon_name = "auto-marked.png" if checked else "auto-unmarked.png"
                         b.setIcon(QIcon(get_layout_icon_path(icon_name)))
-                        b.setIconSize(QSize(20, 20))
+                        b.setIconSize(QSize(config.S(20), config.S(20)))
                     
                     _update_proxy_icon(proxy_auto.isChecked())
                     proxy_auto.toggled.connect(lambda checked, b=proxy_auto, fn=_update_proxy_icon: (fn(checked, b), self._save_auto_cut_prefs()))
@@ -2826,7 +3194,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if hasattr(pin_btn, 'setChecked'):
                 pin_btn.setChecked(True)
             else:
-                pin_btn.setStyleSheet("QPushButton { background: transparent; border: none; color: #f0b429; font-size: 11pt; padding: 0; } QPushButton:hover { color: #f5c842; }")
+                pin_btn.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: #f0b429; font-size: {config.FS_PX(11)}px; padding: 0; }} QPushButton:hover {{ color: #f5c842; }}")
             
             self.layout_favorites.addWidget(row_widget)
 
@@ -3216,7 +3584,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if not has_items:
             empty = QLabel(self.txt("legend_empty"))
             empty.setWordWrap(True)
-            empty.setStyleSheet(f"color: #808080; font-size: {config.FS(9)}pt;")
+            empty.setStyleSheet(f"color: #808080; font-size: {config.FS_PX(9)}px;")
             lay.addWidget(empty)
             return
 
@@ -3265,7 +3633,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
             if key == "Tan":
                 lbl_managed = QLabel(self.txt("legend_silence_managed", "(managed in Silence panel)"))
-                lbl_managed.setStyleSheet(f"color: #777777; font-size: {config.FS(8.5)}pt; font-style: italic;")
+                lbl_managed.setStyleSheet(f"color: #777777; font-size: {config.FS_PX(8.5)}px; font-style: italic;")
                 lbl_managed.setToolTip(self.txt("tt_legend_silence_managed", "Silence cutting is configured in the Silence panel."))
                 h.addWidget(lbl_managed, 0, Qt.AlignTop)
             else:
@@ -3591,7 +3959,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             info.setPixmap(scaled_pix)
         else:
             info.setText("🛈")
-            info.setStyleSheet("color: #888888; font-size: 11pt;")
+            info.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(11)}px;")
             
         tt_text = self.txt(tooltip_key) if hasattr(self, 'txt') else tooltip_key
         info.custom_tooltip_text = tt_text or ""
@@ -3712,7 +4080,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     f" max-height: {config.S(30)}px;"
                     f" height: {config.S(30)}px;"
                     f" font-family: '{config.UI_FONT_NAME}', sans-serif;"
-                    f" font-size: {config.FS(9.5)}pt;"
+                    f" font-size: {config.FS_PX(9.5)}px;"
                     f"}}"
                     f"QPushButton:hover {{ border-color: #ed4245; }}"
                 )
@@ -3752,16 +4120,16 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 _orig_script_ss = f'''
                     QTextEdit {{
                         background-color: #1e1e1e; color: #d4d4d4; 
-                        border: 1px solid #3a3a3a; border-radius: 3px; 
-                        padding: 4px; outline: none; font-family: {config.UI_FONT_NAME};
+                        border: 1px solid #3a3a3a; border-radius: {config.S(3)}px; 
+                        padding: {config.S(4)}px; outline: none; font-family: {config.UI_FONT_NAME};
                     }}
                     QTextEdit:focus {{ border: 1px solid #1a7a3e; }}
                 '''
                 _err_script_ss = f'''
                     QTextEdit {{
                         background-color: #1e1e1e; color: #d4d4d4; 
-                        border: 1px solid #ed4245; border-radius: 3px; 
-                        padding: 4px; outline: none; font-family: {config.UI_FONT_NAME};
+                        border: 1px solid #ed4245; border-radius: {config.S(3)}px; 
+                        padding: {config.S(4)}px; outline: none; font-family: {config.UI_FONT_NAME};
                     }}
                     QTextEdit:focus {{ border: 1px solid #ed4245; }}
                 '''
@@ -4620,17 +4988,19 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 item.widget().deleteLater()
                 
         def style_rb(rb, color):
+            ind_sz = config.S(15)
+            ind_rad = max(2, ind_sz // 2)
             rb.setStyleSheet(f"""
                 QRadioButton {{
                     color: {color};
-                    font-size: 11pt;
+                    font-size: {config.FS_PX(11)}px;
                     font-weight: bold;
                     background: transparent;
-                    padding: 2px 5px;
+                    padding: {config.S(2)}px {config.S(5)}px;
                 }}
                 QRadioButton::indicator {{
-                    width: 15px; height: 15px;
-                    border-radius: 8px;
+                    width: {ind_sz}px; height: {ind_sz}px;
+                    border-radius: {ind_rad}px;
                     border: 2px solid #555;
                     background: #1a1a1a;
                 }}
@@ -4663,19 +5033,21 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         
         rb_eraser = MarqueeRadioButton(self.txt("rad_eraser_clear"))
         rb_eraser.setProperty("status_id", "eraser")
-        rb_eraser.setStyleSheet("""
-            QRadioButton {
-                color: #aaaaaa; font-size: 11pt; font-weight: bold;
+        ind_sz = config.S(15)
+        ind_rad = max(2, ind_sz // 2)
+        rb_eraser.setStyleSheet(f"""
+            QRadioButton {{
+                color: #aaaaaa; font-size: {config.FS_PX(11)}px; font-weight: bold;
                 background: transparent;
-                padding: 2px 5px;
-            }
-            QRadioButton::indicator {
-                width: 15px; height: 15px;
-                border-radius: 8px;
+                padding: {config.S(2)}px {config.S(5)}px;
+            }}
+            QRadioButton::indicator {{
+                width: {ind_sz}px; height: {ind_sz}px;
+                border-radius: {ind_rad}px;
                 border: 2px solid #555;
                 background: #1a1a1a;
-            }
-            QRadioButton::indicator:checked {
+            }}
+            QRadioButton::indicator:checked {{
                 border: 2px solid #555;
                 background: qradialgradient(
                     cx:0.5, cy:0.5, radius:0.5,
@@ -4685,7 +5057,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     stop:0.5 #1a1a1a,
                     stop:1 #1a1a1a
                 );
-            }
+            }}
         """)
         
         for rb in (rb_red, rb_blue, rb_green):
@@ -5205,6 +5577,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             if hasattr(self, '_global_app_filter') and self._global_app_filter:
                 QApplication.instance().removeEventFilter(self._global_app_filter)
                 self._global_app_filter = None
+            try:
+                QApplication.instance().removeEventFilter(self)
+            except Exception:
+                pass
 
             # Write clean exit flag
             try:

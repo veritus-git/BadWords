@@ -42,7 +42,7 @@ def build_silence_panel(win) -> QFrame:
     _sil_input_style = f"""
         QLineEdit {{ background: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a;
         border-radius: {config.S(3)}px; padding: {config.S(2)}px {config.S(6)}px; outline: none;
-        font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; }}
+        font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(9.5)}px; }}
         QLineEdit:focus {{ border: 1px solid #1a7a3e; outline: none; }}
     """
 
@@ -103,7 +103,7 @@ def build_silence_panel(win) -> QFrame:
         v_box.setSpacing(config.S(2))
 
         lbl = QLabel(label_text)
-        lbl.setStyleSheet(f"color: #e0e0e0; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; font-weight: 500;")
+        lbl.setStyleSheet(f"color: #e0e0e0; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(9.5)}px; font-weight: 500;")
         lbl.setWordWrap(True)
         v_box.addWidget(lbl)
 
@@ -261,7 +261,7 @@ def build_silence_panel(win) -> QFrame:
     win.lbl_silence_stats.setWordWrap(True)
     win.lbl_silence_stats.setFixedHeight(config.S(24))
     win.lbl_silence_stats.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-    win.lbl_silence_stats.setStyleSheet(f"color: #8a8a8a; font-size: {config.FS(9)}pt;")
+    win.lbl_silence_stats.setStyleSheet(f"color: #8a8a8a; font-size: {config.FS_PX(9)}px;")
     l_silence.addWidget(win.lbl_silence_stats)
 
     stats_opacity = QGraphicsOpacityEffect(win.lbl_silence_stats)

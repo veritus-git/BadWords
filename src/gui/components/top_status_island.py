@@ -60,8 +60,8 @@ class TopStatusIsland(QWidget):
         self._spinner_angle = 0
 
         # Cached fonts and metrics to prevent allocating QFont / querying FreeType on every frame
-        self._f_lbl = QFont(config.UI_FONT_NAME, config.FS(8.5))
-        self._f_bold = QFont(config.UI_FONT_NAME, config.FS(8.5), QFont.Bold)
+        self._f_lbl = config.make_font(config.UI_FONT_NAME, 8.5)
+        self._f_bold = config.make_font(config.UI_FONT_NAME, 8.5, bold=True)
         self._fm_lbl = QFontMetrics(self._f_lbl)
         self._fm_bold = QFontMetrics(self._f_bold)
 

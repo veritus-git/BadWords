@@ -31,8 +31,8 @@ class UnsavedChangesDialog(FramelessWindowMixin, _BaseDialog):
         self.setStyleSheet(parent.styleSheet() + f"""
             QDialog {{ background-color: {config.BG_COLOR}; }}
             #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #2e2e2e; border-radius: 0px; }}
-            QScrollArea {{ border: 1px solid #333; background-color: #1c1c1c; border-radius: 4px; }}
-            QFrame#item_row {{ border-bottom: 1px solid #333; padding-bottom: 5px; }}
+            QScrollArea {{ border: 1px solid #333; background-color: #1c1c1c; border-radius: {config.S(4)}px; }}
+            QFrame#item_row {{ border-bottom: 1px solid #333; padding-bottom: {config.S(5)}px; }}
         """)
         
         self.decisions = {}
@@ -69,7 +69,7 @@ class UnsavedChangesDialog(FramelessWindowMixin, _BaseDialog):
         root_layout.addLayout(content_layout)
         
         lbl_title = QLabel(parent.txt('msg_unsaved_title'))
-        lbl_title.setStyleSheet(f"font-size: {config.FS(14)}pt; font-weight: bold;")
+        lbl_title.setStyleSheet(f"font-size: {config.FS_PX(14)}px; font-weight: bold;")
         content_layout.addWidget(lbl_title)
         content_layout.addWidget(QLabel(parent.txt('msg_unsaved_desc')))
         

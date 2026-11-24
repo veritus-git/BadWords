@@ -84,16 +84,22 @@ class TranscriptionCanvas(QWidget):
             prefs = engine.load_preferences() if engine and hasattr(engine, 'load_preferences') else {}
             self._cached_prefs = prefs
             pref_family = prefs.get('editor_font_family', config.UI_FONT_NAME)
-            pref_size = config.FS(prefs.get('editor_font_size', 12))
-            pref_lh = config.S(prefs.get('editor_line_height', 7))
+            try:
+                pref_size_pt = float(prefs.get('editor_font_size', 12))
+            except Exception:
+                pref_size_pt = 12.0
+            try:
+                pref_lh = config.S(float(prefs.get('editor_line_height', 7)))
+            except Exception:
+                pref_lh = config.S(7)
 
-            from PySide6.QtGui import QFont, QFontMetrics
-            self._cached_editor_font = QFont(pref_family, pref_size)
-            self._cached_bold_font = QFont(pref_family, pref_size, QFont.Bold)
+            from PySide6.QtGui import QFontMetrics
+            self._cached_editor_font = config.make_font(pref_family, pref_size_pt)
+            self._cached_bold_font = config.make_font(pref_family, pref_size_pt, bold=True)
             self._cached_metrics = QFontMetrics(self._cached_editor_font)
-            self._cached_ts_font = QFont(config.UI_FONT_NAME, max(8, pref_size - 2))
+            self._cached_ts_font = config.make_font(config.UI_FONT_NAME, max(8.0, pref_size_pt - 2.0))
             self._cached_ts_metrics = QFontMetrics(self._cached_ts_font)
-            self._cached_space_w = self._cached_metrics.horizontalAdvance(" ") + 2
+            self._cached_space_w = self._cached_metrics.horizontalAdvance(" ") + config.S(2)
             self._cached_line_height = self._cached_metrics.height() + pref_lh
         return (
             self._cached_prefs,
@@ -131,7 +137,7 @@ class TranscriptionCanvas(QWidget):
         self._is_streaming = True
         self._follow_tail_scroll = False
         self._last_dragged_id = -1
-        self.setMinimumHeight(400)
+        self.setMinimumHeight(config.S(400))
 
         # Hook scrollbar to track if user explicitly scrolled to the bottom
         scroll = getattr(self.main_window, 'scroll_area', None)
@@ -260,9 +266,12 @@ class TranscriptionCanvas(QWidget):
                     ts_w = ts_metrics.horizontalAdvance(ts_text)
                     w['_ts_calc_w'] = ts_w
 
-                w['_ts_rect'] = QRect(cx, cy, ts_w, metrics.height() + 4)
+                pad_x = config.S(20)
+                max_w_stream = self.width() - config.S(40)
+                rect_h = metrics.height() + config.S(4)
+                w['_ts_rect'] = QRect(cx, cy, ts_w, rect_h)
                 dirty_rects.append(w['_ts_rect'])
-                cx += ts_w + space_w + 5
+                cx += ts_w + space_w + config.S(5)
 
             # Word text & width
             is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
@@ -273,11 +282,14 @@ class TranscriptionCanvas(QWidget):
                 word_w = metrics.horizontalAdvance(raw_text)
                 w['_calc_w'] = word_w
 
-            if cx + word_w > max_w and cx > 20:
-                cx = 20
+            pad_x = config.S(20)
+            max_w_stream = self.width() - config.S(40)
+            rect_h = metrics.height() + config.S(4)
+            if cx + word_w > max_w_stream and cx > pad_x:
+                cx = pad_x
                 cy += line_height
 
-            w['_rect'] = QRect(cx, cy, word_w, metrics.height() + 4)
+            w['_rect'] = QRect(cx, cy, word_w, rect_h)
             dirty_rects.append(w['_rect'])
             cx += word_w + space_w
 
@@ -285,10 +297,10 @@ class TranscriptionCanvas(QWidget):
 
         self._cached_visible_words = self.words_data
 
-        # Height expansion buffer: only update minimum height when needed, with 250px headroom
-        needed_h = cy + line_height + 40
+        # Height expansion buffer: only update minimum height when needed, with scaled headroom
+        needed_h = cy + line_height + config.S(40)
         if needed_h > self.minimumHeight():
-            self.setMinimumHeight(needed_h + 250)
+            self.setMinimumHeight(needed_h + config.S(250))
             if getattr(self, '_follow_tail_scroll', False):
                 scroll = getattr(self.main_window, 'scroll_area', None)
                 if scroll:
@@ -479,9 +491,13 @@ class TranscriptionCanvas(QWidget):
             meta_lang = self.words_data[0].get('meta_language')
             if isinstance(meta_lang, str) and (meta_lang.lower() in rtl_codes or meta_lang.lower() in rtl_english_names):
                 is_rtl = True
-        max_w = self.width() - 40
-        x = max_w if is_rtl else 20
-        y = 20
+        margin_x = config.S(20)
+        half_margin = config.S(10)
+        line_vpad = config.S(4)
+        ts_extra_gap = config.S(5)
+        max_w = self.width() - config.S(40)
+        x = max_w if is_rtl else margin_x
+        y = margin_x
         
         is_sbs = getattr(self, 'is_sbs_mode', False)
         
@@ -492,14 +508,14 @@ class TranscriptionCanvas(QWidget):
                     w.pop(key, None)
                     
             visible_words = []
-            right_start_x = self.width() // 2 + 10
-            max_w = self.width() - 20
+            right_start_x = self.width() // 2 + half_margin
+            max_w = self.width() - margin_x
             
             # Estimate timestamp width for consistent left-column alignment
             sample_ts = "[00:00.000]" if prefs.get('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']) else "[00:00]"
             ts_base_w = ts_metrics.horizontalAdvance(sample_ts)
-            default_script_start_x = 20 + ts_base_w + 10
-            default_script_w = (self.width() // 2 - 20) - default_script_start_x
+            default_script_start_x = margin_x + ts_base_w + half_margin
+            default_script_w = (self.width() // 2 - margin_x) - default_script_start_x
             
             show_inaudible = True
             if hasattr(self.main_window, 'tgl_show_inaudible'):
@@ -525,13 +541,13 @@ class TranscriptionCanvas(QWidget):
                 is_interruption = row.get("_is_interruption", False)
                 
                 # Separator line between rows
-                if y > 20:
+                if y > margin_x:
                     if is_interruption:
-                        y += 10
+                        y += half_margin
                     else:
-                        y += 20
+                        y += margin_x
                         # Store separator on a virtual dictionary to avoid tainting real words
-                        sep_marker = {'_separator_y': y - 10}
+                        sep_marker = {'_separator_y': y - half_margin}
                         visible_words.append(sep_marker)
                             
                 row_start_y = y
@@ -561,9 +577,9 @@ class TranscriptionCanvas(QWidget):
                         ts_w = ts_metrics.horizontalAdvance(w_ts['_ts_text'])
                         
                         # Timestamp on the far left
-                        w_ts['_ts_rect'] = QRect(20, y, ts_w, metrics.height() + 4)
-                        script_start_x = 20 + ts_w + 10
-                        script_w = (self.width() // 2 - 20) - script_start_x
+                        w_ts['_ts_rect'] = QRect(margin_x, y, ts_w, metrics.height() + line_vpad)
+                        script_start_x = margin_x + ts_w + half_margin
+                        script_w = (self.width() // 2 - margin_x) - script_start_x
 
                 prev_status = None
                 force_newline = False
@@ -597,13 +613,13 @@ class TranscriptionCanvas(QWidget):
                             x = max_w
                             y += line_height
                         x -= word_w
-                        w['_rect'] = QRect(x, y, word_w, metrics.height() + 4)
+                        w['_rect'] = QRect(x, y, word_w, metrics.height() + line_vpad)
                         x -= space_w
                     else:
                         if x + word_w > max_w and x > right_start_x:
                             x = right_start_x
                             y += line_height
-                        w['_rect'] = QRect(x, y, word_w, metrics.height() + 4)
+                        w['_rect'] = QRect(x, y, word_w, metrics.height() + line_vpad)
                         x += word_w + space_w
                         
                     visible_words.append(w)
@@ -632,7 +648,7 @@ class TranscriptionCanvas(QWidget):
                     visible_words.append({
                         'text': w_text,
                         '_display_text': w_text,
-                        '_rect': QRect(sx, script_y, w_w, metrics.height() + 4),
+                        '_rect': QRect(sx, script_y, w_w, metrics.height() + line_vpad),
                         'is_script_word': True,
                         'script_kind': script_kind
                     })
@@ -645,7 +661,7 @@ class TranscriptionCanvas(QWidget):
                 row_h = max(transcript_h, script_h, line_height)
                 
                 if script_kind in ("missing", "improv_gap"):
-                    bg_rect = QRect(script_start_x - 10, row_start_y, default_script_w + 20, row_h)
+                    bg_rect = QRect(script_start_x - half_margin, row_start_y, default_script_w + margin_x, row_h)
                     visible_words.insert(0, {
                         'is_script_bg': True,
                         'script_kind': script_kind,
@@ -660,15 +676,15 @@ class TranscriptionCanvas(QWidget):
                         visible_words.append({
                             'text': placeholder,
                             '_display_text': placeholder,
-                            '_rect': QRect(rx, row_start_y + (row_h - metrics.height()) // 2, pw, metrics.height() + 4),
+                            '_rect': QRect(rx, row_start_y + (row_h - metrics.height()) // 2, pw, metrics.height() + line_vpad),
                             'is_script_placeholder': True,
                             'script_kind': "improv_gap"  # use same styling as improv gap (italic, gray)
                         })
                 
-                y = row_start_y + row_h # No extra padding here, handled by next row's y += 20
+                y = row_start_y + row_h
 
             self._cached_visible_words = visible_words
-            self.setMinimumHeight(y + line_height + 40)
+            self.setMinimumHeight(y + line_height + config.S(40))
             return
             
         # Hide editors if returning to normal view
@@ -689,13 +705,13 @@ class TranscriptionCanvas(QWidget):
             
             # Paragraph formatting based on Engine's Chunking
             if view_mode == 'segmented' and w.get('is_segment_start'):
-                has_advanced = (x < max_w) if is_rtl else (x > 20)
+                has_advanced = (x < max_w) if is_rtl else (x > margin_x)
                 if has_advanced: 
                     y += line_height
-                if y > 20: 
-                    w['_separator_y'] = y + 10 # Store Y coordinate for the line
-                    y += 20 # Gap between paragraphs
-                x = max_w if is_rtl else 20
+                if y > margin_x: 
+                    w['_separator_y'] = y + half_margin
+                    y += margin_x
+                x = max_w if is_rtl else margin_x
                 
                 # Generate Timestamp — format depends on 'timestamp_precise' setting
                 secs = w.get('start', 0)
@@ -720,11 +736,11 @@ class TranscriptionCanvas(QWidget):
                 
                 if is_rtl:
                     x -= ts_w
-                    w['_ts_rect'] = QRect(x, y, ts_w, metrics.height() + 4)
-                    x -= (space_w + 5)
+                    w['_ts_rect'] = QRect(x, y, ts_w, metrics.height() + line_vpad)
+                    x -= (space_w + ts_extra_gap)
                 else:
-                    w['_ts_rect'] = QRect(x, y, ts_w, metrics.height() + 4)
-                    x += ts_w + space_w + 5
+                    w['_ts_rect'] = QRect(x, y, ts_w, metrics.height() + line_vpad)
+                    x += ts_w + space_w + ts_extra_gap
             
             # Standard word layout
             is_inaudible = w.get('is_inaudible') or w.get('type') == 'inaudible'
@@ -742,20 +758,20 @@ class TranscriptionCanvas(QWidget):
                 w['_calc_w'] = word_w
             
             if is_rtl:
-                if x - word_w < 20 and x < max_w:
+                if x - word_w < margin_x and x < max_w:
                     x = max_w
                     y += line_height
                 x -= word_w
-                w['_rect'] = QRect(x, y, word_w, metrics.height() + 4)
+                w['_rect'] = QRect(x, y, word_w, metrics.height() + line_vpad)
                 x -= space_w
             else:
-                if x + word_w > max_w and x > 20:
-                    x = 20
+                if x + word_w > max_w and x > margin_x:
+                    x = margin_x
                     y += line_height
-                w['_rect'] = QRect(x, y, word_w, metrics.height() + 4)
+                w['_rect'] = QRect(x, y, word_w, metrics.height() + line_vpad)
                 x += word_w + space_w
             
-        self.setMinimumHeight(y + line_height + 40)
+        self.setMinimumHeight(y + line_height + config.S(40))
 
 
 
@@ -835,16 +851,17 @@ class TranscriptionCanvas(QWidget):
         is_sbs = getattr(self, 'is_sbs_mode', False)
         clip_top = target_clip.top() - 2
         clip_bot = target_clip.bottom() + 2
+        margin_x = config.S(20)
         for w in all_visible:
             if '_separator_y' in w:
                 sep_y = w['_separator_y']
                 if clip_top <= sep_y <= clip_bot:
                     if is_sbs:
                         mid = self.width() // 2
-                        p.drawLine(20, sep_y, mid - 20, sep_y)
-                        p.drawLine(mid + 20, sep_y, self.width() - 20, sep_y)
+                        p.drawLine(margin_x, sep_y, mid - margin_x, sep_y)
+                        p.drawLine(mid + margin_x, sep_y, self.width() - margin_x, sep_y)
                     else:
-                        p.drawLine(20, sep_y, self.width() - 20, sep_y)
+                        p.drawLine(margin_x, sep_y, self.width() - margin_x, sep_y)
 
         p.setPen(Qt.NoPen)
 
@@ -976,6 +993,10 @@ class TranscriptionCanvas(QWidget):
 
         p.setPen(Qt.NoPen)
         # PASS 1: Base Backgrounds
+        pill_rad = config.S(5)
+        expand_search = config.S(6)
+        expand_normal = config.S(3)
+        bridge_pad = config.S(5)
         for w in visible_words:
             if '_rect' not in w or w.get('is_script_word') or w.get('is_script_bg'): continue
             bg, _, _ = get_base_bg_fg(w)
@@ -988,8 +1009,8 @@ class TranscriptionCanvas(QWidget):
                         alpha = min(1.0, max(0.0, age / fade_duration))
                         p.setOpacity(alpha)
                 p.setBrush(brush)
-                expand = 6 if '_search_brush' in w else 3
-                p.drawRoundedRect(w['_rect'].adjusted(-expand, -1, expand, 1), 5, 5)
+                expand = expand_search if '_search_brush' in w else expand_normal
+                p.drawRoundedRect(w['_rect'].adjusted(-expand, -1, expand, 1), pill_rad, pill_rad)
                 if alpha < 1.0:
                     p.setOpacity(1.0)
 
@@ -1008,8 +1029,8 @@ class TranscriptionCanvas(QWidget):
             brush2 = w2.get('_search_brush', bg2)
             
             if brush1 and brush2:
-                expand1 = 6 if '_search_brush' in w1 else 3
-                expand2 = 6 if '_search_brush' in w2 else 3
+                expand1 = expand_search if '_search_brush' in w1 else expand_normal
+                expand2 = expand_search if '_search_brush' in w2 else expand_normal
                 
                 r1 = w1['_rect'].adjusted(-expand1, -1, expand1, 1)
                 r2 = w2['_rect'].adjusted(-expand2, -1, expand2, 1)
@@ -1021,7 +1042,7 @@ class TranscriptionCanvas(QWidget):
                 
                 if brush1 == brush2:
                     p.setBrush(brush1)
-                    bridge_rect = QRectF(left_rect.right() - 5, left_rect.y(), right_rect.left() - left_rect.right() + 10, left_rect.height())
+                    bridge_rect = QRectF(left_rect.right() - bridge_pad, left_rect.y(), right_rect.left() - left_rect.right() + (bridge_pad * 2), left_rect.height())
                     if bridge_rect.width() > 0:
                         p.drawRect(bridge_rect)
                 else:
@@ -1030,15 +1051,19 @@ class TranscriptionCanvas(QWidget):
                     
                     if right_rect.left() - left_rect.right() > 0:
                         p.setBrush(brush_left)
-                        p.drawRect(QRectF(left_rect.right() - 5, left_rect.y(), gap_mid - left_rect.right() + 6, left_rect.height()))
+                        p.drawRect(QRectF(left_rect.right() - bridge_pad, left_rect.y(), gap_mid - left_rect.right() + bridge_pad + 1, left_rect.height()))
                         p.setBrush(brush_right)
-                        p.drawRect(QRectF(gap_mid, right_rect.y(), right_rect.left() - gap_mid + 5, right_rect.height()))
+                        p.drawRect(QRectF(gap_mid, right_rect.y(), right_rect.left() - gap_mid + bridge_pad, right_rect.height()))
                         
                     p.setRenderHint(QPainter.Antialiasing, True)
                     
         # PASS 3: Timestamps & Text
-        ts_font = self._cached_ts_font or QFont(config.UI_FONT_NAME, 10)
-        bold_font = self._cached_bold_font or QFont(active_font.family(), active_font.pointSize(), QFont.Bold)
+        ts_font = self._cached_ts_font or config.make_font(config.UI_FONT_NAME, 10)
+        if self._cached_bold_font is not None:
+            bold_font = self._cached_bold_font
+        else:
+            bold_font = QFont(active_font)
+            bold_font.setBold(True)
         ts_color = QColor("#666666")
         p.setFont(active_font)
         
@@ -1096,8 +1121,10 @@ class TranscriptionCanvas(QWidget):
             if w.get('_audio_active'):
                 p.setBrush(QColor("#ffffff"))
                 p.setPen(Qt.NoPen)
-                active_rect = w['_rect'].adjusted(-8, -2, 8, 2)
-                p.drawRoundedRect(active_rect, 6, 6)
+                ax, ay = config.S(8), config.S(2)
+                ar = config.S(6)
+                active_rect = w['_rect'].adjusted(-ax, -ay, ax, ay)
+                p.drawRoundedRect(active_rect, ar, ar)
                 final_fg = QColor("#222222")
                 
             preview_state = cut_preview.get(w.get('id'))
@@ -1108,7 +1135,8 @@ class TranscriptionCanvas(QWidget):
                 final_fg = QColor("#8a8a8a")
                 
             p.setPen(final_fg)
-            draw_rect = w['_rect'].adjusted(-20, 0, 20, 0) if w.get('_audio_active') else w['_rect']
+            adx = config.S(20)
+            draw_rect = w['_rect'].adjusted(-adx, 0, adx, 0) if w.get('_audio_active') else w['_rect']
             p.drawText(draw_rect, Qt.AlignCenter, w.get('_display_text', w.get('text', '')))
             
             if is_cut:
@@ -1119,7 +1147,7 @@ class TranscriptionCanvas(QWidget):
 
                 if current_run is not None:
                     # Continue unbroken strikethrough if on same text row within word gap
-                    if abs(w_mid_y - current_run['mid_y']) <= 3 and 0 <= (w_left - current_run['end_x']) <= 45:
+                    if abs(w_mid_y - current_run['mid_y']) <= config.S(3) and 0 <= (w_left - current_run['end_x']) <= config.S(45):
                         current_run['end_x'] = w_right
                     else:
                         cut_runs.append(current_run)
@@ -1139,8 +1167,9 @@ class TranscriptionCanvas(QWidget):
             current_run = None
 
         # PASS 3.5: Merged Continuous Strikethroughs across adjacent cut words/sentences
+        strike_w = max(1.0, 1.5 * config.SCALE_FACTOR)
         for run in cut_runs:
-            p.setPen(QPen(run.get('color', QColor("#8a8a8a")), 1.5))
+            p.setPen(QPen(run.get('color', QColor("#8a8a8a")), strike_w))
             p.drawLine(run['start_x'], run['mid_y'], run['end_x'], run['mid_y'])
             
         # PASS 4: Active Underlines

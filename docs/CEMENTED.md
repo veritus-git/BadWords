@@ -172,3 +172,33 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
   - `# INVARIANT:` `osdoc` must expose both `log_warn` and `log_warning`, as well as module-level `load_preferences()`.
 - **Regression Tests:** `tests/test_runtime_data_and_isolation.py` (8 comprehensive live empirical tests).
 - **Do Not Change Without Product Owner Approval:** 24-hour temp retention threshold, 5 MB log cap, persistent user-profile fallback priority, and internal calibration constants (`offset=0.133`, `pad=0.0`, `snap_max=0.25`).
+
+### 9. Unified Cross-Platform UI Scaling (Auto OS DPI & Live Rebuild)
+- **Status:** Cemented (2026-11-24)
+- **Files:** `src/config/app_constants.py`, `src/config/settings_defaults.py`, `src/config/runtime_data.py`, `src/config/__init__.py`, `src/osdoc.py`, `src/main.py`, `setupfiles/windows/badwords.manifest`, `setupfiles/windows/launcher.rc`, `src/i18n/*.json`, `src/gui/dialogs/settings_dialog.py`, `src/gui/main_window.py`, `src/gui/views/welcome_view.py`, `src/gui/panels/script_panel.py`, `src/gui/components/audio_preview.py`, `src/gui/components/transcription_canvas.py`, `src/gui/widgets/sliders.py`, plus `FS_PX()` typography unification across `src/startup/` and `src/gui/` (`dialogs/`, `panels/`, `components/`, `views/`, `widgets/`), `tests/test_ui_scaling.py`, `tests/test_settings_and_version.py`
+- **How It Works:**
+  1. **Zero Double-Multiplication Formula (`src/config/app_constants.py`)**:
+     - `detect_os_scale_pct(screen)` measures true OS display scaling across platforms: native `devicePixelRatio * 100` on Windows and Linux Wayland, normalized `logicalDotsPerInch / 96.0 * 100` on Linux X11 (`Xft.dpi`), and Retina-normalized baseline `logicalDotsPerInch / 72.0 * 100` (`100%`) on macOS (eliminating the legacy hidden `0.85` macOS shrink).
+     - `get_qt_base_scale_pct(screen)` separates what Qt already multiplies natively (`dpr * 100`, or `100%` on macOS Retina where `pt` maps `1:1` to `px`) from `OS_SCALE_PERCENT`.
+     - In `auto` mode (`ui_scale_mode == "auto"`), `SCALE_FACTOR = OS_SCALE_PERCENT / QT_BASE_SCALE_PERCENT` (`1.0` when Qt already scales natively at `125%`/`150%`, avoiding `125% * 125% = 156%` double-scaling; `1.25` on X11 when `dpr=1.0` and `Xft.dpi=120`). In `manual` mode (`75%-200%`, step `5%`), `SCALE_FACTOR = clamped_pct / QT_BASE_SCALE_PERCENT` so user target percentages produce identical physical size across monitors and platforms.
+  2. **Pixel-Locked Typography (`FS_PX` vs `pt`)**:
+     - Every Qt stylesheet font rule across `src/gui/` and `src/startup/` uses `config.FS_PX(pt)` (`px` sized cleanly via `SCALE_FACTOR`, avoiding extra OS `Xft.dpi` / `pt` multiplication on top of `SCALE_FACTOR`).
+     - `DEFAULT_FONT_SIZE`, widget geometry helpers (`S()`), `TranscriptionCanvas` typography/layout, `AudioPreviewWidget` dynamic `QFontMetrics` timecode width, `WelcomePageView` vertical scroll area, and `wrap_activity_panel` scroll wrapper scale uniformly from `75%` through `200%`.
+  3. **Auto Mode, Legacy Migration & Settings UI (`src/osdoc.py`, `src/gui/dialogs/settings_dialog.py`)**:
+     - `DEFAULT_SETTINGS["ui_scale_mode"] = "auto"`. `OSDoctor.load_settings()` runs a one-time migration on legacy configs missing `ui_scale_mode` so existing installs automatically adopt native OS scaling without keeping stale hardcoded values, while explicit `"manual"` preferences remain preserved.
+     - `SettingsDialog` displays `<N>% (System)` in Auto mode, places the `(i)` tooltip icon directly beside the right-hand slider control (`info_on_right=True`), dynamically sizes `lbl_ui_scale_val` from localized `QFontMetrics`, supports `75%-200%` (5% snaps via `JumpSlider`), switches to `"manual"` upon user drag/click, and returns to `"auto"` on reset.
+  4. **Resolve-Safe Live UI Rebuild & Mixed-DPI Monitor Tracking**:
+     - Changing UI Scale in Settings triggers live in-process UI reconstruction (`BadWordsGUI.rebuild_ui_for_scale()` and `SettingsDialog.rebuild_ui_for_scale()`), safely tearing down media outputs (`QMediaPlayer`) and child widgets while preserving the active `ResolveHandler` / Lua bridge connection, loaded `words_data`, waveform peaks, timeline selections, and active panels without restarting the process.
+     - Connecting `windowHandle().screenChanged` automatically updates the `"System"` scale readout in Auto mode and recalculates `SCALE_FACTOR` in Manual mode when dragging across mixed-DPI displays.
+  5. **Aspect-Ratio Sidebar Adaptation (`compute_sidebar_panel_width`)**:
+     - Side panels adapt dynamically to screen aspect ratio (`16:9` vs narrower `16:10` / `3:2` displays), narrowing sidebars proportionally (`<= 29%` width at `200%` zoom on laptops) to protect the central transcription canvas instead of shrinking overall UI scale blindly.
+- **OS-Specific Behavior:**
+  - **Windows 11:** Embedded PerMonitorV2 manifest (`setupfiles/windows/badwords.manifest` linked in `launcher.rc`) ensures native per-monitor DPI crispness alongside `QT_ENABLE_HIGHDPI_SCALING=1` and `PassThrough` rounding.
+  - **Linux (X11 / Wayland):** Handles both Wayland fractional DPR (`1.0x` extra scale factor in Auto) and X11 `Xft.dpi` (`SCALE_FACTOR = Xft.dpi / 96` in Auto) uniformly without double font scaling.
+  - **macOS (Retina):** Normalizes `72` logical DPI Retina to `100%` OS baseline and maps `FS_PX` consistently with Windows/Linux.
+- **Invariants (DO NOT BREAK):**
+  - `# INVARIANT:` Never multiply OS DPR twice (`SCALE_FACTOR * QT_BASE_SCALE_PERCENT` in Auto mode must match `OS_SCALE_PERCENT`).
+  - `# INVARIANT:` All QSS font rules must use `FS_PX()` (never raw OS-multiplied `pt`) so X11 `Xft.dpi`, Wayland DPR, Windows DPI, and macOS Retina render identically.
+  - `# INVARIANT:` `rebuild_ui_for_scale()` must never disconnect or reinitialize `resolve_handler` or discard loaded `words_data` / waveform peaks.
+- **Regression Tests:** `tests/test_ui_scaling.py` (8 tests), `tests/test_settings_and_version.py`, plus offscreen PNG renders verified across `75%`, `100%`, `125%`, `150%`, `200%`, and `16:10` aspect ratio in `tests/artifacts/`.
+- **Do Not Change Without Product Owner Approval:** Auto OS default mode, `75%-200%` slider range, right-aligned `(i)` placement, Resolve-preserving live rebuild, and aspect-ratio sidebar adaptation.

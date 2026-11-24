@@ -54,7 +54,7 @@ class SearchOverlayWidget(QFrame):
                 border: none;
                 color: #dddddd;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
             }}
             QLineEdit {{
                 padding: {config.S(4)}px;
@@ -371,9 +371,10 @@ class SearchOverlayWidget(QFrame):
         self._anim.setStartValue(start_geom)
         
         parent_w = self.parentWidget().width()
-        target_w = 36
-        target_x = parent_w - target_w - 8
-        self._anim.setEndValue(QRect(target_x, start_geom.y(), target_w, 36))
+        target_w = config.S(36)
+        margin = config.S(8)
+        target_x = parent_w - target_w - margin
+        self._anim.setEndValue(QRect(target_x, start_geom.y(), target_w, target_w))
         
         def on_finished():
             self.scroll_area.hide()
@@ -409,10 +410,11 @@ class SearchOverlayWidget(QFrame):
         self._anim.setStartValue(start_geom)
         
         parent_w = self.parentWidget().width()
-        target_w = 300
-        target_x = parent_w - target_w - 8
+        target_w = min(config.S(300), max(config.S(160), parent_w - config.S(16)))
+        margin = config.S(8)
+        target_x = parent_w - target_w - margin
         
-        self._anim.setEndValue(QRect(target_x, start_geom.y(), target_w, 36))
+        self._anim.setEndValue(QRect(target_x, start_geom.y(), target_w, config.S(36)))
         
         def on_finished():
             self.search_input.setFocus()
@@ -425,12 +427,16 @@ class SearchOverlayWidget(QFrame):
         try:
             if not self.parentWidget(): return
             parent_w = self.parentWidget().width()
+            margin = config.S(8)
+            btn_sz = config.S(36)
             if self.property("expanded"):
                 target_w = self.sizeHint().width()
-                if target_w < 300: target_w = 300
-                self.setGeometry(parent_w - target_w - 8, 8, target_w, 36)
+                min_w = config.S(300)
+                if target_w < min_w: target_w = min_w
+                target_w = min(target_w, max(config.S(160), parent_w - config.S(16)))
+                self.setGeometry(parent_w - target_w - margin, margin, target_w, btn_sz)
             else:
-                self.setGeometry(parent_w - 36 - 8, 8, 36, 36)
+                self.setGeometry(parent_w - btn_sz - margin, margin, btn_sz, btn_sz)
         except Exception as e:
             import osdoc
             osdoc.log_error(f"Search positioning error: {str(e)}")

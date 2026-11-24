@@ -160,8 +160,29 @@ class AppController:
     def _finish_startup(self, resolve, audio_engine):
         try:
             import gui
+            import config
 
-            osdoc.log_info("Loading complete. Building main window.")
+            prefs = getattr(audio_engine, "prefs", {}) or {}
+            app = QApplication.instance()
+            config.init_ui_scaling(
+                app,
+                scale_pct=prefs.get("ui_scale_pct"),
+                scale_mode=prefs.get("ui_scale_mode", "auto"),
+            )
+            if app is not None:
+                app.setFont(
+                    config.make_font(
+                        config.UI_FONT_NAME,
+                        config.BASE_FONT_PT,
+                        weight=QFont.Weight.Normal,
+                    )
+                )
+
+            osdoc.log_info(
+                f"Loading complete. Building main window (scale_mode={config.UI_SCALE_MODE}, "
+                f"ui_scale={config.UI_SCALE_PERCENT}%, os_scale={config.OS_SCALE_PERCENT}%, "
+                f"factor={config.SCALE_FACTOR:.3f})."
+            )
             self.main_win = gui.BadWordsGUI(audio_engine, resolve)
             self.main_win.closeEvent_callback = self._on_close
             osdoc.log_info("Main window constructed. Showing window.")
@@ -261,13 +282,15 @@ def main():
             app.setDesktopFileName("badwords")
 
         init_high_refresh_sync(app)
-        config.init_ui_scaling(app)
+        saved_scale_mode, saved_scale_pct = config.runtime_data.read_startup_ui_scale_prefs()
+        config.init_ui_scaling(app, scale_pct=saved_scale_pct, scale_mode=saved_scale_mode)
 
         init_embedded_fonts()
-        default_font = QFont(config.UI_FONT_NAME, config.FS(config.BASE_FONT_PT))
-        default_font.setStyleStrategy(QFont.PreferAntialias)
-        default_font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
-        default_font.setWeight(QFont.Weight.Normal)
+        default_font = config.make_font(
+            config.UI_FONT_NAME,
+            config.BASE_FONT_PT,
+            weight=QFont.Weight.Normal,
+        )
         app.setFont(default_font)
 
         if sys.platform == "darwin":

@@ -584,7 +584,7 @@
   "tt_assembly_drt": "Native DaVinci Resolve Timeline container. Retains Fusion effects, but does not support track linking.",
   "tt_assembly_drt_disabled_free": "DRT container export is blocked in DaVinci Resolve Free 21.1+ (Blackmagic Design restriction). XML assembly is required.",
   "lbl_ui_scaling": "UI Scaling",
-  "tt_ui_scaling": "Adjust interface scale factor between 75% and 150%.",
+  "tt_ui_scaling": "Adjust interface scale factor between 75% and 200%.",
   "lbl_include_logs_with_report": "Attach diagnostic log files",
   "tt_include_logs_with_report": "Automatically attach badwords_debug.log to help diagnose your issue.",
   "header_diagnostics": "Diagnostics & Logs",
@@ -632,5 +632,6 @@
   "lbl_always_on_top_wayland_hint": "* Note: In a Linux Wayland session, the system may ignore application-requested Always on Top. If needed, right-click the window title/taskbar icon and enable 'Keep Above Others'.",
   "menu_source": "Source",
   "menu_timeline": "Timeline: {name}",
-  "menu_track": "Track: {name}"
+  "menu_track": "Track: {name}",
+  "ui_scale_system_badge": "System"
 }

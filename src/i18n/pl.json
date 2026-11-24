@@ -584,7 +584,7 @@
   "tt_assembly_drt": "Natywny kontener osi czasu DaVinci Resolve. Zachowuje złożone efekty Fusion, ale nie obsługuje łączenia ciętych ścieżek.",
   "tt_assembly_drt_disabled_free": "Eksport kontenera DRT jest zablokowany w DaVinci Resolve Free 21.1+ (ograniczenie Blackmagic Design). Wymagany jest montaż XML.",
   "lbl_ui_scaling": "Skalowanie interfejsu (DPI)",
-  "tt_ui_scaling": "Dostosuj powiększenie elementów interfejsu w zakresie od 75% do 150%.",
+  "tt_ui_scaling": "Dostosuj powiększenie elementów interfejsu w zakresie od 75% do 200%.",
   "lbl_include_logs_with_report": "Dołącz pliki diagnostyczne",
   "tt_include_logs_with_report": "Automatycznie dołącza plik badwords_debug.log, aby ułatwić diagnozę zgłoszenia.",
   "header_diagnostics": "Diagnostyka i Logi",
@@ -632,5 +632,6 @@
   "lbl_always_on_top_wayland_hint": "* Uwaga: W sesji Linux Wayland system może zignorować przypięcie na wierzchu przez aplikację. W razie potrzeby kliknij prawym przyciskiem na pasku zadań i wybierz 'Zawsze na wierzchu'.",
   "menu_source": "Źródło",
   "menu_timeline": "Oś czasu: {name}",
-  "menu_track": "Ścieżka: {name}"
+  "menu_track": "Ścieżka: {name}",
+  "ui_scale_system_badge": "Systemowe"
 }

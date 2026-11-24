@@ -30,12 +30,12 @@ def create_panel_header(win, title_key: str, desc_key: str, default_title: str =
     h_layout.setSpacing(config.S(10))
 
     lbl_title = QLabel(win.txt(title_key, default_title))
-    lbl_title.setStyleSheet(f"font-weight: bold; font-size: {config.FS(11)}pt; color: #ffffff;")
+    lbl_title.setStyleSheet(f"font-weight: bold; font-size: {config.FS_PX(11)}px; color: #ffffff;")
     h_layout.addWidget(lbl_title)
 
     lbl_desc = QLabel(win.txt(desc_key, default_desc))
     lbl_desc.setWordWrap(True)
-    lbl_desc.setStyleSheet(f"color: #888888; font-size: {config.FS(9.5)}pt; line-height: 1.35;")
+    lbl_desc.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(9.5)}px; line-height: 1.35;")
     h_layout.addWidget(lbl_desc)
 
     if show_divider:
@@ -58,7 +58,8 @@ def create_panel_header(win, title_key: str, desc_key: str, default_title: str =
 
 
 def wrap_activity_panel(widget: QWidget) -> QFrame:
-    """Wrap any panel widget into a styled ActivityPanel frame container."""
+    """Wrap any panel widget into a styled, vertically scrollable ActivityPanel frame container."""
+    from PySide6.QtWidgets import QScrollArea
     container = QFrame()
     container.setObjectName("ActivityPanel")
     container.setAttribute(Qt.WA_StyledBackground, True)
@@ -68,6 +69,10 @@ def wrap_activity_panel(widget: QWidget) -> QFrame:
             background-color: #212121;
             border-radius: 0px;
             margin: 0px;
+            border: none;
+        }}
+        QFrame#ActivityPanel QScrollArea {{
+            background-color: transparent;
             border: none;
         }}
         /* Force all generic children to be transparent so the grey shows through */
@@ -82,7 +87,7 @@ def wrap_activity_panel(widget: QWidget) -> QFrame:
             border: 1px solid #3a3a3a;
             color: #ffffff;
             font-family: "{config.UI_FONT_NAME}";
-            font-size: {config.FS(9.5)}pt;
+            font-size: {config.FS_PX(9.5)}px;
         }}
         QFrame#ActivityPanel QPushButton {{
             background-color: #333333;
@@ -91,14 +96,23 @@ def wrap_activity_panel(widget: QWidget) -> QFrame:
             padding: {config.S(5)}px;
             color: #d9d9d9;
             font-family: "{config.UI_FONT_NAME}";
-            font-size: {config.FS(9.5)}pt;
+            font-size: {config.FS_PX(9.5)}px;
         }}
         QFrame#ActivityPanel QPushButton:hover {{ background-color: #404040; border-color: #555555; }}
         QFrame#ActivityPanel QPushButton:disabled {{ background-color: #2a2a2a; border-color: #222; color: #555555; }}
     """)
+    scroll = QScrollArea(container)
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+    scroll.setWidget(widget)
+
     layout = QVBoxLayout(container)
     layout.setContentsMargins(0, 0, 0, 0)
-    layout.addWidget(widget)
+    layout.addWidget(scroll)
+    container._scroll_area = scroll
+    container._content_widget = widget
     return container
 
 
@@ -137,7 +151,7 @@ def build_script_panel(win) -> QFrame:
     win.btn_analyze_standalone.setCursor(Qt.CursorShape.PointingHandCursor)
     win.btn_analyze_standalone.setFixedHeight(config.S(35))
     win.btn_analyze_standalone.setStyleSheet(f"""
-        QPushButton {{ background-color: {config.BTN_BG}; border: 1px solid #111; border-radius: {config.S(4)}px; color: #fff; font-weight: bold; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(10)}pt; padding: {config.S(8)}px; }}
+        QPushButton {{ background-color: {config.BTN_BG}; border: 1px solid #111; border-radius: {config.S(4)}px; color: #fff; font-weight: bold; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(10)}px; padding: {config.S(8)}px; }}
         QPushButton:hover {{ background-color: #1ed760; }}
     """)
     l_script_analysis.addWidget(win.btn_analyze_standalone)
@@ -146,7 +160,7 @@ def build_script_panel(win) -> QFrame:
     win.btn_analyze_compare.setCursor(Qt.CursorShape.PointingHandCursor)
     win.btn_analyze_compare.setFixedHeight(config.S(35))
     win.btn_analyze_compare.setStyleSheet(f"""
-        QPushButton {{ background-color: {config.BTN_BG}; color: white; font-weight: bold; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(10.5)}pt; border: none; border-radius: {config.S(4)}px; padding: {config.S(8)}px; }}
+        QPushButton {{ background-color: {config.BTN_BG}; color: white; font-weight: bold; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(10.5)}px; border: none; border-radius: {config.S(4)}px; padding: {config.S(8)}px; }}
         QPushButton:hover {{ background-color: #1ed760; }}
     """)
     l_script_analysis.addWidget(win.btn_analyze_compare)
@@ -157,7 +171,7 @@ def build_script_panel(win) -> QFrame:
     win.btn_side_by_side_compare.setEnabled(False)
     win.btn_side_by_side_compare.setStyleSheet(f"""
         QPushButton {{ background-color: #2d3f35; color: #d9d9d9;
-        font-weight: bold; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; border: 1px solid #3d5f4b; border-radius: {config.S(4)}px; padding: {config.S(6)}px; }}
+        font-weight: bold; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(9.5)}px; border: 1px solid #3d5f4b; border-radius: {config.S(4)}px; padding: {config.S(6)}px; }}
         QPushButton:hover {{ background-color: #36513f; }}
         QPushButton:disabled {{ background-color: #2a2a2a; border-color: #222; color: #555555; }}
     """)
@@ -165,7 +179,7 @@ def build_script_panel(win) -> QFrame:
     
     win.btn_exit_sbs_text = QPushButton(win.txt("btn_return_normal"))
     win.btn_exit_sbs_text.setCursor(Qt.CursorShape.PointingHandCursor)
-    win.btn_exit_sbs_text.setStyleSheet(f"QPushButton {{ background: transparent; color: #888888; border: none; padding: {config.S(8)}px; font-size: {config.FS(10)}pt; }} QPushButton:hover {{ color: #ffffff; }}")
+    win.btn_exit_sbs_text.setStyleSheet(f"QPushButton {{ background: transparent; color: #888888; border: none; padding: {config.S(8)}px; font-size: {config.FS_PX(10)}px; }} QPushButton:hover {{ color: #ffffff; }}")
     win.btn_exit_sbs_text.clicked.connect(win._exit_side_by_side)
     win.btn_exit_sbs_text.hide()
     l_script_analysis.addWidget(win.btn_exit_sbs_text)
@@ -175,7 +189,7 @@ def build_script_panel(win) -> QFrame:
     win._analyze_color_anim.setEasingCurve(QEasingCurve.InOutQuad)
 
     def update_btn_style(color):
-        style = f"QPushButton {{ background-color: {color.name()}; border: 1px solid #111; border-radius: 4px; color: #fff; font-weight: bold; padding: 8px; }}"
+        style = f"QPushButton {{ background-color: {color.name()}; border: 1px solid #111; border-radius: {config.S(4)}px; color: #fff; font-weight: bold; padding: {config.S(8)}px; }}"
         win.btn_analyze_compare.setStyleSheet(style)
         
     win._analyze_color_anim.valueChanged.connect(update_btn_style)

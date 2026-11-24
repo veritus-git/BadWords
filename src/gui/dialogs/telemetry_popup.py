@@ -118,20 +118,20 @@ class _PrivacyConsentDialogBase(FramelessWindowMixin, _BaseDialog):
             }}
             QLabel#lbl_title {{
                 color: #ffffff;
-                font-size: {config.FS(13.5)}pt;
+                font-size: {config.FS_PX(13.5)}px;
                 font-weight: bold;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
             QLabel#lbl_intro {{
                 color: #b4b4b4;
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
             QLabel#lbl_subtitle {{
                 color: #39d377;
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
                 font-weight: bold;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
@@ -141,26 +141,26 @@ class _PrivacyConsentDialogBase(FramelessWindowMixin, _BaseDialog):
                 border: none;
             }}
             QLabel#lbl_card_title {{
-                font-size: {config.FS(10.5)}pt;
+                font-size: {config.FS_PX(10.5)}px;
                 font-weight: bold;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
             QLabel#lbl_card_body {{
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
             QLabel#lbl_body {{
                 color: #c8c8c8;
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
                 font-family: "{config.UI_FONT_NAME}";
                 background: transparent;
             }}
             QPushButton#btn_lang {{
                 color: {config.GEAR_COLOR};
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
                 font-weight: bold;
                 background: transparent;
                 border: 1px solid #303030;
@@ -175,7 +175,7 @@ class _PrivacyConsentDialogBase(FramelessWindowMixin, _BaseDialog):
                 background-color: {config.BTN_BG};
                 color: #ffffff;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
                 font-weight: bold;
                 border: none;
                 padding: {config.S(7)}px {config.S(18)}px;
@@ -188,7 +188,7 @@ class _PrivacyConsentDialogBase(FramelessWindowMixin, _BaseDialog):
                 background-color: #2b2b2b;
                 color: #e0e0e0;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
                 font-weight: bold;
                 border: 1px solid #404040;
                 padding: {config.S(7)}px {config.S(16)}px;
@@ -413,7 +413,7 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
         self._geo_container.setStyleSheet("background: transparent; border: none;")
         geo_layout = QHBoxLayout(self._geo_container)
         geo_layout.setContentsMargins(0, config.S(2), 0, 0)
-        self._chk_geo = TrackSquareCheckbox("", is_checked=True, font_size=config.FS(9.5), parent=self._geo_container)
+        self._chk_geo = TrackSquareCheckbox("", is_checked=True, font_size=config.FS_PX(9.5), parent=self._geo_container)
         geo_layout.addWidget(self._chk_geo)
         geo_layout.addStretch()
         telem_lay.addWidget(self._geo_container)
@@ -469,14 +469,14 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
         content_layout.addLayout(self._build_footer_buttons(container))
         self._refresh_texts()
 
-    def _set_label_hex_color(self, lbl: QLabel, hex_color: str, pt_size: float, bold: bool = False):
+    def _set_label_hex_color(self, lbl: QLabel, hex_color: str, px_size: float, bold: bool = False):
         """Sets explicit per-label QSS color so global QApplication/MainWindow stylesheets cannot override dimming."""
         if self._label_color_cache.get(id(lbl)) == hex_color:
             return
         self._label_color_cache[id(lbl)] = hex_color
         weight = "bold" if bold else "normal"
         lbl.setStyleSheet(
-            f"color: {hex_color}; font-size: {pt_size}pt; font-weight: {weight}; "
+            f"color: {hex_color}; font-size: {px_size}px; font-weight: {weight}; "
             f"font-family: '{config.UI_FONT_NAME}'; background: transparent; border: none;"
         )
 
@@ -484,16 +484,16 @@ class TelemetryPopup(_PrivacyConsentDialogBase):
         factor = max(0.0, min(1.0, float(val)))
         self._telem_dim_val = factor
         self._telem_icon.set_opacity(factor)
-        self._set_label_hex_color(self._lbl_telem_title, _blend_hex("#ffffff", _CARD_BG_HEX, factor), config.FS(10.5), bold=True)
-        self._set_label_hex_color(self._lbl_msg, _blend_hex("#c8c8c8", _CARD_BG_HEX, factor), config.FS(9.5), bold=False)
+        self._set_label_hex_color(self._lbl_telem_title, _blend_hex("#ffffff", _CARD_BG_HEX, factor), config.FS_PX(10.5), bold=True)
+        self._set_label_hex_color(self._lbl_msg, _blend_hex("#c8c8c8", _CARD_BG_HEX, factor), config.FS_PX(9.5), bold=False)
         self._chk_geo.set_dim_opacity(factor, bg_hex=_CARD_BG_HEX)
 
     def _apply_crash_card_dim(self, val):
         factor = max(0.0, min(1.0, float(val)))
         self._crash_dim_val = factor
         self._crash_icon.set_opacity(factor)
-        self._set_label_hex_color(self._lbl_crash_title, _blend_hex("#ffffff", _CARD_BG_HEX, factor), config.FS(10.5), bold=True)
-        self._set_label_hex_color(self._lbl_crash_msg, _blend_hex("#c8c8c8", _CARD_BG_HEX, factor), config.FS(9.5), bold=False)
+        self._set_label_hex_color(self._lbl_crash_title, _blend_hex("#ffffff", _CARD_BG_HEX, factor), config.FS_PX(10.5), bold=True)
+        self._set_label_hex_color(self._lbl_crash_msg, _blend_hex("#c8c8c8", _CARD_BG_HEX, factor), config.FS_PX(9.5), bold=False)
 
     def _on_telemetry_toggled(self, checked: bool):
         target = 1.0 if checked else 0.35

@@ -539,6 +539,15 @@ class OSDoctor:
                 loaded.pop(key_to_remove, None)
                 needs_save = True
 
+        # One-time migration for legacy configs without explicit ui_scale_mode:
+        # switch to 'auto' so native OS DPI scaling applies with zero double-scaling.
+        if "ui_scale_mode" not in loaded:
+            loaded["ui_scale_mode"] = "auto"
+            needs_save = True
+        elif loaded.get("ui_scale_mode") not in ("auto", "manual"):
+            loaded["ui_scale_mode"] = "auto"
+            needs_save = True
+
         # Deep-merge: add any keys that were introduced in a new version
         for key, default_val in defaults.items():
             if key not in loaded:

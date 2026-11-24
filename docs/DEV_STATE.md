@@ -14,7 +14,7 @@
   - ✅ **Point 2** (*DEV vs Installed separation, runtime paths, atomic config, single-write logging & session temp cleanup*) - Closed `2026-11-23` (see `docs/CEMENTED.md` Sec. 2 & Sec. 8 and `ROADMAP_CEMENTING.md`).
   - ✅ **Point 3** (*Frameless windows, custom titlebar, Always on Top, solid borders, proportional rip, Win11 startup fix & fast installer shortcuts*) - Closed `2026-11-24` (see `docs/CEMENTED.md` Sec. 4 and `ROADMAP_CEMENTING.md`).
 - **Next Pending Roadmap Item**:
-  - ⬜ **Point 4** (*i18n consistency, zero hardcodes/emojis, QPalette immunity, progress bar rounding & UI scaling redesign*).
+  - ⬜ **Point 4** (*i18n consistency, zero hardcodes/emojis, QPalette immunity, progress bar rounding*). Note: **UI Scaling redesign & cementing** under Point 4 is completed & cemented (`2026-11-24`, `docs/CEMENTED.md` Sec. 9).
 - **Recent Process / Rules Changes (`2026-11-23`)**:
   - Added continuous self-learning & verification standards (`.agents/rules/lessons_and_standards.md`) and DaVinci Resolve 21.1+ verification skill (`.agents/skills/davinci-resolve-current/SKILL.md`).
   - Upgraded `ROADMAP_CEMENTING.md` with progress tracking (`[x]`/`[ ]`), Point 1 closure status, real user-side scenario reporting requirements, and live verification mandates.
@@ -47,10 +47,11 @@
 
 ## 3. Automated Test Suite (`python3 run_tests.py`)
 
-Test Runner: `run_tests.py` using Python `unittest` (total: **88 tests** across 10 modules, plus **18 Cargo tests** in `installer/`).
+Test Runner: `run_tests.py` using Python `unittest` (total: **96 tests** across 11 modules, plus **18 Cargo tests** in `installer/`).
 
 | Test Module | Coverage | Status |
 | :--- | :--- | :--- |
+| `tests/test_ui_scaling.py` | Unified cross-platform UI scaling (`75%-200%`), Auto OS DPI detection without double-multiplication across Win11/Wayland/X11/macOS, mixed-DPI monitor drag recalculation, legacy config one-time migration to `auto`, aspect-ratio sidebar narrowing (`16:10`/`3:2`), Settings slider `(i)` right placement, and Resolve-safe live rebuild preserving `ResolveHandler`, `words_data`, and waveform peaks. | **PASS** |
 | `tests/test_window_titlebar_vsync.py` | Point 3 window/titlebar/VSync regression & visual suite: Win32 `nativeEvent` (`msg.hWnd` without `self.winId()` re-entry, 64-bit ctypes APIs, `WM_STYLECHANGED`/`WM_DWMCOMPOSITIONCHANGED` sharp corner enforcement), `WM_NCCALCSIZE` (live `IsZoomed` -> exact `rcWork`, 0px windowed NC area), 8-edge `WM_NCHITTEST` (disabled when maximized for Fitts's Law corner X & top-edge rip) + `HTMAXBUTTON` Snap Layouts + `HTCAPTION`, 1:1 `QMainWindow` `SettingsDialog` parity (no custom shadows, `1px #101010` border overlay), distinct unmaximize semantics (`MainWindow`: `btn_max`->`GetWindowRect` pre-max including half-screen Aero Snap, rip->70%x70%; `SettingsDialog`: always small default size), proportional horizontal cursor rip clamping (`compute_proportional_rip_rect`), zero custom shadows & opaque `#2e2e2e` solid borders across all dialogs/splash, Polish 0.85-scale zero-clipping render, main-window close guard, zero orphan startup flashes, neutral close-button hover, live `apply_app_icon_everywhere`, multi-monitor clamping, and cross-OS VSync. | **PASS** |
 | `tests/test_runtime_data_and_isolation.py` | DEV vs Installed isolation, one-time stray `src/` migration to `.dev_workspace/`, persistent per-user profile fallback on read-only install directories, concurrent atomic JSON writes + `.bak` corrupt config recovery and key salvage, single-write log deduplication under native launcher `stdout`/`stderr` redirection, 5 MB startup log trimming, session-protected 24h temp cleanup (`SessionTempManager`), Mac App Store DaVinci Resolve container discovery, Windows 8.3 short paths in `BadWords Bridge.lua`, and `osdoc` module helpers (`log_warning`, `load_preferences`). | **PASS** |
 | `tests/test_settings_and_version.py` | Settings dialog refactor, lazy tab construction, real-time search filtering, basic vs advanced visibility, DaVinci XML vs DRT assembly mode toggling and animated option dimming, DaVinci Free 21.1+ DRT rejection, dynamic UI scaling (75%-150%), version detection (`git describe --tags`), new-user dual privacy/crash welcome popup (default ON, geo dimming), existing-user crash report consent dialog, About & Privacy `auto_crash_report` toggle, `check_telemetry` routing, and shared Discord relay support upload validation. | **PASS** |
@@ -168,20 +169,22 @@ Test Runner: `run_tests.py` using Python `unittest` (total: **88 tests** across 
     - **Windows 11 Half-Screen `btn_max` Restore (`mixins.py`, `titlebar.py`)**: Updated `_record_normal_geometry()` to capture real `user32.GetWindowRect(hwnd)` (converted via `_get_win32_primary_work_offset` instead of frozen `WINDOWPLACEMENT.rcNormalPosition`, which Win11 leaves at 70% centered during Aero Snap), added `_verify_win_button_restore()` fallback, and switched `titlebar.py` `PostMessageW` calls to typed `_get_win32_apis()`. Documented in `docs/CEMENTED.md` (Sec. 4) and verified via 14 tests in `tests/test_window_titlebar_vsync.py`.
     - **Windows Installer 96% Pure Win32 COM Shortcuts (`installer/src/os/windows.rs`)**: Eliminated the final `powershell.exe` `WScript.Shell` COM spawn at `96%` (`create_windows_shortcuts`) and PATH broadcasts (`add_to_user_path`/`remove_from_user_path`) by implementing pure Win32 COM `.lnk` creation (`IShellLinkW` + `IPersistFile` + `SHGetFolderPathW`) and `SendMessageTimeoutW` (`<2ms`, zero PowerShell).
     - **Wayland Deep-Dive Report (Read-Only)**: Delivered Polish analysis explaining Wayland compositor protocol limits (`xdg-shell` isolation, no global `x/y`/cursor move, async maximize/minimize buffering, missing server-side SSD shadows, AOT restriction) without altering Wayland code paths.
+16. **Unified Cross-Platform UI Scaling Redesign & Cementing (2026-11-24)**:
+    - **Zero Double-Multiplication & Auto OS Scale (`config/app_constants.py`, `settings_defaults.py`, `runtime_data.py`, `osdoc.py`, `main.py`)**: Separated `OS_SCALE_PERCENT` (`detect_os_scale_pct`) from `QT_BASE_SCALE_PERCENT` (`get_qt_base_scale_pct`) so Auto mode (`ui_scale_mode="auto"`, default + one-time legacy migration) sets `SCALE_FACTOR=1.0` when Qt scales natively on Win11/Wayland, `Xft.dpi/96` on X11, and `100%` baseline on macOS Retina (removing hidden `0.85` macOS shrink and height-based auto shrink). Added PerMonitorV2 `badwords.manifest` linked in `setupfiles/windows/launcher.rc`.
+    - **Uniform Pixel-Locked Typography & Full Control Coverage (`src/gui/`, `src/startup/`)**: Converted all Qt stylesheet font sizes (`176` `pt` rules across 25+ GUI/startup files) to `FS_PX()`, scaled `TranscriptionCanvas` proportionally, dynamically sized `AudioPreviewWidget` `00:00:00:00` timecode with `QFontMetrics`, added scrollable wrappers to `WelcomePageView` and `wrap_activity_panel` so `200%` zoom never crushes rows or clips buttons, and updated all 11 `src/i18n/*.json` (`75%-200%`, `ui_scale_system_badge`).
+    - **Settings UI, Resolve-Safe Live Rebuild & Aspect-Ratio Sidebars (`settings_dialog.py`, `main_window.py`)**: Extended slider to `75%-200%` (`JumpSlider` 5% step), placed `(i)` tooltip icon on the right next to slider, resized `lbl_ui_scale_val` dynamically from localized `QFontMetrics`, implemented in-process `rebuild_ui_for_scale()` preserving active `ResolveHandler`, `words_data`, and waveform peaks without process restart, added `screenChanged` mixed-DPI monitor tracking, and added `compute_sidebar_panel_width()` narrowing sidebars on `16:10`/`3:2` displays. Verified via 8 tests in `tests/test_ui_scaling.py` and PNG inspection across `75%-200%` + `16:10`. Documented in `docs/CEMENTED.md` (Sec. 9).
 
 ---
 
 ## 5. Next Steps for Incoming Reviewer / Developer
 
-1. **UI Scaling Slider Redesign (Recorded for Point 4 / Point 15)**:
-   - PO noted the Settings UI scaling slider is currently broken; target design is for its default to equal native OS display scaling and scale cleanly like native OS apps.
-2. **Release Hygiene Reminder**:
+1. **Release Hygiene Reminder**:
    - Before cutting the next release tag (e.g., `v4.0.2` / `v4.1.0`), update `src/config/release_notes.json` with all real user-facing changes since `v4.0.1` so the Update dialog displays the complete changelog.
-3. **Continue Roadmap Cementing**: Next uncompleted item is **Point 4** in `ROADMAP_CEMENTING.md` (i18n consistency, zero hardcodes/emojis, QPalette immunity, progress bar rounding & UI scaling).
-4. **Baseline Verification Commands**:
-   - `python3 run_tests.py` (88 tests)
+2. **Continue Roadmap Cementing**: Finish remaining items in **Point 4** in `ROADMAP_CEMENTING.md` (i18n consistency across 11 languages, zero hardcodes/emojis, `QPalette` system-theme immunity, progress bar rounding fixes - UI scaling part is already done and cemented).
+3. **Baseline Verification Commands**:
+   - `python3 run_tests.py` (96 tests)
    - `python3 -m compileall src`
    - `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`
    - `cd installer && cargo check && cargo test` (18 tests)
-5. **Rule Size Check**: Verify `.agents/rules/architecture.md` remains strictly `< 4,000` characters whenever adding Section 3 bullets.
-6. **Release Sync**: Ensure `src/`, `installer/`, and `setupfiles/` stay synchronized with `/mnt/dump/BadWords FILES/` on code changes.
+4. **Rule Size Check**: Verify `.agents/rules/architecture.md` remains strictly `< 4,000` characters whenever adding Section 3 bullets.
+5. **Release Sync**: Ensure `src/`, `installer/`, and `setupfiles/` stay synchronized with `/mnt/dump/BadWords FILES/` on code changes.

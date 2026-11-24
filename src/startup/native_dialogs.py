@@ -23,78 +23,99 @@ from startup.i18n_lite import t
 
 _QT_APP_REF = None
 
-_DIALOG_QSS = """
-QDialog {
+
+def _startup_scale_helpers():
+    """Returns (S, FS_PX) scaling callables safely during early startup or fatal errors."""
+    try:
+        import config
+        if hasattr(config, "S") and hasattr(config, "FS_PX"):
+            return config.S, config.FS_PX
+    except Exception:
+        pass
+
+    def _s(px):
+        return max(1, int(round(float(px))))
+
+    def _fs_px(pt):
+        return max(8, int(round(float(pt) * (96.0 / 72.0))))
+
+    return _s, _fs_px
+
+
+def _build_dialog_qss():
+    _S, _FS_PX = _startup_scale_helpers()
+    return f"""
+QDialog {{
     background-color: #161616;
     color: #e6e6e6;
-}
-QLabel {
+}}
+QLabel {{
     color: #e2e2e2;
     background: transparent;
-}
-QLabel#StartupTitle {
+}}
+QLabel#StartupTitle {{
     color: #ffffff;
-    font-size: 13pt;
+    font-size: {_FS_PX(13)}px;
     font-weight: 700;
-}
-QLabel#StartupBody {
+}}
+QLabel#StartupBody {{
     color: #d4d4d4;
-    font-size: 10pt;
-}
-QPlainTextEdit#StartupDetails {
+    font-size: {_FS_PX(10)}px;
+}}
+QPlainTextEdit#StartupDetails {{
     background-color: #101010;
     color: #b8b8b8;
     border: 1px solid #2d2d2d;
-    border-radius: 6px;
-    padding: 8px;
+    border-radius: {_S(6)}px;
+    padding: {_S(8)}px;
     font-family: monospace;
-    font-size: 9pt;
-}
-QPushButton {
+    font-size: {_FS_PX(9)}px;
+}}
+QPushButton {{
     background-color: #262626;
     color: #e6e6e6;
     border: 1px solid #363636;
-    border-radius: 6px;
-    padding: 7px 16px;
-    font-size: 10pt;
+    border-radius: {_S(6)}px;
+    padding: {_S(7)}px {_S(16)}px;
+    font-size: {_FS_PX(10)}px;
     font-weight: 600;
-    min-width: 84px;
-}
-QPushButton:hover {
+    min-width: {_S(84)}px;
+}}
+QPushButton:hover {{
     background-color: #323232;
     border-color: #4a4a4a;
-}
-QPushButton:pressed {
+}}
+QPushButton:pressed {{
     background-color: #202020;
-}
-QPushButton#StartupPrimary {
+}}
+QPushButton#StartupPrimary {{
     background-color: #1f7a4c;
     color: #ffffff;
     border: 1px solid #28945e;
-}
-QPushButton#StartupPrimary:hover {
+}}
+QPushButton#StartupPrimary:hover {{
     background-color: #248f59;
-}
-QPushButton#StartupDangerPrimary {
+}}
+QPushButton#StartupDangerPrimary {{
     background-color: #b33939;
     color: #ffffff;
     border: 1px solid #cf4646;
-}
-QPushButton#StartupDangerPrimary:hover {
+}}
+QPushButton#StartupDangerPrimary:hover {{
     background-color: #c94141;
-}
-QPushButton#StartupDetailsBtn {
+}}
+QPushButton#StartupDetailsBtn {{
     background-color: transparent;
     color: #9e9e9e;
     border: 1px solid #2e2e2e;
     min-width: 0px;
-    padding: 6px 12px;
-    font-size: 9pt;
-}
-QPushButton#StartupDetailsBtn:hover {
+    padding: {_S(6)}px {_S(12)}px;
+    font-size: {_FS_PX(9)}px;
+}}
+QPushButton#StartupDetailsBtn:hover {{
     color: #dcdcdc;
     border-color: #484848;
-}
+}}
 """
 
 
@@ -200,11 +221,12 @@ def build_dark_qt_dialog(title, text, buttons, default=0, details=None, kind="er
         QVBoxLayout,
     )
 
+    _S, _FS_PX = _startup_scale_helpers()
     dlg = QDialog()
     dlg.setWindowTitle(str(title))
-    dlg.setStyleSheet(_DIALOG_QSS)
-    dlg.setMinimumWidth(460)
-    dlg.setMaximumWidth(580)
+    dlg.setStyleSheet(_build_dialog_qss())
+    dlg.setMinimumWidth(_S(460))
+    dlg.setMaximumWidth(_S(580))
     _apply_dark_titlebar_if_win(dlg)
 
     win_icon = _find_window_icon()
@@ -212,23 +234,23 @@ def build_dark_qt_dialog(title, text, buttons, default=0, details=None, kind="er
         dlg.setWindowIcon(win_icon)
 
     root = QVBoxLayout(dlg)
-    root.setContentsMargins(22, 20, 22, 18)
-    root.setSpacing(14)
+    root.setContentsMargins(_S(22), _S(20), _S(22), _S(18))
+    root.setSpacing(_S(14))
 
     top_row = QHBoxLayout()
-    top_row.setSpacing(14)
+    top_row.setSpacing(_S(14))
 
     icon_lbl = QLabel(dlg)
-    icon_lbl.setFixedSize(36, 36)
+    icon_lbl.setFixedSize(_S(36), _S(36))
     icon_lbl.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
     try:
-        icon_lbl.setPixmap(_render_badge_pixmap(kind, size=34))
+        icon_lbl.setPixmap(_render_badge_pixmap(kind, size=_S(34)))
     except Exception:
         pass
     top_row.addWidget(icon_lbl, 0, Qt.AlignTop)
 
     text_col = QVBoxLayout()
-    text_col.setSpacing(8)
+    text_col.setSpacing(_S(8))
 
     title_lbl = QLabel(str(title), dlg)
     title_lbl.setObjectName("StartupTitle")
@@ -253,7 +275,7 @@ def build_dark_qt_dialog(title, text, buttons, default=0, details=None, kind="er
         details_edit = QPlainTextEdit(str(details), dlg)
         details_edit.setObjectName("StartupDetails")
         details_edit.setReadOnly(True)
-        details_edit.setMaximumHeight(160)
+        details_edit.setMaximumHeight(_S(160))
         details_edit.setVisible(False)
         root.addWidget(details_edit)
 
@@ -270,7 +292,7 @@ def build_dark_qt_dialog(title, text, buttons, default=0, details=None, kind="er
         details_btn.clicked.connect(_toggle_details)
 
     btn_row = QHBoxLayout()
-    btn_row.setSpacing(10)
+    btn_row.setSpacing(_S(10))
     if details_btn is not None:
         btn_row.addWidget(details_btn)
     btn_row.addStretch(1)

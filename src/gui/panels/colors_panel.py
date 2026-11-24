@@ -38,14 +38,14 @@ def build_colors_panel(win) -> QFrame:
 
     # Header title
     lbl_title = QLabel(win.txt("legend_title"))
-    lbl_title.setStyleSheet(f"font-weight: bold; font-size: {config.FS(11)}pt; color: #ffffff;")
+    lbl_title.setStyleSheet(f"font-weight: bold; font-size: {config.FS_PX(11)}px; color: #ffffff;")
     win.lbl_legend_title = lbl_title
     h_layout.addWidget(lbl_title)
 
     # Subtitle / Hint
     win.lbl_legend_hint = QLabel(win.txt("legend_description", "Overview of colors and markers in this edit. Check 'Remove' to cut all segments of that color during Assemble."))
     win.lbl_legend_hint.setWordWrap(True)
-    win.lbl_legend_hint.setStyleSheet(f"color: #888888; font-size: {config.FS(9.5)}pt; line-height: 1.35;")
+    win.lbl_legend_hint.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(9.5)}px; line-height: 1.35;")
     win.lbl_legend_hint.setVisible(False)
     h_layout.addWidget(win.lbl_legend_hint)
 

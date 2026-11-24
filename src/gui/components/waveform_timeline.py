@@ -210,7 +210,7 @@ class WaveformTimelineWidget(QWidget):
                 border-radius: {config.S(3)}px;
                 color: #b0b0b0;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(8)}pt;
+                font-size: {config.FS_PX(8)}px;
                 font-weight: bold;
                 padding: 0px {config.S(5)}px;
             }}
@@ -893,8 +893,7 @@ class WaveformTimelineWidget(QWidget):
         else:
             # Subtle waiting text
             painter.setPen(QColor("#4e735b"))
-            placeholder_font = QFont(config.UI_FONT_NAME, config.FS(9))
-            placeholder_font.setItalic(True)
+            placeholder_font = config.make_font(config.UI_FONT_NAME, 9, italic=True)
             painter.setFont(placeholder_font)
             txt = self.main_window.txt("lbl_timeline_ready", "A1: Ready for timeline audio") if self.main_window and hasattr(self.main_window, "txt") else "A1: Ready for timeline audio"
             painter.drawText(clip_rect, Qt.AlignCenter, txt)
@@ -906,8 +905,7 @@ class WaveformTimelineWidget(QWidget):
         painter.drawPath(clip_path)
 
         # 6. Multi-Clip Boundaries, Gaps, Rounded Corner Fillets, and Clip Labels
-        badge_font = QFont(config.UI_FONT_NAME, config.FS(8))
-        badge_font.setBold(False)
+        badge_font = config.make_font(config.UI_FONT_NAME, 8)
         painter.setFont(badge_font)
 
         if self._clips_layout and len(self._clips_layout) > 0:
@@ -1139,9 +1137,9 @@ class WaveformTimelineWidget(QWidget):
                 hms = int((hover_t - int(hover_t)) * 100)
                 tc_str = f"{hm:02d}:{hs:02d}.{hms:02d}"
 
-                tc_font = QFont("JetBrains Mono", config.FS(7.5))
+                tc_font = config.make_font("JetBrains Mono", 7.5)
                 if not tc_font.exactMatch():
-                    tc_font = QFont("Consolas", config.FS(7.5))
+                    tc_font = config.make_font("Consolas", 7.5)
                 painter.setFont(tc_font)
                 fm = painter.fontMetrics()
                 box_w = fm.horizontalAdvance(tc_str) + config.S(8)

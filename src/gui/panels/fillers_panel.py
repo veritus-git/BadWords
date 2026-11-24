@@ -47,7 +47,7 @@ def build_fillers_panel(win) -> QFrame:
     win.txt_fillers.setStyleSheet(f"""
         background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #3a3a3a;
         border-radius: {config.S(4)}px; padding: {config.S(4)}px;
-        font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt;
+        font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(9.5)}px;
     """)
     win.txt_fillers.setText(", ".join(fillers))
     l_fillers.addWidget(win.txt_fillers)
@@ -56,7 +56,7 @@ def build_fillers_panel(win) -> QFrame:
     filler_tools_layout.setContentsMargins(0, config.S(2), 0, 0)
     
     win.lbl_filler_count = QLabel(win.txt("lbl_words"))
-    win.lbl_filler_count.setStyleSheet(f"color: #888888; font-size: {config.FS(9)}pt;")
+    win.lbl_filler_count.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(9)}px;")
     filler_tools_layout.addWidget(win.lbl_filler_count)
     filler_tools_layout.addStretch()
     
@@ -68,7 +68,7 @@ def build_fillers_panel(win) -> QFrame:
     win.btn_save_fillers = QPushButton(win.txt("btn_save"))
     win.btn_save_fillers.setCursor(Qt.PointingHandCursor)
     win.btn_save_fillers.setStyleSheet(
-        f"background-color: {config.BTN_GHOST_BG}; color: {config.FG_COLOR}; border-radius: {config.S(4)}px; font-weight: bold; font-size: {config.FS(9.5)}pt; padding: {config.S(4)}px {config.S(10)}px;"
+        f"background-color: {config.BTN_GHOST_BG}; color: {config.FG_COLOR}; border-radius: {config.S(4)}px; font-weight: bold; font-size: {config.FS_PX(9.5)}px; padding: {config.S(4)}px {config.S(10)}px;"
     )
     win.btn_save_fillers.clicked.connect(win._on_save_inline_fillers)
     filler_tools_layout.addWidget(win.btn_save_fillers)

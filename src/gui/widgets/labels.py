@@ -173,6 +173,10 @@ class IDETooltip(QLabel):
         super().__init__()
         self.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setWordWrap(True)
+        self.refresh_scale()
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+    def refresh_scale(self):
         self.pad_v = config.S(5)
         self.pad_h = config.S(7)
         self.setStyleSheet(f"""
@@ -183,10 +187,9 @@ class IDETooltip(QLabel):
                 border-radius: 0px;
                 padding: {self.pad_v}px {self.pad_h}px;
                 font-family: '{config.UI_FONT_NAME}', sans-serif;
-                font-size: 9pt;
+                font-size: {config.FS_PX(9)}px;
             }}
         """)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents)
 
     def prepare_content(self, text: str):
         import re
@@ -292,32 +295,34 @@ class IDETooltip(QLabel):
         )
         if scr:
             screen = scr.availableGeometry()
-            if x + self.width() > screen.right() - 10:
-                x = max(screen.left() + 10, screen.right() - self.width() - 10)
-            if x < screen.left() + 10:
-                x = screen.left() + 10
-            if y + self.height() > screen.bottom() - 10:
-                y = max(screen.top() + 10, screen.bottom() - self.height() - 10)
-            if y < screen.top() + 10:
-                y = screen.top() + 10
+            margin = config.S(10)
+            if x + self.width() > screen.right() - margin:
+                x = max(screen.left() + margin, screen.right() - self.width() - margin)
+            if x < screen.left() + margin:
+                x = screen.left() + margin
+            if y + self.height() > screen.bottom() - margin:
+                y = max(screen.top() + margin, screen.bottom() - self.height() - margin)
+            if y < screen.top() + margin:
+                y = screen.top() + margin
         self.move(x, y)
         self.show()
 
     def show_global(self, text, pos):
         self.prepare_content(text)
         x = pos.x()
-        y = pos.y() + 15
+        y = pos.y() + config.S(15)
         scr = QGuiApplication.screenAt(pos) or QGuiApplication.primaryScreen()
         if scr:
             screen = scr.availableGeometry()
-            if x + self.width() > screen.right() - 10:
-                x = max(screen.left() + 10, screen.right() - self.width() - 10)
-            if x < screen.left() + 10:
-                x = screen.left() + 10
-            if y + self.height() > screen.bottom() - 10:
-                y = max(screen.top() + 10, pos.y() - self.height() - 10)
-            if y < screen.top() + 10:
-                y = screen.top() + 10
+            margin = config.S(10)
+            if x + self.width() > screen.right() - margin:
+                x = max(screen.left() + margin, screen.right() - self.width() - margin)
+            if x < screen.left() + margin:
+                x = screen.left() + margin
+            if y + self.height() > screen.bottom() - margin:
+                y = max(screen.top() + margin, pos.y() - self.height() - margin)
+            if y < screen.top() + margin:
+                y = screen.top() + margin
         self.move(x, y)
         self.show()
 
@@ -331,7 +336,7 @@ class MarqueeLabel(QLabel):
         self._mq_pos = 0.0
         self._hovered = False
         self.setMouseTracking(True)
-        self.setStyleSheet("color: #d4d4d4; font-size: 9.5pt;")
+        self.setStyleSheet(f"color: #d4d4d4; font-size: {config.FS_PX(9.5)}px;")
 
     def setText(self, text):
         self._full_text = text

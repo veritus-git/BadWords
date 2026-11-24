@@ -46,7 +46,7 @@ class _LangPickerDialog(QDialog):
                 background-color: {config.MENU_BG};
                 color: {config.MENU_FG};
                 font-family: {config.UI_FONT_NAME};
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
                 border: none;
                 outline: none;
             }}
@@ -81,8 +81,8 @@ class _LangPickerDialog(QDialog):
             self._list.addItem(item)
 
         visible_rows = min(len(entries), 6)
-        row_h = 28
-        self.setFixedHeight(visible_rows * row_h + 4)
+        row_h = config.S(28)
+        self.setFixedHeight(visible_rows * row_h + config.S(4))
 
         self._list.itemClicked.connect(self._on_item_clicked)
 

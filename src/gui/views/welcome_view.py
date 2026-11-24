@@ -20,7 +20,7 @@ import os
 from PySide6.QtCore import Qt, QSize, QEasingCurve, QVariantAnimation, QPropertyAnimation, QRectF, QTimer, QCoreApplication, QEvent, QThread, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
-    QLineEdit, QTextEdit, QSizePolicy, QGraphicsOpacityEffect
+    QLineEdit, QTextEdit, QSizePolicy, QGraphicsOpacityEffect, QFrame, QScrollArea
 )
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QLinearGradient
 from PySide6.QtSvg import QSvgRenderer
@@ -217,7 +217,7 @@ class AnimatedUnderlineGlowModeSwitch(QWidget):
                 color: {"#ffffff" if self.active_idx == 0 else "#777777"};
                 font-family: "{config.UI_FONT_NAME}";
                 font-weight: {"bold" if self.active_idx == 0 else "normal"};
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
                 padding-bottom: {config.S(4)}px;
             }}
             QPushButton:hover {{
@@ -231,7 +231,7 @@ class AnimatedUnderlineGlowModeSwitch(QWidget):
                 color: {"#ffffff" if self.active_idx == 1 else "#777777"};
                 font-family: "{config.UI_FONT_NAME}";
                 font-weight: {"bold" if self.active_idx == 1 else "normal"};
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
                 padding-bottom: {config.S(4)}px;
             }}
             QPushButton:hover {{
@@ -303,7 +303,7 @@ class SourceHeaderWidget(QWidget):
         self.lbl_title = QLabel(win.txt("src_source") if hasattr(win, 'txt') else "Source")
         self.lbl_title.setFixedHeight(config.S(18))
         self.lbl_title.setStyleSheet(
-            f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
+            f"color: #9e9e9e; font-size: {config.FS_PX(9.5)}px; font-weight: 500;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
         )
         lay.addWidget(self.lbl_title)
@@ -325,7 +325,7 @@ class SourceHeaderWidget(QWidget):
 
         self.lbl_status = QLabel()
         self.lbl_status.setStyleSheet(
-            f"font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
+            f"font-size: {config.FS_PX(8.0)}px; font-family: '{config.UI_FONT_NAME}';"
             f" background: transparent; padding: 0;"
         )
         stat_lay.addWidget(self.lbl_status)
@@ -421,7 +421,7 @@ class SourceHeaderWidget(QWidget):
             self._full_project_name = disp_project
             self._update_status_elision()
             self.lbl_status.setStyleSheet(
-                f"color: #70c080; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
+                f"color: #70c080; font-size: {config.FS_PX(8.0)}px; font-family: '{config.UI_FONT_NAME}';"
                 f" background: transparent; padding: 0;"
             )
             tt_tpl = self.win.txt("status_resolve_tooltip") if hasattr(self.win, 'txt') else "Connected to DaVinci Resolve project: {project}"
@@ -433,7 +433,7 @@ class SourceHeaderWidget(QWidget):
             self._full_project_name = ""
             self._update_status_elision()
             self.lbl_status.setStyleSheet(
-                f"color: #e05555; font-size: {config.FS(8.0)}pt; font-family: '{config.UI_FONT_NAME}';"
+                f"color: #e05555; font-size: {config.FS_PX(8.0)}px; font-family: '{config.UI_FONT_NAME}';"
                 f" background: transparent; padding: 0;"
             )
             self.setToolTip("")
@@ -990,7 +990,7 @@ def update_source_combo_style(combo, mode: str = "file"):
             max-height: {h}px;
             height: {h}px;
             font-family: "{config.UI_FONT_NAME}", sans-serif;
-            font-size: {config.FS(9.5)}pt;
+            font-size: {config.FS_PX(9.5)}px;
         }}
         QPushButton:hover {{ border-color: {config.BTN_BG}; }}
     """)
@@ -1017,7 +1017,28 @@ class WelcomePageView(QWidget):
         self.H_HEADER = config.S(110)
         self.H_MAX_CONTENT = config.S(540)
 
-        self.welcome_root = QWidget(self)
+        from PySide6.QtWidgets import QScrollArea
+        self._scroll = QScrollArea(self)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setWidgetResizable(False)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        sb_w = max(6, config.S(8))
+        sb_rad = max(3, sb_w // 2)
+        self._scroll.setStyleSheet(
+            f"QScrollArea {{ background-color: {config.BG_COLOR}; border: none; }}"
+            f"QScrollBar:vertical {{ background: transparent; width: {sb_w}px; margin: 4px 2px; border: none; }}"
+            f"QScrollBar::handle:vertical {{ background: #4a4a4a; border-radius: {sb_rad}px; min-height: {config.S(32)}px; }}"
+            f"QScrollBar::handle:vertical:hover {{ background: #686868; }}"
+            f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}"
+            f"QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}"
+        )
+
+        self._scroll_canvas = QWidget()
+        self._scroll_canvas.setStyleSheet(f"background-color: {config.BG_COLOR};")
+        self._scroll.setWidget(self._scroll_canvas)
+
+        self.welcome_root = QWidget(self._scroll_canvas)
         self.welcome_root.setObjectName("welcome_root")
         self.welcome_root.setCursor(Qt.ArrowCursor)
         self.welcome_root.setStyleSheet("QWidget#welcome_root { background: transparent; }")
@@ -1146,7 +1167,7 @@ class WelcomePageView(QWidget):
         avail_h = self.height()
         if avail_h <= 0:
             avail_h = config.S(800)
-        return max(config.S(16), (avail_h - vis_h) // 2)
+        return max(config.S(12), (avail_h - vis_h) // 2)
 
     def animate_y_step(self):
         if not self._is_animating:
@@ -1179,9 +1200,24 @@ class WelcomePageView(QWidget):
         if event is not None:
             super().resizeEvent(event)
         w = self.width()
+        h = max(1, self.height())
         if w <= 0:
             return
+        if hasattr(self, '_scroll') and self._scroll:
+            self._scroll.setGeometry(0, 0, w, h)
         root_h = self.H_HEADER + self.H_MAX_CONTENT
+        vis_h = self.get_visual_height(self._current_idx)
+        active_w = None
+        if hasattr(self.win, 'welcome_stack') and self.win.welcome_stack:
+            active_w = self.win.welcome_stack.widget(self._current_idx)
+        if active_w is not None and active_w.layout():
+            ws_needed_h = active_w.layout().sizeHint().height()
+            if ws_needed_h > 0:
+                vis_h = max(vis_h, self.H_HEADER + ws_needed_h)
+        cur_y = self._target_y(self._current_idx)
+        canvas_h = max(h, cur_y + vis_h + config.S(48))
+        if hasattr(self, '_scroll_canvas') and self._scroll_canvas:
+            self._scroll_canvas.setFixedSize(w, canvas_h)
         self.welcome_root.setFixedWidth(w)
         self.welcome_root.setFixedHeight(root_h)
         self.workspace_container.setFixedWidth(w)
@@ -1351,7 +1387,7 @@ class WelcomePageView(QWidget):
             win._sync_script_edit_height(animated=False)
         if hasattr(win, 'btn_assemble'):
             win.btn_assemble.set_export_mode(mode == "file")
-        if mode == "resolve" and hasattr(win, '_populate_timeline_track_combos'):
+        if mode == "resolve" and hasattr(win, '_populate_timeline_track_combos') and not getattr(win, '_rebuilding_scale', False):
             win._populate_timeline_track_combos()
 
     def switch_source_animated(self, mode: str):
@@ -1460,7 +1496,7 @@ def build_welcome_view(win) -> QWidget:
         lbl = QLabel(label_text)
         lbl.setFixedHeight(config.S(18))
         lbl.setStyleSheet(
-            f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
+            f"color: #9e9e9e; font-size: {config.FS_PX(9.5)}px; font-weight: 500;"
             f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
         )
         row_l.addWidget(lbl)
@@ -1511,7 +1547,7 @@ def build_welcome_view(win) -> QWidget:
     _lbl_tl0 = QLabel(win.txt("lbl_timeline_selection"))
     _lbl_tl0.setFixedHeight(config.S(18))
     _lbl_tl0.setStyleSheet(
-        f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
+        f"color: #9e9e9e; font-size: {config.FS_PX(9.5)}px; font-weight: 500;"
         f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
     )
     _hbox_tl0 = QHBoxLayout()
@@ -1554,7 +1590,7 @@ def build_welcome_view(win) -> QWidget:
         win.btn_stop_bridge_0.setStyleSheet(f"""
             QPushButton {{
                 background-color: #242424; color: #d4d4d4; font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(8.5)}pt; border: 1px solid #3c3c3c; border-radius: {config.S(4)}px;
+                font-size: {config.FS_PX(8.5)}px; border: 1px solid #3c3c3c; border-radius: {config.S(4)}px;
                 padding: 0 {config.S(6)}px;
             }}
             QPushButton:hover {{ background-color: #383838; color: #ffffff; border-color: #505050; }}
@@ -1631,7 +1667,7 @@ def build_welcome_view(win) -> QWidget:
     lbl_model = QLabel(win.txt("lbl_model"))
     lbl_model.setFixedHeight(config.S(18))
     lbl_model.setStyleSheet(
-        f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
+        f"color: #9e9e9e; font-size: {config.FS_PX(9.5)}px; font-weight: 500;"
         f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
     )
     row_model_lbl.addWidget(lbl_model)
@@ -1653,7 +1689,7 @@ def build_welcome_view(win) -> QWidget:
     win.tgl_more_accurate.toggled.connect(win._on_more_accurate_toggled)
 
     lbl_acc = QLabel(win.txt("lbl_more_accurate"))
-    lbl_acc.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt;")
+    lbl_acc.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(9.5)}px;")
 
     info_acc = win._create_info_icon("tt_more_accurate")
 
@@ -1692,7 +1728,7 @@ def build_welcome_view(win) -> QWidget:
     _lbl_script = QLabel(win.txt("lbl_script"))
     _lbl_script.setFixedHeight(config.S(18))
     _lbl_script.setStyleSheet(
-        f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
+        f"color: #9e9e9e; font-size: {config.FS_PX(9.5)}px; font-weight: 500;"
         f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
     )
     win.script_layout.addWidget(_lbl_script)
@@ -1706,7 +1742,7 @@ def build_welcome_view(win) -> QWidget:
             background-color: #1e1e1e; color: #d4d4d4; 
             border: 1px solid #3a3a3a; border-radius: {config.S(4)}px; 
             padding: {config.S(6)}px {config.S(10)}px; outline: none; font-family: '{config.UI_FONT_NAME}';
-            font-size: {config.FS(9.5)}pt;
+            font-size: {config.FS_PX(9.5)}px;
         }}
         QTextEdit:focus {{ border: 1px solid #1a7a3e; }}
     """)
@@ -1739,7 +1775,7 @@ def build_welcome_view(win) -> QWidget:
     btn_import.setStyleSheet(f"""
         QPushButton#btn_ghost {{
             background-color: #1e1e1e; color: {config.FG_COLOR};
-            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt;
+            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS_PX(9.5)}px;
             border: 1px solid #3a3a3a; border-radius: {config.S(4)}px; padding: 0 {config.S(14)}px;
         }}
         QPushButton#btn_ghost:hover {{ background-color: #2a2d2e; }}
@@ -1757,7 +1793,7 @@ def build_welcome_view(win) -> QWidget:
     btn_analyze.setStyleSheet(f"""
         QPushButton#btn_primary {{
             background-color: {config.BTN_BG}; color: #ffffff;
-            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt; font-weight: bold;
+            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS_PX(9.5)}px; font-weight: bold;
             border: none; border-radius: {config.S(4)}px; padding: 0 {config.S(18)}px;
         }}
         QPushButton#btn_primary:hover {{ background-color: {config.BTN_ACTIVE}; }}
@@ -1774,7 +1810,7 @@ def build_welcome_view(win) -> QWidget:
     win.btn_import_welcome_script.setStyleSheet(f"""
         QPushButton#btn_ghost {{
             background-color: #1e1e1e; color: {config.FG_COLOR};
-            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt;
+            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS_PX(9.5)}px;
             border: 1px solid #3a3a3a; border-radius: {config.S(4)}px; padding: 0 {config.S(12)}px;
         }}
         QPushButton#btn_ghost:hover {{ background-color: #2a2d2e; }}
@@ -1837,7 +1873,7 @@ def build_welcome_view(win) -> QWidget:
     _lbl_tl1 = QLabel(win.txt("lbl_timeline_selection"))
     _lbl_tl1.setFixedHeight(config.S(18))
     _lbl_tl1.setStyleSheet(
-        f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500;"
+        f"color: #9e9e9e; font-size: {config.FS_PX(9.5)}px; font-weight: 500;"
         f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;"
     )
     _hbox_tl1 = QHBoxLayout()
@@ -1880,7 +1916,7 @@ def build_welcome_view(win) -> QWidget:
         win.btn_stop_bridge_1.setStyleSheet(f"""
             QPushButton {{
                 background-color: #242424; color: #d4d4d4; font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(8.5)}pt; border: 1px solid #3c3c3c; border-radius: {config.S(4)}px;
+                font-size: {config.FS_PX(8.5)}px; border: 1px solid #3c3c3c; border-radius: {config.S(4)}px;
                 padding: 0 {config.S(6)}px;
             }}
             QPushButton:hover {{ background-color: #383838; color: #ffffff; border-color: #505050; }}
@@ -1928,7 +1964,7 @@ def build_welcome_view(win) -> QWidget:
             height: {h_in}px;
             outline: none;
             font-family: '{config.UI_FONT_NAME}';
-            font-size: {config.FS(9.5)}pt;
+            font-size: {config.FS_PX(9.5)}px;
         }}
         QLineEdit:focus {{ border: 1px solid #1a7a3e; }}
     """
@@ -1939,7 +1975,7 @@ def build_welcome_view(win) -> QWidget:
         vbox.setSpacing(config.S(4))
         lbl = QLabel(lbl_text)
         lbl.setFixedHeight(config.S(18))
-        lbl.setStyleSheet(f"color: #9e9e9e; font-size: {config.FS(9.5)}pt; font-weight: 500; font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;")
+        lbl.setStyleSheet(f"color: #9e9e9e; font-size: {config.FS_PX(9.5)}px; font-weight: 500; font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0;")
         vbox.addWidget(lbl)
         hbox = QHBoxLayout()
         hbox.setContentsMargins(0, 0, 0, 0)
@@ -1983,7 +2019,7 @@ def build_welcome_view(win) -> QWidget:
     row_fs_cut = QHBoxLayout(win.w_fs_cut)
     row_fs_cut.setContentsMargins(0, 0, 0, 0)
     lbl_fs_cut = QLabel(win.txt("lbl_cut_silence_directly"))
-    lbl_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; background: transparent;")
+    lbl_fs_cut.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(9.5)}px; background: transparent;")
     row_fs_cut.addWidget(lbl_fs_cut)
     row_fs_cut.addStretch()
     info_fs_cut = win._create_info_icon("tt_cut_silence_directly")
@@ -1998,7 +2034,7 @@ def build_welcome_view(win) -> QWidget:
     row_fs_mark = QHBoxLayout(win.w_fs_mark)
     row_fs_mark.setContentsMargins(0, 0, 0, 0)
     lbl_fs_mark = QLabel(win.txt("lbl_mark_silence_with_color"))
-    lbl_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; background: transparent;")
+    lbl_fs_mark.setStyleSheet(f"color: {config.FG_COLOR}; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(9.5)}px; background: transparent;")
     row_fs_mark.addWidget(lbl_fs_mark)
     row_fs_mark.addStretch()
     info_fs_mark = win._create_info_icon("tt_mark_silence_with_color")
@@ -2025,7 +2061,7 @@ def build_welcome_view(win) -> QWidget:
     lbl_why_hidden = QLabel(win.txt("lbl_why_options_hidden") if hasattr(win, 'txt') else "Why are some options hidden?")
     lbl_why_hidden.setStyleSheet(
         f"color: #9e9e9e; font-family: '{config.UI_FONT_NAME}'; "
-        f"font-size: {config.FS(9.0)}pt; font-style: italic; background: transparent; padding: 0;"
+        f"font-size: {config.FS_PX(9.0)}px; font-style: italic; background: transparent; padding: 0;"
     )
     row_fs_hidden.addWidget(lbl_why_hidden)
     info_why = win._create_info_icon("tt_why_silence_options_hidden")
@@ -2059,7 +2095,7 @@ def build_welcome_view(win) -> QWidget:
     win.btn_run_fs.setStyleSheet(f"""
         QPushButton {{
             background-color: {config.BTN_BG}; color: #ffffff;
-            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt; font-weight: bold;
+            font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS_PX(9.5)}px; font-weight: bold;
             border: none; border-radius: {config.S(4)}px; padding: 0 {config.S(14)}px;
         }}
         QPushButton:hover {{ background-color: {config.BTN_ACTIVE}; }}

@@ -30,15 +30,15 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
             QDialog {{ background-color: {config.BG_COLOR}; }}
             #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #2e2e2e; border-radius: 0px; }}
             QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; }}
-            QLabel#lbl_title {{ font-size: {config.FS(14)}pt; font-weight: bold; }}
-            QLabel#lbl_msg {{ font-size: {config.FS(10.5)}pt; }}
+            QLabel#lbl_title {{ font-size: {config.FS_PX(14)}px; font-weight: bold; }}
+            QLabel#lbl_msg {{ font-size: {config.FS_PX(10.5)}px; }}
             QPushButton {{
                 background-color: {config.BTN_GHOST_BG};
                 color: {config.BTN_FG};
                 padding: {config.S(6)}px {config.S(16)}px;
                 border-radius: {config.S(4)}px;
                 min-width: {config.S(80)}px;
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
                 font-weight: bold;
             }}
             QPushButton:hover {{ background-color: {config.BTN_GHOST_ACTIVE}; }}

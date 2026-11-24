@@ -58,7 +58,7 @@ def build_editor_view(win) -> QWidget:
     ol_layout.setAlignment(Qt.AlignCenter)
     
     lbl = QLabel(win.txt("lbl_just_a_second"))
-    lbl.setStyleSheet(f"color: {config.NOTE_COL}; font-size: {config.FS(13)}pt; font-family: '{config.UI_FONT_NAME}'; background: transparent;")
+    lbl.setStyleSheet(f"color: {config.NOTE_COL}; font-size: {config.FS_PX(13)}px; font-family: '{config.UI_FONT_NAME}'; background: transparent;")
     lbl.setAlignment(Qt.AlignCenter)
     ol_layout.addWidget(lbl)
     

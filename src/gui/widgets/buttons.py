@@ -540,7 +540,7 @@ class CustomNumberInput(QWidget):
                 border-radius: {config.S(3)}px;
                 padding: 0px {config.S(8)}px;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
             }}
             QLineEdit:focus {{
                 border-color: {config.BTN_BG};
@@ -775,7 +775,7 @@ class ShortcutCaptureButton(QPushButton):
             max-height: {h}px;
             text-align: center;
             font-family: monospace;
-            font-size: {font_size}pt;
+            font-size: {font_size}px;
         }}
         QPushButton:hover {{
             background-color: #252525;
@@ -817,7 +817,7 @@ class ShortcutCaptureButton(QPushButton):
             radius=config.S(3),
             pad_x=pad_x,
             h=config.INPUT_HEIGHT - 2,
-            font_size=config.FS(9.5)
+            font_size=config.FS_PX(9.5)
         ))
         self.setMaximumWidth(config.S(220))
         self.setMinimumWidth(config.S(60))
@@ -1177,7 +1177,7 @@ class SidebarButton(QPushButton):
             self.setStyleSheet(f"""
                 QPushButton {{
                     color: white; 
-                    font-size: {config.FS(16)}pt; 
+                    font-size: {config.FS_PX(16)}px; 
                     background-color: #333333; 
                     border-radius: {config.S(4)}px;
                     border: none;
@@ -1188,7 +1188,7 @@ class SidebarButton(QPushButton):
             self.setStyleSheet(f"""
                 QPushButton {{
                     color: white; 
-                    font-size: {config.FS(16)}pt; 
+                    font-size: {config.FS_PX(16)}px; 
                     background: transparent; 
                     border-radius: {config.S(4)}px;
                     border: none;
@@ -1311,7 +1311,7 @@ class CustomDropdown(QPushButton):
         is_rtl = str(text) in rtl_names or any("\u0590" <= c <= "\u08ff" or "\ufb1d" <= c <= "\ufeff" for c in str(text))
         align_str = "right" if is_rtl else "left"
         is_large = bool(self.property("large_input"))
-        fs = config.FS(10.5) if is_large else config.FS(9.5)
+        fs = config.FS_PX(10.5) if is_large else config.FS_PX(9.5)
         pad_x = config.S(10) if is_large else config.S(8)
         pad_right = self.property("pad_right")
         pad_r = int(pad_right) if pad_right is not None else pad_x
@@ -1329,7 +1329,7 @@ class CustomDropdown(QPushButton):
                 max-height: {h}px;
                 height: {h}px;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
-                font-size: {fs}pt;
+                font-size: {fs}px;
             }}
             QPushButton:hover {{ border-color: {config.BTN_BG}; }}
         """)
@@ -1389,7 +1389,7 @@ class CustomDropdown(QPushButton):
                 border-radius: 0px;
                 min-height: {config.S(20)}px;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
             }}
             QPushButton:hover {{ border-color: {config.BTN_BG}; background-color: #2a2d2e; }}
         """)
@@ -1416,7 +1416,7 @@ class CustomDropdown(QPushButton):
                 background: transparent;
                 color: #d4d4d4;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
             }}
             QListWidget::item {{
                 padding: 0px {config.S(8)}px;
@@ -1467,7 +1467,7 @@ class TitleDropdown(CustomDropdown):
                 text-align: center;
                 border: none;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(9)}pt;
+                font-size: {config.FS_PX(9)}px;
                 padding: {config.S(2)}px {config.S(6)}px;
             }}
             QPushButton:hover {{ color: #ffffff; }}
@@ -1518,7 +1518,7 @@ class TitleDropdown(CustomDropdown):
                 outline: none;
                 background: transparent;
                 color: #b0b0b0;
-                font-size: {config.FS(9)}pt;
+                font-size: {config.FS_PX(9)}px;
             }}
             QListWidget::item {{
                 height: {config.S(26)}px;
@@ -1581,7 +1581,7 @@ class SpeedDropdown(QPushButton):
                 color: #b0b0b0;
                 font-weight: 600;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(9)}pt;
+                font-size: {config.FS_PX(9)}px;
                 padding: {config.S(4)}px;
                 text-align: center;
             }}
@@ -1636,7 +1636,7 @@ class SpeedDropdown(QPushButton):
                 outline: none;
                 background: transparent;
                 color: #b0b0b0;
-                font-size: {config.FS(9)}pt;
+                font-size: {config.FS_PX(9)}px;
             }}
             QListWidget::item {{
                 height: {config.S(26)}px;
@@ -1721,7 +1721,7 @@ class CustomCheckBox(QWidget):
         self.tick_box.setAlignment(Qt.AlignCenter)
         
         self.lbl = QLabel(text)
-        self.lbl.setStyleSheet(f"border: none; outline: none; color: #d4d4d4; font-size: {config.FS(9.5)}pt; background: transparent;")
+        self.lbl.setStyleSheet(f"border: none; outline: none; color: #d4d4d4; font-size: {config.FS_PX(9.5)}px; background: transparent;")
         
         lay.addWidget(self.tick_box)
         lay.addWidget(self.lbl)
@@ -1771,7 +1771,7 @@ class MultiSelectDropdown(QPushButton):
 
     def update_style(self):
         is_large = bool(self.property("large_input"))
-        fs = config.FS(10.5) if is_large else config.FS(9.5)
+        fs = config.FS_PX(10.5) if is_large else config.FS_PX(9.5)
         pad_x = config.S(10) if is_large else config.S(8)
         rad = config.S(4) if is_large else config.S(3)
         h = (config.S(38) if is_large else config.S(30)) - 2
@@ -1781,7 +1781,7 @@ class MultiSelectDropdown(QPushButton):
                 padding: 0px {pad_x}px; border: 1px solid #3a3a3a;
                 border-radius: {rad}px;
                 min-height: {h}px; max-height: {h}px; height: {h}px;
-                font-family: "{config.UI_FONT_NAME}"; font-size: {fs}pt;
+                font-family: "{config.UI_FONT_NAME}"; font-size: {fs}px;
             }}
             QPushButton:hover {{ border-color: {config.BTN_BG}; }}
         """)
@@ -1882,7 +1882,7 @@ class MultiSelectDropdown(QPushButton):
             item.setSizeHint(QSize(0, config.S(28)))
             if is_empty:
                 lbl = QLabel(opt)
-                lbl.setStyleSheet(f"color: #777; font-style: italic; padding: 0px {config.S(8)}px; font-size: {config.FS(9)}pt;")
+                lbl.setStyleSheet(f"color: #777; font-style: italic; padding: 0px {config.S(8)}px; font-size: {config.FS_PX(9)}px;")
                 list_widget.setItemWidget(item, lbl)
             else:
                 widget = CustomCheckItemWidget(opt, opt in self.selected_items)
@@ -1939,7 +1939,7 @@ class SearchableDropdown(QPushButton):
         is_rtl = str(text) in rtl_names or any("\u0590" <= c <= "\u08ff" or "\ufb1d" <= c <= "\ufeff" for c in str(text))
         align_str = "right" if is_rtl else "left"
         is_large = bool(self.property("large_input"))
-        fs = config.FS(10.5) if is_large else config.FS(9.5)
+        fs = config.FS_PX(10.5) if is_large else config.FS_PX(9.5)
         pad_x = config.S(10) if is_large else config.S(8)
         rad = config.S(4) if is_large else config.S(3)
         h = (config.S(38) if is_large else config.S(30)) - 2
@@ -1955,7 +1955,7 @@ class SearchableDropdown(QPushButton):
                 max-height: {h}px;
                 height: {h}px;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
-                font-size: {fs}pt;
+                font-size: {fs}px;
             }}
             QPushButton:hover {{ border-color: {config.BTN_BG}; }}
         """)
@@ -2018,7 +2018,7 @@ class SearchableDropdown(QPushButton):
                 background: transparent;
                 color: #d4d4d4;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
             }}
             QListWidget::item {{
                 padding: 0px {config.S(8)}px;
@@ -2045,7 +2045,7 @@ class SearchableDropdown(QPushButton):
                 background: transparent;
                 outline: none;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
             }}
             QLineEdit:focus {{
                 border-bottom: 1px solid #555555;
@@ -2274,7 +2274,7 @@ class AssembleSplitButton(QFrame):
                 color: #ffffff;
                 font-weight: bold;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
                 background: transparent;
                 border: none;
             }}
@@ -2489,7 +2489,7 @@ class AssembleSplitButton(QFrame):
                     color: #555555;
                     font-weight: bold;
                     font-family: "{config.UI_FONT_NAME}";
-                    font-size: {config.FS(10)}pt;
+                    font-size: {config.FS_PX(10)}px;
                     background: transparent;
                     border: none;
                 }}
@@ -2505,7 +2505,7 @@ class AssembleSplitButton(QFrame):
                     color: #ffffff;
                     font-weight: bold;
                     font-family: "{config.UI_FONT_NAME}";
-                    font-size: {config.FS(10)}pt;
+                    font-size: {config.FS_PX(10)}px;
                     background: transparent;
                     border: none;
                 }}
@@ -2540,7 +2540,7 @@ class TrackSquareCheckbox(QWidget):
         self.box.setAlignment(Qt.AlignCenter)
         self.box.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
-        self._font_size = font_size if font_size is not None else config.FS(9.5)
+        self._font_size = font_size if font_size is not None else config.FS_PX(9.5)
         self._dim_opacity = 1.0
         self._dim_bg_hex = "#151515"
 
@@ -2574,7 +2574,7 @@ class TrackSquareCheckbox(QWidget):
         bg = self._dim_bg_hex
         lbl_col = self._blend_hex("#d4d4d4", bg, t)
         self.lbl.setStyleSheet(
-            f"color: {lbl_col}; font-size: {self._font_size}pt; "
+            f"color: {lbl_col}; font-size: {self._font_size}px; "
             f"font-family: '{config.UI_FONT_NAME}', sans-serif; background: transparent; border: none;"
         )
         box_bg = self._blend_hex("#111111", bg, t)
@@ -2719,7 +2719,7 @@ class AssemblyModeSelector(QWidget):
                 border-radius: {config.S(4)}px;
                 font-weight: bold;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
             }}
             QPushButton:hover {{
                 background-color: {config.BTN_ACTIVE};
@@ -2733,7 +2733,7 @@ class AssemblyModeSelector(QWidget):
                 border-radius: {config.S(4)}px;
                 font-weight: normal;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
             }}
             QPushButton:hover {{
                 background-color: #2a2d2e;
@@ -2749,7 +2749,7 @@ class AssemblyModeSelector(QWidget):
                 border-radius: {config.S(4)}px;
                 font-weight: normal;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
             }}
         """
         if self._mode == "xml":

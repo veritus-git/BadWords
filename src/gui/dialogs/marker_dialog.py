@@ -46,7 +46,7 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
             QDialog {{ background-color: {config.BG_COLOR}; }}
             #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #2e2e2e; border-radius: 0px; }}
             QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; }}
-            QLabel#lbl_title {{ font-size: {config.FS(13)}pt; font-weight: bold; color: #ffffff; }}
+            QLabel#lbl_title {{ font-size: {config.FS_PX(13)}px; font-weight: bold; color: #ffffff; }}
             QLineEdit {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
@@ -54,7 +54,7 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
                 border-radius: {config.S(3)}px;
                 padding: {config.S(5)}px {config.S(8)}px;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
             }}
             QLineEdit:focus {{ border-color: {config.BTN_BG}; }}
             QPushButton {{
@@ -65,7 +65,7 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
                 min-width: {config.S(80)}px;
                 font-weight: bold;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
             }}
             QPushButton:hover {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
             QPushButton#btn_ok {{ background-color: {config.BTN_BG}; }}
@@ -153,7 +153,7 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         content_layout.addLayout(btn_row)
 
         self.adjustSize()
-        self.setFixedWidth(380)
+        self.setFixedWidth(config.S(380))
         self.adjustSize()
         _center_on_screen(self, self.width(), self.height(), reference_window=self.parentWidget())
 

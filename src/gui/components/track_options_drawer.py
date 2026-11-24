@@ -108,7 +108,7 @@ class TrackOptionsDrawer(QWidget):
             lay.setContentsMargins(0, config.S(4), 0, config.S(2))
             lay.setSpacing(config.S(6))
             lbl = QLabel(title_text)
-            lbl.setStyleSheet(f"font-size: {config.FS(8.5)}pt; color: #288a50; font-weight: bold; text-transform: uppercase; border: none; background: transparent;")
+            lbl.setStyleSheet(f"font-size: {config.FS_PX(8.5)}px; color: #288a50; font-weight: bold; text-transform: uppercase; border: none; background: transparent;")
             line = QFrame()
             line.setFrameShape(QFrame.HLine)
             line.setStyleSheet("background-color: #1a5433; max-height: 1px; border: none;")

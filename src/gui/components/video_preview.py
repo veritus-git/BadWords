@@ -75,7 +75,7 @@ class VideoLoadingWidget(QWidget):
         w = float(self.width())
         h = float(self.height())
 
-        f = QFont(config.UI_FONT_NAME, config.FS(8.5))
+        f = config.make_font(config.UI_FONT_NAME, 8.5)
         p.setFont(f)
         fm = QFontMetrics(f)
 
@@ -145,7 +145,7 @@ class VideoPreviewWidget(QFrame):
 
         self.lbl_placeholder = QLabel(self)
         self.lbl_placeholder.setAlignment(Qt.AlignCenter)
-        self.lbl_placeholder.setStyleSheet(f"color: #4a4a4a; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(8.5)}pt; font-style: italic;")
+        self.lbl_placeholder.setStyleSheet(f"color: #4a4a4a; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(8.5)}px; font-style: italic;")
         self.lbl_placeholder.setText("Video Preview")
         self.lbl_placeholder.hide()
         layout.addWidget(self.lbl_placeholder)
@@ -158,7 +158,7 @@ class VideoPreviewWidget(QFrame):
     def show_placeholder(self, show: bool = True, text: str = "Video Preview") -> None:
         if show:
             self.loading_widget.stop()
-            self.lbl_placeholder.setStyleSheet(f"color: #4a4a4a; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(8.5)}pt; font-style: italic;")
+            self.lbl_placeholder.setStyleSheet(f"color: #4a4a4a; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(8.5)}px; font-style: italic;")
             self.lbl_placeholder.setText(text)
             self.lbl_placeholder.show()
             self.video_widget.hide()

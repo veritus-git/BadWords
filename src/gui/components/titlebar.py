@@ -147,7 +147,7 @@ class CustomTitleBar(QWidget):
             background: transparent;
             color: {fg};
             font-family: "{font}";
-            font-size: {font_size}pt;
+            font-size: {font_size}px;
             border: none;
             padding: {pad_y}px {pad_x}px;
             border-radius: {radius}px;
@@ -191,7 +191,7 @@ class CustomTitleBar(QWidget):
         self._lbl_title.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._lbl_title.setStyleSheet(
             f"color: #999999; font-family: \"{config.UI_FONT_NAME}\"; "
-            f"font-size: {config.FS(9)}pt; background: transparent;"
+            f"font-size: {config.FS_PX(9)}px; background: transparent;"
         )
         lay.addWidget(self._lbl_title)
 
@@ -204,7 +204,7 @@ class CustomTitleBar(QWidget):
         _btn_qss = self._MENU_BTN_QSS.format(
             fg="#888888",
             font=config.UI_FONT_NAME,
-            font_size=config.FS(9),
+            font_size=config.FS_PX(9),
             pad_y=config.S(2),
             pad_x=config.S(8),
             radius=config.S(3),
@@ -240,7 +240,7 @@ class CustomTitleBar(QWidget):
         self._lbl_source_info.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._lbl_source_info.setStyleSheet(
             f"color: #777777; font-family: \"{config.UI_FONT_NAME}\"; "
-            f"font-size: {config.FS(9)}pt; background: transparent;"
+            f"font-size: {config.FS_PX(9)}px; background: transparent;"
         )
         self._lbl_source_info.hide()
         self._full_source_info = ""
@@ -329,7 +329,7 @@ class CustomTitleBar(QWidget):
                     background: transparent;
                     color: #b0b0b0;
                     font-family: "{config.UI_FONT_NAME}";
-                    font-size: {config.FS(9)}pt;
+                    font-size: {config.FS_PX(9)}px;
                     text-align: left;
                     padding: {config.S(5)}px {config.S(14)}px;
                     border: none;
@@ -388,7 +388,7 @@ class CustomTitleBar(QWidget):
         list_widget.setStyleSheet(f"""
             QListWidget {{
                 border: none; padding: 0px; margin: 0px; outline: none;
-                background: transparent; color: #b0b0b0; font-size: {config.FS(9)}pt;
+                background: transparent; color: #b0b0b0; font-size: {config.FS_PX(9)}px;
             }}
             QListWidget::item {{ height: {config.S(26)}px; padding: 0px {config.S(8)}px; border: none; }}
             QListWidget::item:selected {{ background-color: #171717; color: #1ed760; font-weight: bold; }}

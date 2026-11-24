@@ -19,6 +19,7 @@ from PySide6.QtGui import QMouseEvent, QCursor
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QWidget
 )
+import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog
 from gui.utils import _app_icon, _center_on_screen
 
@@ -167,85 +168,85 @@ class V4MigrationDialog(FramelessWindowMixin, _BaseDialog):
         self.setWindowTitle(t["heading"])
         self.frameless_init(is_popup=True)
         self.setWindowIcon(_app_icon())
-        self.setFixedWidth(680)
+        self.setFixedWidth(config.S(680))
 
-        self.setStyleSheet("""
-            QDialog {
+        self.setStyleSheet(f"""
+            QDialog {{
                 background-color: #181818;
                 color: #e6e6e6;
-                font-family: 'Segoe UI', 'Ubuntu', 'Helvetica Neue', sans-serif;
-            }
-            QFrame, QWidget {
+                font-family: '{config.UI_FONT_NAME}', 'Segoe UI', 'Ubuntu', sans-serif;
+            }}
+            QFrame, QWidget {{
                 background: transparent;
                 background-color: transparent;
                 color: #e6e6e6;
-                font-family: 'Segoe UI', 'Ubuntu', 'Helvetica Neue', sans-serif;
-            }
-            #MainCard {
+                font-family: '{config.UI_FONT_NAME}', 'Segoe UI', 'Ubuntu', sans-serif;
+            }}
+            #MainCard {{
                 background-color: #181818;
                 border: 1px solid #2e2e2e;
                 border-radius: 0px;
-            }
-            QLabel {
+            }}
+            QLabel {{
                 background: transparent;
                 background-color: transparent;
-            }
-            #BadgeLabel {
+            }}
+            #BadgeLabel {{
                 background-color: #0d2e18;
                 color: #39ff7a;
                 border: 1px solid #1a572d;
-                border-radius: 4px;
-                padding: 4px 10px;
-                font-size: 9pt;
+                border-radius: {config.S(4)}px;
+                padding: {config.S(4)}px {config.S(10)}px;
+                font-size: {config.FS_PX(9)}px;
                 font-weight: bold;
-            }
-            #HeadingLabel {
+            }}
+            #HeadingLabel {{
                 background: transparent;
                 background-color: transparent;
                 color: #ffffff;
-                font-size: 13.5pt;
+                font-size: {config.FS_PX(13.5)}px;
                 font-weight: bold;
-            }
-            #BodyLabel {
+            }}
+            #BodyLabel {{
                 background: transparent;
                 background-color: transparent;
                 color: #cccccc;
-                font-size: 10pt;
+                font-size: {config.FS_PX(10)}px;
                 line-height: 1.5;
-            }
-            QPushButton {
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 9.5pt;
+            }}
+            QPushButton {{
+                border-radius: {config.S(6)}px;
+                padding: {config.S(8)}px {config.S(16)}px;
+                font-size: {config.FS_PX(9.5)}px;
                 font-weight: bold;
-            }
-            #PrimaryBtn {
+            }}
+            #PrimaryBtn {{
                 background-color: #238636;
                 color: #ffffff;
                 border: 1px solid #2ea043;
-            }
-            #PrimaryBtn:hover {
+            }}
+            #PrimaryBtn:hover {{
                 background-color: #2ea043;
-            }
-            #SecondaryBtn {
+            }}
+            #SecondaryBtn {{
                 background-color: #21262d;
                 color: #c9d1d9;
                 border: 1px solid #30363d;
-            }
-            #SecondaryBtn:hover {
+            }}
+            #SecondaryBtn:hover {{
                 background-color: #30363d;
                 color: #ffffff;
-            }
-            #CloseBtn {
+            }}
+            #CloseBtn {{
                 background-color: transparent;
                 color: #8b949e;
                 border: none;
-                font-size: 11pt;
-                padding: 2px 6px;
-            }
-            #CloseBtn:hover {
+                font-size: {config.FS_PX(11)}px;
+                padding: {config.S(2)}px {config.S(6)}px;
+            }}
+            #CloseBtn:hover {{
                 color: #ffffff;
-            }
+            }}
         """)
 
         outer = QVBoxLayout(self)
@@ -256,8 +257,8 @@ class V4MigrationDialog(FramelessWindowMixin, _BaseDialog):
         card.setObjectName("MainCard")
         card_layout = QVBoxLayout(card)
         card_layout.setSizeConstraint(QVBoxLayout.SetFixedSize)
-        card_layout.setContentsMargins(24, 24, 24, 24)
-        card_layout.setSpacing(14)
+        card_layout.setContentsMargins(config.S(24), config.S(24), config.S(24), config.S(24))
+        card_layout.setSpacing(config.S(14))
 
         top_row = QHBoxLayout()
         badge = QLabel(t["badge"])

@@ -209,7 +209,7 @@ class AudioPreviewWidget(QFrame):
                 color: #b0b0b0;
                 font-weight: 600;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
                 padding: {config.S(6)}px {config.S(10)}px;
                 border-radius: {config.S(6)}px;
             }}
@@ -224,7 +224,7 @@ class AudioPreviewWidget(QFrame):
                 background-color: {config.BTN_BG};
                 color: #ffffff;
                 border-radius: {config.S(16)}px;
-                font-size: {config.FS(11)}pt;
+                font-size: {config.FS_PX(11)}px;
             }}
             QPushButton#PlayBtn:hover {{
                 background-color: {config.BTN_ACTIVE};
@@ -234,7 +234,7 @@ class AudioPreviewWidget(QFrame):
                 border: none;
                 color: #b0b0b0;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
             }}
             QComboBox {{
                 background: rgba(255, 255, 255, 0.06);
@@ -243,7 +243,7 @@ class AudioPreviewWidget(QFrame):
                 color: #d0d0d0;
                 padding: {config.S(4)}px {config.S(10)}px;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(9)}pt;
+                font-size: {config.FS_PX(9)}px;
             }}
             QComboBox:hover {{
                 border: 1px solid rgba(255, 255, 255, 0.15);
@@ -269,7 +269,7 @@ class AudioPreviewWidget(QFrame):
             }}
             QLabel#TimecodeLabel {{
                 font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
                 font-weight: bold;
                 color: #ffffff;
                 font-feature-settings: 'tnum';
@@ -277,7 +277,7 @@ class AudioPreviewWidget(QFrame):
             QLabel#StatusLabel {{
                 color: #666666;
                 font-style: italic;
-                font-size: {config.FS(9)}pt;
+                font-size: {config.FS_PX(9)}px;
             }}
         """)
 
@@ -336,10 +336,13 @@ class AudioPreviewWidget(QFrame):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(config.S(10))
 
+        from PySide6.QtGui import QFontMetrics
         self.lbl_timecode = QLabel("01:00:00:00")
         self.lbl_timecode.setObjectName("TimecodeLabel")
         self.lbl_timecode.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.lbl_timecode.setFixedWidth(config.S(86))
+        tc_font = config.make_font("JetBrains Mono", 9.5, bold=True)
+        tc_w = max(config.S(92), QFontMetrics(tc_font).horizontalAdvance("00:00:00:00") + config.S(12))
+        self.lbl_timecode.setFixedWidth(tc_w)
         left_layout.addWidget(self.lbl_timecode)
         left_layout.addSpacing(config.S(4))
 
@@ -348,7 +351,7 @@ class AudioPreviewWidget(QFrame):
         left_layout.addWidget(self.tgl_centered)
 
         self.lbl_centered = QLabel(self.main_window.txt("msg_keep_centered") if self.main_window else "Keep centered")
-        self.lbl_centered.setStyleSheet(f"color: #b0b0b0; font-size: {config.FS(9)}pt;")
+        self.lbl_centered.setStyleSheet(f"color: #b0b0b0; font-size: {config.FS_PX(9)}px;")
         left_layout.addWidget(self.lbl_centered)
         left_layout.addSpacing(config.S(6))
 
@@ -508,6 +511,29 @@ class AudioPreviewWidget(QFrame):
             prefs["show_video_preview"] = self.show_video
             self.main_window.engine.save_preferences(prefs)
 
+    def _get_media_target_size(self) -> tuple[int, int]:
+        """Computes responsive media preview height & 16:9 video width respecting window bounds."""
+        base_h = config.S(235)
+        target_h = base_h
+        if self.main_window is not None:
+            try:
+                win_h = int(self.main_window.height() or 0)
+                if win_h > 0:
+                    target_h = min(target_h, max(config.S(110), int(win_h * 0.28)))
+            except Exception:
+                pass
+        vid_w = int(target_h * 16.0 / 9.0)
+        try:
+            avail_w = int(self.width() or (self.main_window.width() if self.main_window else 0))
+            if avail_w > 0 and self.show_timeline and self.show_video:
+                max_vid_w = max(config.S(140), int(avail_w * 0.45))
+                if vid_w > max_vid_w:
+                    vid_w = max_vid_w
+                    target_h = max(config.S(100), int(vid_w * 9.0 / 16.0))
+        except Exception:
+            pass
+        return target_h, vid_w
+
     def _apply_modularity_state(self) -> None:
         """Updates visibility of video, timeline, and media container based on toggle states."""
         self.waveform_timeline.setVisible(self.show_timeline)
@@ -517,9 +543,9 @@ class AudioPreviewWidget(QFrame):
         self.media_container.setVisible(has_media)
 
         # Resize video preview to maintain 16:9 aspect ratio relative to container
-        target_h = config.S(235)
+        target_h, vid_w = self._get_media_target_size()
         self.video_preview_widget.setFixedHeight(target_h)
-        self.video_preview_widget.setFixedWidth(int(target_h * 16.0 / 9.0))
+        self.video_preview_widget.setFixedWidth(vid_w)
         self.waveform_timeline.setFixedHeight(target_h)
 
         if not getattr(self, "is_collapsed", False):
@@ -627,14 +653,150 @@ class AudioPreviewWidget(QFrame):
         if slider:
             slider.hide()
 
+    def export_state_for_rebuild(self) -> dict:
+        """Captures media/playback/waveform state and cleanly halts player/timers prior to UI scale rebuild."""
+        wt = getattr(self, "waveform_timeline", None)
+        player = getattr(self, "player", None)
+        audio_out = getattr(self, "audio_output", None)
+        pos_ms = 0
+        was_playing = False
+        rate = 1.0
+        if player is not None:
+            try:
+                pos_ms = int(player.position())
+                was_playing = (player.playbackState() == QMediaPlayer.PlayingState)
+                rate = float(player.playbackRate() or 1.0)
+                player.pause()
+                player.stop()
+                player.setSource(QUrl())
+                player.setVideoOutput(None)
+                player.setAudioOutput(None)
+                player.deleteLater()
+            except Exception:
+                pass
+        if audio_out is not None:
+            try:
+                audio_out.deleteLater()
+            except Exception:
+                pass
+        if getattr(self, "update_timer", None) is not None:
+            try:
+                self.update_timer.stop()
+            except Exception:
+                pass
+        try:
+            parent_w = self.parentWidget()
+            if parent_w is not None:
+                parent_w.removeEventFilter(self)
+        except Exception:
+            pass
+        try:
+            if self.main_window and hasattr(self.main_window, "scroll_area") and self.main_window.scroll_area:
+                self.main_window.scroll_area.removeEventFilter(self)
+        except Exception:
+            pass
+        if getattr(self, "toggle_tab", None) is not None:
+            try:
+                self.toggle_tab.hide()
+            except Exception:
+                pass
+        state = {
+            "is_collapsed": bool(getattr(self, "is_collapsed", False)),
+            "skip_cuts": bool(getattr(self, "skip_cuts", False)),
+            "show_timeline": bool(getattr(self, "show_timeline", True)),
+            "show_video": bool(getattr(self, "show_video", True)),
+            "original_audio_path": getattr(self, "original_audio_path", None),
+            "_source_audio_path": getattr(self, "_source_audio_path", None),
+            "_source_video_path": getattr(self, "_source_video_path", None),
+            "clean_ops": getattr(self, "clean_ops", None),
+            "pos_ms": pos_ms,
+            "was_playing": was_playing,
+            "rate": rate,
+            "volume": self.slider_vol.value() if hasattr(self, "slider_vol") else 100,
+            "speed_text": self.cb_speed.currentText() if hasattr(self, "cb_speed") else "1.0x",
+            "centered": self.tgl_centered.isChecked() if hasattr(self, "tgl_centered") else False,
+            "waveform": {
+                "_peaks": getattr(wt, "_peaks", None) if wt else None,
+                "_audio_path": getattr(wt, "_audio_path", None) if wt else None,
+                "_clip_name": getattr(wt, "_clip_name", "A1: Timeline Audio") if wt else "A1: Timeline Audio",
+                "_duration": float(getattr(wt, "_duration", 0.0) or 0.0) if wt else 0.0,
+                "_playhead_time": float(getattr(wt, "_playhead_time", 0.0) or 0.0) if wt else 0.0,
+                "_zoom_level": float(getattr(wt, "_zoom_level", 1.0) or 1.0) if wt else 1.0,
+                "_view_start_time": float(getattr(wt, "_view_start_time", 0.0) or 0.0) if wt else 0.0,
+                "_clips_layout": getattr(wt, "_clips_layout", None) if wt else None,
+            },
+        }
+        return state
+
+    def restore_state_after_rebuild(self, state: dict) -> None:
+        """Restores media/playback/waveform cache without re-running FFmpeg extraction."""
+        if not state:
+            return
+        self.original_audio_path = state.get("original_audio_path")
+        self._source_audio_path = state.get("_source_audio_path")
+        self._source_video_path = state.get("_source_video_path")
+        self.clean_ops = state.get("clean_ops")
+        self.show_timeline = bool(state.get("show_timeline", self.show_timeline))
+        self.show_video = bool(state.get("show_video", self.show_video))
+        if hasattr(self, "btn_toggle_timeline"):
+            self.btn_toggle_timeline.setChecked(self.show_timeline)
+        if hasattr(self, "btn_toggle_video"):
+            self.btn_toggle_video.setChecked(self.show_video)
+        if hasattr(self, "btn_skip_cuts"):
+            self.btn_skip_cuts.setChecked(bool(state.get("skip_cuts", False)))
+        self.skip_cuts = bool(state.get("skip_cuts", False))
+        if hasattr(self, "tgl_centered"):
+            self.tgl_centered.setChecked(bool(state.get("centered", False)), animated=False)
+        if hasattr(self, "slider_vol"):
+            self.slider_vol.setValue(int(state.get("volume", 100)))
+        if hasattr(self, "cb_speed"):
+            spd = state.get("speed_text", "1.0x")
+            self.cb_speed.setCurrentText(spd)
+
+        wt = getattr(self, "waveform_timeline", None)
+        wf_state = state.get("waveform") or {}
+        if wt is not None and wf_state:
+            wt._peaks = wf_state.get("_peaks")
+            wt._audio_path = wf_state.get("_audio_path")
+            wt._clip_name = wf_state.get("_clip_name", "A1: Timeline Audio")
+            wt._duration = float(wf_state.get("_duration", 0.0) or 0.0)
+            wt._playhead_time = float(wf_state.get("_playhead_time", 0.0) or 0.0)
+            wt._zoom_level = float(wf_state.get("_zoom_level", 1.0) or 1.0)
+            wt._view_start_time = float(wf_state.get("_view_start_time", 0.0) or 0.0)
+            wt._clips_layout = wf_state.get("_clips_layout")
+            if self.main_window and hasattr(self.main_window, "text_canvas") and self.main_window.text_canvas:
+                wt.set_words_data(self.main_window.text_canvas.words_data)
+            elif hasattr(wt, "_rebuild_waveform_pixmap"):
+                wt._rebuild_waveform_pixmap()
+
+        media_path = self._source_video_path if (self._source_video_path and os.path.exists(self._source_video_path)) else self._source_audio_path
+        if media_path and os.path.exists(media_path):
+            self.player.setSource(QUrl.fromLocalFile(media_path))
+            pos_ms = int(state.get("pos_ms", 0) or 0)
+            if pos_ms > 0:
+                self.player.setPosition(pos_ms)
+            self.player.setPlaybackRate(float(state.get("rate", 1.0) or 1.0))
+            if state.get("was_playing"):
+                self.player.play()
+                self.update_timer.start()
+
+        self.is_collapsed = bool(state.get("is_collapsed", False))
+        if hasattr(self, "toggle_tab") and self.toggle_tab:
+            self.toggle_tab.set_collapsed(self.is_collapsed)
+        if self.is_collapsed and hasattr(self, "content_widget"):
+            self.content_widget.hide()
+        else:
+            self._apply_modularity_state()
+
     def is_preview_active(self) -> bool:
         return self.isVisible() and not getattr(self, "is_collapsed", False)
 
     def _get_expanded_target_height(self) -> int:
         h = self.controls_widget.sizeHint().height()
         if self.show_timeline or self.show_video:
-            h += config.S(235) + config.S(14)
-        return max(50, h)
+            target_h, _ = self._get_media_target_size()
+            h += target_h + config.S(14)
+        return max(config.S(50), h)
 
     def toggle_collapse(self) -> None:
         """Smoothly collapses or expands the entire preview dock."""

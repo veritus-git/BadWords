@@ -114,12 +114,12 @@ class BootSplash(QWidget):
             QLabel {{
                 color: #a0a0a0;
                 font-family: "{font}", "Ubuntu", sans-serif;
-                font-size: {size}pt;
+                font-size: {size}px;
                 font-weight: 500;
-                letter-spacing: 1.5px;
+                letter-spacing: {lsp}px;
                 background: transparent;
             }}
-            """.format(font=config.UI_FONT_NAME, size=config.FS(7.5))
+            """.format(font=config.UI_FONT_NAME, size=config.FS_PX(7.5), lsp=max(1, config.S(1.5)))
         )
         content_layout.addWidget(self._lbl_loading)
 

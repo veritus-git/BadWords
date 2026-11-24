@@ -14,7 +14,7 @@ Settings dialog with multi-tab layout and real-time preferences management.
 import os
 import sys
 
-from PySide6.QtCore import Qt, QTimer, Signal, QObject, QVariantAnimation, QEasingCurve
+from PySide6.QtCore import Qt, QRect, QSize, QTimer, Signal, QObject, QVariantAnimation, QEasingCurve
 from PySide6.QtGui import (
     QFont, QFontMetrics, QGuiApplication
 )
@@ -206,6 +206,26 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         self._search_rows = []
         prefs = self.engine.load_preferences() or {}
 
+        self._build_dialog_chrome(prefs)
+
+        init_w = config.SETTINGS_WINDOW_W
+        init_h = config.SETTINGS_WINDOW_H
+        _center_on_screen(self, init_w, init_h, reference_window=self._main_window)
+        self.init_normal_geometry(
+            saved_w=init_w,
+            saved_h=init_h,
+            screen=self.screen() or QGuiApplication.primaryScreen(),
+            ratio=0.70,
+            min_w=config.S(640),
+            min_h=config.S(460),
+            apply_geometry=False,
+            always_restore_default=True,
+        )
+
+    def _build_dialog_chrome(self, prefs: dict):
+        """Constructs or rebuilds the Settings dialog stylesheet, chrome, sidebar, and pages."""
+        self.setMinimumSize(config.S(640), config.S(460))
+
         # ── Global stylesheet ─────────────────────────────────────────────
         self.setStyleSheet(f"""
             QMainWindow {{ background-color: {config.BG_COLOR}; }}
@@ -220,7 +240,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             QLabel {{
                 color: {config.FG_COLOR};
                 font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
                 background: transparent;
             }}
             QListWidget {{
@@ -233,7 +253,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             QListWidget::item {{
                 color: {config.NOTE_COL};
                 font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
                 padding: {config.S(10)}px {config.S(16)}px;
                 border-radius: 0px;
             }}
@@ -256,8 +276,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 background-color: {config.INPUT_BG};
                 color: {config.INPUT_FG};
                 border: 1px solid #3a3a3a;
-                padding: 4px 8px;
-                border-radius: 3px;
+                padding: {config.S(4)}px {config.S(8)}px;
+                border-radius: {config.S(3)}px;
                 outline: none;
             }}
             QLineEdit:focus, QTextEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus, QComboBox:focus {{
@@ -266,15 +286,15 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             }}
             QCheckBox {{
                 color: {config.FG_COLOR};
-                font-family: {config.UI_FONT_NAME};
-                font-size: 10pt;
-                spacing: 8px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS_PX(10)}px;
+                spacing: {config.S(8)}px;
             }}
             QCheckBox::indicator {{
-                width: 16px; height: 16px;
+                width: {config.S(16)}px; height: {config.S(16)}px;
                 background: #1e1e1e;
                 border: 1px solid #555;
-                border-radius: 3px;
+                border-radius: {config.S(3)}px;
             }}
             QCheckBox::indicator:checked {{
                 background-color: {config.BTN_BG};
@@ -284,11 +304,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 background-color: {config.BTN_BG};
                 color: white;
                 border: none;
-                border-radius: 4px;
+                border-radius: {config.S(4)}px;
                 font-weight: bold;
-                font-family: {config.UI_FONT_NAME};
-                font-size: 10pt;
-                padding: 0 18px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS_PX(10)}px;
+                padding: 0 {config.S(18)}px;
             }}
             QPushButton#btn_apply:hover {{ background-color: {config.BTN_ACTIVE}; }}
             QPushButton#btn_apply:pressed {{ background-color: #125c2f; }}
@@ -296,10 +316,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 background-color: transparent;
                 color: #d4d4d4;
                 border: 1px solid #555;
-                border-radius: 4px;
-                font-family: {config.UI_FONT_NAME};
-                font-size: 10pt;
-                padding: 0 12px;
+                border-radius: {config.S(4)}px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS_PX(10)}px;
+                padding: 0 {config.S(12)}px;
             }}
             QPushButton#btn_secondary:hover {{ background-color: #2a2d2e; border-color: #888; }}
             QPushButton#btn_ghost_sm {{
@@ -308,7 +328,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 border: 1px solid #444;
                 border-radius: {config.S(3)}px;
                 font-family: "{config.UI_FONT_NAME}", sans-serif;
-                font-size: {config.FS(9.5)}pt;
+                font-size: {config.FS_PX(9.5)}px;
                 padding: {config.S(4)}px {config.S(12)}px;
                 text-align: center;
             }}
@@ -319,9 +339,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 text-align: center;
                 background: transparent;
                 border: 1px solid #444;
-                border-radius: 3px;
+                border-radius: {config.S(3)}px;
                 color: #888;
-                font-size: 12pt;
+                font-size: {config.FS_PX(12)}px;
                 font-weight: bold;
             }}
             {config.scrollbar_qss(8)}
@@ -385,7 +405,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 border-radius: {config.S(4)}px;
                 padding: 0 {config.S(8)}px;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(9)}pt;
+                font-size: {config.FS_PX(9)}px;
             }}
             QLineEdit#SettingsSearch:focus {{
                 border: 1px solid {config.BTN_BG};
@@ -397,7 +417,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         self.category_list = QListWidget()
         self.category_list.setFocusPolicy(Qt.NoFocus)
-        self.category_list.setFont(QFont(config.UI_FONT_NAME, config.FS(10)))
+        self.category_list.setFont(config.make_font(config.UI_FONT_NAME, 10))
         # Disable horizontal scrollbar - marquee handles overflow instead
         self.category_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._marquee_delegate = MarqueeItemDelegate(self.category_list, padding=config.S(16))
@@ -462,19 +482,128 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         self._build_ui()
 
-        init_w = config.SETTINGS_WINDOW_W
-        init_h = config.SETTINGS_WINDOW_H
-        _center_on_screen(self, init_w, init_h, reference_window=self._main_window)
-        self.init_normal_geometry(
-            saved_w=init_w,
-            saved_h=init_h,
-            screen=self.screen() or QGuiApplication.primaryScreen(),
-            ratio=0.70,
-            min_w=config.S(640),
-            min_h=config.S(460),
-            apply_geometry=False,
-            always_restore_default=True,
-        )
+    def _schedule_live_ui_scale(self, mode: str, pct: int | None):
+        """Schedules live UI rescale on next tick so active slider mouse handlers unwind cleanly."""
+        QTimer.singleShot(0, lambda m=mode, p=pct: self._apply_live_ui_scale(m, p))
+
+    def _apply_live_ui_scale(self, mode: str, pct: int | None):
+        """Applies new UI scaling factor immediately without restarting process or dropping Resolve IPC."""
+        if getattr(self, '_rebuilding_scale', False):
+            return
+        main_win = self._get_main_window()
+        scr = self.screen() or (main_win.screen() if main_win else None) or QGuiApplication.primaryScreen()
+        config.apply_ui_scaling(mode=mode, pct=pct, screen=scr)
+
+        app = QApplication.instance()
+        if app is not None:
+            app.setFont(
+                config.make_font(
+                    config.UI_FONT_NAME,
+                    config.BASE_FONT_PT,
+                    weight=QFont.Weight.Normal,
+                )
+            )
+
+        if main_win is not None and hasattr(main_win, 'rebuild_ui_for_scale'):
+            main_win.rebuild_ui_for_scale()
+
+        self.rebuild_ui_for_scale()
+
+    def sync_auto_os_scale_display(self, os_pct: int):
+        """Refreshes the live Auto-mode scale indicator when moving across mixed-DPI screens."""
+        if getattr(self, '_ui_scale_mode', 'auto') != 'auto':
+            return
+        self._updating_scale_slider = True
+        try:
+            if hasattr(self, 'slider_ui_scale') and self.slider_ui_scale is not None:
+                self.slider_ui_scale.setValue(max(config.UI_SCALE_MIN, min(config.UI_SCALE_MAX, int(os_pct))))
+            if hasattr(self, '_refresh_scale_label') and callable(self._refresh_scale_label):
+                self._refresh_scale_label(int(os_pct), True)
+        except RuntimeError:
+            pass
+        finally:
+            self._updating_scale_slider = False
+
+    def rebuild_ui_for_scale(self):
+        """Cleanly rebuilds all Settings widgets/fonts at current SCALE_FACTOR preserving state & active tab."""
+        if getattr(self, '_rebuilding_scale', False):
+            return
+        self._rebuilding_scale = True
+        was_visible = self.isVisible()
+        self.setUpdatesEnabled(False)
+        try:
+            saved_state = self._get_current_state_dict()
+            saved_initial = dict(getattr(self, '_initial_state', {}) or {})
+            saved_initial['ui_scale_mode'] = saved_state.get('ui_scale_mode', 'auto')
+            saved_initial['ui_scale_pct'] = saved_state.get('ui_scale_pct', config.UI_SCALE_PERCENT)
+
+            saved_tab = self.category_list.currentRow() if hasattr(self, 'category_list') else 0
+            saved_search = self.search_edit.text() if hasattr(self, 'search_edit') else ''
+            saved_basic = getattr(self, '_is_basic_mode', True)
+            saved_support = {
+                'email': self._safe_get('input_support_email', '', 'text'),
+                'title': self._safe_get('input_support_title', '', 'text'),
+                'body': self._safe_get('input_support_body', '', 'toPlainText'),
+                'attachments': list(getattr(self, 'support_attachments', [])),
+                'attach_logs': self._safe_get('chk_attach_logs', True, 'isChecked'),
+            }
+
+            old_central = self.takeCentralWidget()
+            if old_central is not None:
+                old_central.hide()
+                old_central.deleteLater()
+
+            build_prefs = dict(self.engine.load_preferences() or {})
+            build_prefs['settings_view_mode'] = 'basic' if saved_basic else 'advanced'
+            self._build_dialog_chrome(build_prefs)
+
+            # Force build all pages synchronously so state restoration hits every control
+            if hasattr(self, 'category_list'):
+                for i in range(self.category_list.count()):
+                    self._ensure_page_built(i)
+
+            self._restore_state_dict(saved_state)
+            self._set_view_mode('basic' if saved_basic else 'advanced')
+
+            if hasattr(self, 'category_list') and 0 <= saved_tab < self.category_list.count():
+                self.category_list.setCurrentRow(saved_tab)
+            if saved_search and hasattr(self, 'search_edit'):
+                self.search_edit.setText(saved_search)
+
+            try:
+                if hasattr(self, 'input_support_email'):
+                    self.input_support_email.setText(saved_support['email'])
+                if hasattr(self, 'input_support_title'):
+                    self.input_support_title.setText(saved_support['title'])
+                if hasattr(self, 'input_support_body'):
+                    self.input_support_body.setPlainText(saved_support['body'])
+                if hasattr(self, 'chk_attach_logs'):
+                    self.chk_attach_logs.setChecked(bool(saved_support['attach_logs']), animated=False)
+                self.support_attachments = list(saved_support['attachments'])
+            except Exception:
+                pass
+
+            self._initial_state = saved_initial
+            self._default_normal_size = QSize(config.SETTINGS_WINDOW_W, config.SETTINGS_WINDOW_H)
+
+            if not self._is_effectively_maximized():
+                scr = self.screen() or QGuiApplication.primaryScreen()
+                avail = scr.availableGeometry() if scr else QRect(0, 0, 1280, 800)
+                new_w = max(config.S(640), min(config.SETTINGS_WINDOW_W, avail.width() - 16))
+                new_h = max(config.S(460), min(config.SETTINGS_WINDOW_H, avail.height() - 16))
+                cx, cy = self.geometry().center().x(), self.geometry().center().y()
+                nx = max(avail.left(), min(cx - new_w // 2, avail.right() - new_w + 1))
+                ny = max(avail.top(), min(cy - new_h // 2, avail.bottom() - new_h + 1))
+                self.setGeometry(nx, ny, new_w, new_h)
+
+            if hasattr(self, '_ensure_border_overlay'):
+                self._ensure_border_overlay()
+            self._update_responsive_layout()
+        finally:
+            self.setUpdatesEnabled(True)
+            if was_visible:
+                self.update()
+            self._rebuilding_scale = False
 
     def _compute_ideal_sidebar_width(self) -> int:
         min_w = config.S(165)
@@ -519,7 +648,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             return parent._create_info_icon(info_key)
         lbl_info = QLabel("ⓘ")
         lbl_info.setToolTip(self.txt(info_key) if hasattr(self, 'txt') else info_key)
-        lbl_info.setStyleSheet("color: #888; font-size: 11pt;")
+        lbl_info.setStyleSheet(f"color: #888; font-size: {config.FS_PX(11)}px;")
         return lbl_info
 
     def _open_external_url(self, url: str):
@@ -647,6 +776,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
     def showEvent(self, event):
         super().showEvent(event)
         track_window_screen(self)
+        self._ensure_screen_scale_tracking()
         # Ensure all pages are built so all controls exist in RAM
         if hasattr(self, '_ensure_page_built') and hasattr(self, 'category_list'):
             for i in range(self.category_list.count()):
@@ -665,6 +795,45 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         self.raise_()
         self.activateWindow()
+
+    def _ensure_screen_scale_tracking(self):
+        """Hooks windowHandle().screenChanged on SettingsDialog for multi-DPI screen transitions."""
+        if getattr(self, '_scale_screen_tracked', False):
+            return
+        handle = self.windowHandle() if hasattr(self, 'windowHandle') else None
+        if not handle:
+            return
+        self._scale_screen_tracked = True
+        if not hasattr(self, '_screen_scale_timer') or self._screen_scale_timer is None:
+            self._screen_scale_timer = QTimer(self)
+            self._screen_scale_timer.setSingleShot(True)
+            self._screen_scale_timer.setInterval(120)
+            self._screen_scale_timer.timeout.connect(self._on_settings_screen_settled)
+
+        def _schedule(_=None):
+            if hasattr(self, '_screen_scale_timer') and self._screen_scale_timer is not None:
+                self._screen_scale_timer.start()
+
+        handle.screenChanged.connect(lambda _s: _schedule())
+
+    def _on_settings_screen_settled(self):
+        main_win = self._get_main_window()
+        if main_win is not None and hasattr(main_win, '_on_screen_scale_settled'):
+            main_win._on_screen_scale_settled()
+            return
+        scr = (self.windowHandle().screen() if self.windowHandle() else None) or self.screen()
+        if scr is None:
+            return
+        mode = getattr(self, '_ui_scale_mode', 'auto')
+        old_factor = config.SCALE_FACTOR
+        old_os = config.OS_SCALE_PERCENT
+        new_os = config.detect_os_scale_pct(scr)
+        pct = self._safe_get('slider_ui_scale', new_os, 'value')
+        config.apply_ui_scaling(mode=mode, pct=(None if mode == 'auto' else pct), screen=scr)
+        if abs(config.SCALE_FACTOR - old_factor) >= 0.01:
+            self.rebuild_ui_for_scale()
+        elif mode == 'auto' and new_os != old_os:
+            self.sync_auto_os_scale_display(new_os)
 
     def _build_ui(self):
         self.setUpdatesEnabled(False)
@@ -754,7 +923,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         finally:
             self.setUpdatesEnabled(True)
 
-    def _add_row(self, form, label_text, widget, default_val, setter_func, info_key=None, is_advanced=False):
+    def _add_row(self, form, label_text, widget, default_val, setter_func, info_key=None, is_advanced=False, info_on_right=False, max_widget_w=None, min_widget_w=None):
         container = QWidget()
         row = QHBoxLayout(container)
         row.setContentsMargins(0, 0, 0, 0)
@@ -763,11 +932,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         row.setAlignment(Qt.AlignVCenter)
         if not has_toggle:
             row.addStretch(1)
-            widget.setMinimumWidth(config.S(160))
-            widget.setMaximumWidth(config.S(240))
+            widget.setMinimumWidth(min_widget_w if min_widget_w is not None else config.S(160))
+            widget.setMaximumWidth(max_widget_w if max_widget_w is not None else config.S(240))
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         else:
             widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        if info_key and info_on_right:
+            row.addWidget(self._get_info_icon(info_key))
+            row.addSpacing(config.S(4))
         row.addWidget(widget, 3 if not has_toggle else 1)
         btn_rev = ReloadButton(size=30)
         btn_rev.setToolTip(self.txt("tt_revert_to_default"))
@@ -777,13 +949,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         row.addWidget(btn_rev)
         lbl = QLabel(label_text)
         lbl.setMinimumWidth(config.S(110))
-        lbl.setStyleSheet(f"font-size: {config.FS(10)}pt;")
+        lbl.setStyleSheet(f"font-size: {config.FS_PX(10)}px;")
 
-        if info_key:
+        if info_key and not info_on_right:
             lbl_container = QWidget()
             lbl_layout = QHBoxLayout(lbl_container)
             lbl_layout.setContentsMargins(0, 0, 0, 0)
-            lbl_layout.setSpacing(6)
+            lbl_layout.setSpacing(config.S(6))
             lbl_layout.addWidget(lbl)
             lbl_layout.addWidget(self._get_info_icon(info_key))
             lbl_layout.addStretch()
@@ -854,8 +1026,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         self.btn_view_basic = QPushButton(self.txt("btn_view_basic"))
         self.btn_view_basic.setFixedHeight(config.S(30))
         self.btn_view_basic.setCursor(Qt.PointingHandCursor)
-        self.active_btn_style = f"background-color: #1b8745; color: white; border: 1px solid #125c2f; border-radius: 4px; font-weight: bold; font-size: {config.FS(10)}pt;"
-        self.inactive_btn_style = f"background-color: #1a1a1a; color: #777777; border-top: 1px solid #0d0d0d; border-bottom: 1px solid #2e2e2e; border-left: 1px solid #141414; border-right: 1px solid #141414; border-radius: 4px; font-weight: normal; font-size: {config.FS(10)}pt;"
+        self.active_btn_style = f"background-color: #1b8745; color: white; border: 1px solid #125c2f; border-radius: {config.S(4)}px; font-weight: bold; font-size: {config.FS_PX(10)}px;"
+        self.inactive_btn_style = f"background-color: #1a1a1a; color: #777777; border-top: 1px solid #0d0d0d; border-bottom: 1px solid #2e2e2e; border-left: 1px solid #141414; border-right: 1px solid #141414; border-radius: {config.S(4)}px; font-weight: normal; font-size: {config.FS_PX(10)}px;"
         
         if self._is_basic_mode:
             self.btn_view_basic.setStyleSheet(self.active_btn_style)
@@ -881,7 +1053,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         # ── Version / Update card (at the top) ────────────────────────────
         ver_card = QFrame()
         ver_card.setStyleSheet(
-            "QFrame { background-color: #111; border: 1px solid #242424; border-radius: 8px; }"
+            f"QFrame {{ background-color: #111; border: 1px solid #242424; border-radius: {config.S(8)}px; }}"
         )
         ver_card_lay = QVBoxLayout(ver_card)
         ver_card_lay.setContentsMargins(config.S(16), config.S(12), config.S(16), config.S(12))
@@ -891,14 +1063,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         ver_row = QHBoxLayout()
         ver_row.setSpacing(config.S(6))
         lbl_ver_key = QLabel(self.txt("lbl_ver_installed") + ":")
-        lbl_ver_key.setStyleSheet(f"color: #666; font-size: {config.FS(9)}pt; background: transparent; border: none;")
+        lbl_ver_key.setStyleSheet(f"color: #666; font-size: {config.FS_PX(9)}px; background: transparent; border: none;")
         lbl_ver_val = QLabel(config.VERSION)
-        lbl_ver_val.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS(11)}pt; font-weight: bold; background: transparent; border: none;")
+        lbl_ver_val.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS_PX(11)}px; font-weight: bold; background: transparent; border: none;")
         self._lbl_ver_status = QLabel("…")
-        self._lbl_ver_status.setStyleSheet(f"color: #555; font-size: {config.FS(9)}pt; background: transparent; border: none;")
+        self._lbl_ver_status.setStyleSheet(f"color: #555; font-size: {config.FS_PX(9)}px; background: transparent; border: none;")
         self._btn_ver_update = QPushButton(self.txt("btn_settings_update_now"))
         self._btn_ver_update.setObjectName("btn_ghost_sm")
-        self._btn_ver_update.setStyleSheet(f"padding: {config.S(3)}px {config.S(10)}px; font-size: {config.FS(9)}pt;")
+        self._btn_ver_update.setStyleSheet(f"padding: {config.S(3)}px {config.S(10)}px; font-size: {config.FS_PX(9)}px;")
         self._btn_ver_update.setCursor(Qt.PointingHandCursor)
         self._btn_ver_update.hide()
         ver_row.addWidget(lbl_ver_key)
@@ -917,14 +1089,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         # Row 2: Notify toggle
         tgl_notify_row = QHBoxLayout()
-        tgl_notify_row.setSpacing(10)
+        tgl_notify_row.setSpacing(config.S(10))
         self.tgl_auto_check_updates = ToggleSwitch()
         self.tgl_auto_check_updates.setChecked(
             bool(prefs.get('auto_check_updates', True)), animated=False
         )
         self.tgl_auto_check_updates.setToolTip(self.txt("tt_auto_check_updates"))
         lbl_notify = QLabel(self.txt("lbl_auto_check_updates"))
-        lbl_notify.setStyleSheet(f"color: {config.FG_COLOR}; font-size: 10pt; background: transparent; border: none;")
+        lbl_notify.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS_PX(10)}px; background: transparent; border: none;")
         lbl_notify.setToolTip(self.txt("tt_auto_check_updates"))
         tgl_notify_row.addWidget(self.tgl_auto_check_updates)
         tgl_notify_row.addWidget(lbl_notify)
@@ -935,14 +1107,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         w_autoupd_row = QWidget()
         tgl_autoupd_row = QHBoxLayout(w_autoupd_row)
         tgl_autoupd_row.setContentsMargins(0, 0, 0, 0)
-        tgl_autoupd_row.setSpacing(10)
+        tgl_autoupd_row.setSpacing(config.S(10))
         self.tgl_auto_update_on_start = ToggleSwitch()
         self.tgl_auto_update_on_start.setChecked(
             bool(prefs.get('auto_update_on_start', False)), animated=False
         )
         self.tgl_auto_update_on_start.setToolTip(self.txt("tt_auto_update_on_start"))
         lbl_autoupd = QLabel(self.txt("lbl_auto_update_on_start"))
-        lbl_autoupd.setStyleSheet(f"color: {config.FG_COLOR}; font-size: 10pt; background: transparent; border: none;")
+        lbl_autoupd.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS_PX(10)}px; background: transparent; border: none;")
         lbl_autoupd.setToolTip(self.txt("tt_auto_update_on_start"))
         tgl_autoupd_row.addWidget(self.tgl_auto_update_on_start)
         tgl_autoupd_row.addWidget(lbl_autoupd)
@@ -953,7 +1125,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         ver_card_lay.addWidget(w_autoupd_row)
 
         l_gen.addWidget(ver_card)
-        l_gen.addSpacing(12)
+        l_gen.addSpacing(config.S(12))
 
         # ── Async: populate version status + wire Update Now button ───────
         # Use engine reference captured now; derive lang at call time from prefs
@@ -970,7 +1142,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             if pending and pending == latest_ver:
                 self._lbl_ver_status.setText(self.txt('lbl_ver_pending_restart'))
                 self._lbl_ver_status.setStyleSheet(
-                    "color: #f4a641; font-size: 9pt; font-weight: bold; background: transparent; border: none;"
+                    f"color: #f4a641; font-size: {config.FS_PX(9)}px; font-weight: bold; background: transparent; border: none;"
                 )
                 self._btn_ver_update.hide()
                 return
@@ -980,7 +1152,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 f"{self.txt('lbl_ver_update_avail')} {latest_ver}"
             )
             self._lbl_ver_status.setStyleSheet(
-                "color: #f4a641; font-size: 9pt; background: transparent; border: none;"
+                f"color: #f4a641; font-size: {config.FS_PX(9)}px; background: transparent; border: none;"
             )
             self._btn_ver_update.show()
 
@@ -997,7 +1169,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 self._btn_ver_update.setText(_txt(_card_lang(), 'update_notify_updating'))
                 self._lbl_ver_status.setText(_txt(_card_lang(), 'update_notify_wait'))
                 self._lbl_ver_status.setStyleSheet(
-                    "color: #888; font-size: 9pt; font-style: italic; background: transparent; border: none;"
+                    f"color: #888; font-size: {config.FS_PX(9)}px; font-style: italic; background: transparent; border: none;"
                 )
 
                 # Signal bridge: safe cross-thread UI update
@@ -1010,14 +1182,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                         log_info("[Updater] Card update succeeded.")
                         self._lbl_ver_status.setText(_txt(_card_lang(), 'update_notify_success'))
                         self._lbl_ver_status.setStyleSheet(
-                            "color: #39ff7a; font-size: 9pt; background: transparent; border: none;"
+                            f"color: #39ff7a; font-size: {config.FS_PX(9)}px; background: transparent; border: none;"
                         )
                         self._btn_ver_update.hide()
                     else:
                         log_error(f"[Updater] Card update failed: {err}")
                         self._lbl_ver_status.setText(_txt(_card_lang(), 'update_notify_failed'))
                         self._lbl_ver_status.setStyleSheet(
-                            "color: #ed4245; font-size: 9pt; background: transparent; border: none;"
+                            f"color: #ed4245; font-size: {config.FS_PX(9)}px; background: transparent; border: none;"
                         )
                         self._btn_ver_update.setText(_txt(_card_lang(), 'update_notify_win_btn'))
                         self._btn_ver_update.setEnabled(True)
@@ -1121,7 +1293,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             if self._lbl_ver_status.text() == "…":
                 self._lbl_ver_status.setText(self.txt("lbl_ver_up_to_date"))
                 self._lbl_ver_status.setStyleSheet(
-                    "color: #39ff7a; font-size: 9pt; background: transparent; border: none;"
+                    f"color: #39ff7a; font-size: {config.FS_PX(9)}px; background: transparent; border: none;"
                 )
 
         _thr = UpdateCheckThread(config.VERSION, parent=None)
@@ -1133,7 +1305,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         # ── Language + App Icon ────────────────────────────────────────────
         form_gen = QFormLayout()
-        form_gen.setSpacing(14)
+        form_gen.setSpacing(config.S(14))
         form_gen.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         # Language dropdown
@@ -1252,14 +1424,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                  True, lambda v: self.tgl_show_panel_headers.setChecked(v, animated=True), is_advanced=True)
 
         l_gen.addLayout(form_gen)
-        l_gen.addSpacing(8)
+        l_gen.addSpacing(config.S(8))
         l_gen.addStretch()
 
 
         # ── Import / Export settings (bottom) ─────────────────────────────
         io_row = QHBoxLayout()
-        io_row.setContentsMargins(0, 0, 0, 8)
-        io_row.setSpacing(8)
+        io_row.setContentsMargins(0, 0, 0, config.S(8))
+        io_row.setSpacing(config.S(8))
 
         btn_import_s = QPushButton(self.txt("btn_import_settings"))
         btn_import_s.setObjectName("btn_ghost_sm")
@@ -1288,7 +1460,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         page_shorts = QWidget()
         page_shorts.setStyleSheet("background: transparent;")
         l_shorts = QVBoxLayout(page_shorts)
-        l_shorts.setContentsMargins(24, 20, 24, 16)
+        l_shorts.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
         l_shorts.setSpacing(0)
 
 
@@ -1355,7 +1527,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 lbl_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
                 lbl_layout = QHBoxLayout(lbl_container)
                 lbl_layout.setContentsMargins(0, 0, 0, 0)
-                lbl_layout.setSpacing(6)
+                lbl_layout.setSpacing(config.S(6))
                 info_icon = self._get_info_icon(info_key)
                 lbl_layout.addWidget(lbl)
                 lbl_layout.addWidget(info_icon)
@@ -1383,9 +1555,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         # ── ONE unified QFormLayout ───────────────────────────────────────────
         # Custom markers inserted via insertRow() at _custom_sc_insert_pos so
-        # spacing is always identical (14px) between EVERY row.
+        # spacing is always identical (scaled) between EVERY row.
         form = QFormLayout()
-        form.setSpacing(14)
+        form.setSpacing(config.S(14))
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
@@ -1469,8 +1641,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         page_markers = QWidget()
         page_markers.setStyleSheet("background: transparent;")
         l_markers = QVBoxLayout(page_markers)
-        l_markers.setContentsMargins(24, 20, 24, 16)
-        l_markers.setSpacing(10)
+        l_markers.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
+        l_markers.setSpacing(config.S(10))
 
         self.current_custom_markers = list(prefs.get('custom_markers', []))
 
@@ -1478,12 +1650,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         markers_scroll = QScrollArea()
         markers_scroll.setWidgetResizable(True)
         markers_scroll.setFrameShape(QFrame.NoFrame)
-        markers_scroll.setMinimumHeight(120)
+        markers_scroll.setMinimumHeight(config.S(120))
         markers_scroll.setStyleSheet(f"""
             QScrollArea {{
                 background-color: #1e1e1e;
                 border: 1px solid #3a3a3a;
-                border-radius: 3px;
+                border-radius: {config.S(3)}px;
             }}
             QWidget#markers_inner {{
                 background-color: #1e1e1e;
@@ -1492,8 +1664,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         self._markers_inner = MarkerDragZone()
         self._markers_inner.setObjectName("markers_inner")
         self._markers_layout = self._markers_inner.layout()
-        self._markers_layout.setContentsMargins(4, 4, 4, 4)
-        self._markers_layout.setSpacing(2)
+        pad4 = config.S(4)
+        self._markers_layout.setContentsMargins(pad4, pad4, pad4, pad4)
+        self._markers_layout.setSpacing(config.S(2))
         markers_scroll.setWidget(self._markers_inner)
         self._refresh_markers_list()
         # Also refresh Shortcuts tab now that current_custom_markers is populated
@@ -1546,16 +1719,48 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         form.setSpacing(config.S(14))
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-        # 1. UI Scaling Slider (75% to 150%)
-        saved_scale = int(prefs.get('ui_scale_pct', 100))
-        self.slider_ui_scale = JumpSlider(Qt.Horizontal)
-        self.slider_ui_scale.setRange(75, 150)
-        self.slider_ui_scale.setValue(saved_scale)
+        # 1. UI Scaling Slider (75% to 200%, Auto OS default or Manual)
+        scale_mode = str(prefs.get('ui_scale_mode', 'auto')).strip().lower()
+        if scale_mode not in ('auto', 'manual'):
+            scale_mode = 'auto'
+        self._ui_scale_mode = scale_mode
+        self._updating_scale_slider = False
+
+        os_pct = int(getattr(config, 'OS_SCALE_PERCENT', config.detect_os_scale_pct(self.screen())))
+        raw_saved = int(prefs.get('ui_scale_pct', os_pct))
+        effective_scale = os_pct if scale_mode == 'auto' else max(config.UI_SCALE_MIN, min(config.UI_SCALE_MAX, raw_saved))
+
+        self.slider_ui_scale = JumpSlider(Qt.Horizontal, snap_step=config.UI_SCALE_STEP)
+        self.slider_ui_scale.setRange(config.UI_SCALE_MIN, config.UI_SCALE_MAX)
+        self.slider_ui_scale.setSingleStep(config.UI_SCALE_STEP)
+        self.slider_ui_scale.setPageStep(25)
+        self.slider_ui_scale.setMinimumWidth(config.S(120))
+        self.slider_ui_scale.setValue(max(config.UI_SCALE_MIN, min(config.UI_SCALE_MAX, effective_scale)))
         self.slider_ui_scale.setFixedHeight(config.S(20))
 
-        self.lbl_ui_scale_val = QLabel(f"{saved_scale}%")
-        self.lbl_ui_scale_val.setFixedWidth(config.S(48))
-        self.lbl_ui_scale_val.setStyleSheet(f"font-size: {config.FS(9.5)}pt; color: #aaa;")
+        self.lbl_ui_scale_val = QLabel()
+        badge_txt = self.txt('ui_scale_system_badge')
+        if badge_txt == 'ui_scale_system_badge':
+            badge_txt = 'System'
+        scale_lbl_font = config.make_font(config.UI_FONT_NAME, 9.5)
+        scale_lbl_fm = QFontMetrics(scale_lbl_font)
+        lbl_fixed_w = max(config.S(108), scale_lbl_fm.horizontalAdvance(f"200% ({badge_txt})") + config.S(8))
+        self.lbl_ui_scale_val.setFixedWidth(lbl_fixed_w)
+        self.lbl_ui_scale_val.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.lbl_ui_scale_val.setStyleSheet(f"font-size: {config.FS_PX(9.5)}px; color: #aaa;")
+
+        def _refresh_scale_label(pct_val: int, is_auto: bool):
+            if hasattr(self, 'lbl_ui_scale_val') and self.lbl_ui_scale_val is not None:
+                if is_auto:
+                    badge = self.txt('ui_scale_system_badge')
+                    if badge == 'ui_scale_system_badge':
+                        badge = 'System'
+                    self.lbl_ui_scale_val.setText(f"{pct_val}% ({badge})")
+                else:
+                    self.lbl_ui_scale_val.setText(f"{pct_val}%")
+
+        self._refresh_scale_label = _refresh_scale_label
+        _refresh_scale_label(effective_scale, scale_mode == 'auto')
 
         scale_row = QWidget()
         scale_lay = QHBoxLayout(scale_row)
@@ -1565,23 +1770,52 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         scale_lay.addWidget(self.lbl_ui_scale_val, 0)
 
         def _on_scale_val(v):
-            self.lbl_ui_scale_val.setText(f"{v}%")
+            if getattr(self, '_updating_scale_slider', False):
+                return
+            self._ui_scale_mode = 'manual'
+            _refresh_scale_label(int(v), False)
 
         def _on_scale_released():
-            v = self.slider_ui_scale.value()
-            self.engine.save_preferences({"ui_scale_pct": v})
-            config.set_ui_scale(v)
+            v = int(self.slider_ui_scale.value())
+            self._ui_scale_mode = 'manual'
+            self.engine.save_preferences({"ui_scale_mode": "manual", "ui_scale_pct": v})
+            if hasattr(self, '_initial_state') and isinstance(self._initial_state, dict):
+                self._initial_state['ui_scale_mode'] = 'manual'
+                self._initial_state['ui_scale_pct'] = v
+            _refresh_scale_label(v, False)
+            self._schedule_live_ui_scale('manual', v)
 
-        def _reset_scale(val):
-            self.slider_ui_scale.setValue(val)
-            self.lbl_ui_scale_val.setText(f"{val}%")
-            self.engine.save_preferences({"ui_scale_pct": val})
-            config.set_ui_scale(val)
+        def _reset_scale(_val):
+            cur_os = int(config.detect_os_scale_pct(self.screen()))
+            self._ui_scale_mode = 'auto'
+            self._updating_scale_slider = True
+            try:
+                self.slider_ui_scale.setValue(max(config.UI_SCALE_MIN, min(config.UI_SCALE_MAX, cur_os)))
+            finally:
+                self._updating_scale_slider = False
+            _refresh_scale_label(cur_os, True)
+            self.engine.save_preferences({"ui_scale_mode": "auto", "ui_scale_pct": cur_os})
+            if hasattr(self, '_initial_state') and isinstance(self._initial_state, dict):
+                self._initial_state['ui_scale_mode'] = 'auto'
+                self._initial_state['ui_scale_pct'] = cur_os
+            self._schedule_live_ui_scale('auto', None)
 
         self.slider_ui_scale.valueChanged.connect(_on_scale_val)
         self.slider_ui_scale.sliderReleased.connect(_on_scale_released)
 
-        self._add_row(form, self.txt("lbl_ui_scaling"), scale_row, 100, _reset_scale, info_key="tt_ui_scaling")
+        min_scale_row_w = config.S(120) + config.S(8) + lbl_fixed_w
+        max_scale_row_w = config.S(165) + config.S(8) + lbl_fixed_w
+        self._add_row(
+            form,
+            self.txt("lbl_ui_scaling"),
+            scale_row,
+            "auto",
+            _reset_scale,
+            info_key="tt_ui_scaling",
+            info_on_right=True,
+            min_widget_w=min_scale_row_w,
+            max_widget_w=max_scale_row_w,
+        )
 
         # 2. Always on top
         self.chk_ontop = ToggleSwitch()
@@ -1606,7 +1840,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             )
             self.lbl_always_on_top_wayland_hint.setWordWrap(True)
             self.lbl_always_on_top_wayland_hint.setStyleSheet(
-                f"color: #d4a64a; font-size: {config.FS(8.5)}pt; background: transparent; padding-left: {config.S(2)}px;"
+                f"color: #d4a64a; font-size: {config.FS_PX(8.5)}px; background: transparent; padding-left: {config.S(2)}px;"
             )
             form.addRow(QWidget(), self.lbl_always_on_top_wayland_hint)
 
@@ -1637,17 +1871,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         def _update_preview_height(_=None):
             try:
-                lh = self.spin_lheight.value()
-                new_h = int(self.lbl_preview.document().size().height()) - lh + 24
-                new_h = max(30, new_h)
+                lh = config.S(self.spin_lheight.value())
+                new_h = int(self.lbl_preview.document().size().height()) - lh + config.S(24)
+                new_h = max(config.S(30), new_h)
                 if self.lbl_preview.height() != new_h:
                     self.lbl_preview.setFixedHeight(new_h)
             except Exception:
                 pass
 
         self.lbl_preview.document().documentLayout().documentSizeChanged.connect(_update_preview_height)
-        self.lbl_preview.setStyleSheet(f"background-color: #1a1a1a; border: 1px solid #333; border-radius: 4px; color: {config.FG_COLOR}; padding: 12px 14px;")
-        l_app.addSpacing(10)
+        self.lbl_preview.setStyleSheet(f"background-color: #1a1a1a; border: 1px solid #333; border-radius: {config.S(4)}px; color: {config.FG_COLOR}; padding: {config.S(12)}px {config.S(14)}px;")
+        l_app.addSpacing(config.S(10))
         l_app.addWidget(self.lbl_preview)
 
         self.combo_font.valueChanged.connect(self._update_preview)
@@ -1887,13 +2121,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             self._row_xml_track.setAttribute(Qt.WA_TransparentForMouseEvents, is_translucent)
 
         if hasattr(self, 'lbl_link_av') and self.lbl_link_av:
-            self.lbl_link_av.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
+            self.lbl_link_av.setStyleSheet(f"font-size: {config.FS_PX(10)}px; color: rgba(220, 220, 220, {val:.2f});")
             self.lbl_link_av.setAttribute(Qt.WA_TransparentForMouseEvents, is_translucent)
         if hasattr(self, 'lbl_link_all') and self.lbl_link_all:
-            self.lbl_link_all.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
+            self.lbl_link_all.setStyleSheet(f"font-size: {config.FS_PX(10)}px; color: rgba(220, 220, 220, {val:.2f});")
             self.lbl_link_all.setAttribute(Qt.WA_TransparentForMouseEvents, is_translucent)
         if hasattr(self, 'lbl_xml_track') and self.lbl_xml_track:
-            self.lbl_xml_track.setStyleSheet(f"font-size: {config.FS(10)}pt; color: rgba(220, 220, 220, {val:.2f});")
+            self.lbl_xml_track.setStyleSheet(f"font-size: {config.FS_PX(10)}px; color: rgba(220, 220, 220, {val:.2f});")
             self.lbl_xml_track.setAttribute(Qt.WA_TransparentForMouseEvents, is_translucent)
 
         if hasattr(self, 'tgl_link_av_clips') and hasattr(self.tgl_link_av_clips, 'set_opacity'):
@@ -1949,10 +2183,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         page_ai = QWidget()
         page_ai.setStyleSheet("background: transparent;")
         l_ai = QVBoxLayout(page_ai)
-        l_ai.setContentsMargins(24, 20, 24, 16)
+        l_ai.setContentsMargins(config.S(24), config.S(20), config.S(24), config.S(16))
         l_ai.setSpacing(0)
         form_ai = QFormLayout()
-        form_ai.setSpacing(14)
+        form_ai.setSpacing(config.S(14))
         form_ai.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         l_ai.addLayout(form_ai)
 
@@ -1981,7 +2215,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         l_audio_hdr.setSpacing(0)
         l_audio_hdr.addSpacing(config.S(24))
         lbl_hdr_audio = QLabel(self.txt("hdr_audio_preprocessing"))
-        lbl_hdr_audio.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS(11)}pt; font-weight: bold; background: transparent;")
+        lbl_hdr_audio.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS_PX(11)}px; font-weight: bold; background: transparent;")
         l_audio_hdr.addWidget(lbl_hdr_audio)
         l_audio_hdr.addSpacing(config.S(8))
         sep_audio = QFrame()
@@ -1993,7 +2227,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         self._advanced_widgets.append(w_audio_hdr_box)
 
         form_audio = QFormLayout()
-        form_audio.setSpacing(14)
+        form_audio.setSpacing(config.S(14))
         form_audio.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         l_ai.addLayout(form_audio)
 
@@ -2018,7 +2252,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         l_whisper_hdr.addSpacing(config.S(24))
         lbl_hdr_whisper = QLabel(self.txt("hdr_whisper_parameters"))
-        lbl_hdr_whisper.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS(11)}pt; font-weight: bold; background: transparent;")
+        lbl_hdr_whisper.setStyleSheet(f"color: {config.FG_COLOR}; font-size: {config.FS_PX(11)}px; font-weight: bold; background: transparent;")
         l_whisper_hdr.addWidget(lbl_hdr_whisper)
         l_whisper_hdr.addSpacing(config.S(8))
 
@@ -2033,12 +2267,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         # Initial prompt label + QTextEdit (under Whisper Parameters)
         lbl_prompt = QLabel(self.txt("lbl_initial_prompt"))
-        lbl_prompt.setStyleSheet(f"color: {config.NOTE_COL}; font-size: 9pt; background: transparent;")
+        lbl_prompt.setStyleSheet(f"color: {config.NOTE_COL}; font-size: {config.FS_PX(9)}px; background: transparent;")
         l_ai.addWidget(lbl_prompt)
-        l_ai.addSpacing(4)
+        l_ai.addSpacing(config.S(4))
 
         self.textedit_prompt = WrappingPlaceholderTextEdit()
-        self.textedit_prompt.setMaximumHeight(80)
+        self.textedit_prompt.setMaximumHeight(config.S(80))
         saved_prompt = prefs.get('ai_initial_prompt', '').strip()
         
         current_lang = prefs.get('lang', 'Auto')
@@ -2055,19 +2289,19 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 border: 1px solid #3a3a3a;
-                border-radius: 3px;
-                padding: 6px 8px;
-                font-family: {config.UI_FONT_NAME};
-                font-size: 10pt;
+                border-radius: {config.S(3)}px;
+                padding: {config.S(6)}px {config.S(8)}px;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS_PX(10)}px;
             }}
         """)
         l_ai.addWidget(self.textedit_prompt)
         self._advanced_widgets.extend([lbl_prompt, self.textedit_prompt])
 
-        l_ai.addSpacing(14)
+        l_ai.addSpacing(config.S(14))
 
         form_whisper = QFormLayout()
-        form_whisper.setSpacing(14)
+        form_whisper.setSpacing(config.S(14))
         form_whisper.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         l_ai.addLayout(form_whisper)
 
@@ -2138,7 +2372,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         lbl_support_info = QLabel(self.txt("msg_support_info"))
         lbl_support_info.setWordWrap(True)
-        lbl_support_info.setStyleSheet("color: #AAAAAA; font-size: 9.5pt;")
+        lbl_support_info.setStyleSheet(f"color: #AAAAAA; font-size: {config.FS_PX(9.5)}px;")
         l_support.addWidget(lbl_support_info)
 
         l_inputs = QVBoxLayout()
@@ -2161,7 +2395,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         self.w_attachments_list = QWidget()
         self.l_attachments_list = QVBoxLayout(self.w_attachments_list)
         self.l_attachments_list.setContentsMargins(0, 0, 0, 0)
-        self.l_attachments_list.setSpacing(4)
+        self.l_attachments_list.setSpacing(config.S(4))
         l_inputs.addWidget(self.w_attachments_list)
         self.w_attachments_list.hide()
 
@@ -2179,12 +2413,12 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 self.w_attachments_list.show()
                 for p in self.support_attachments:
                     w_row = QWidget()
-                    w_row.setStyleSheet("background: #1a1a1a; border: 1px solid #333; border-radius: 3px;")
+                    w_row.setStyleSheet(f"background: #1a1a1a; border: 1px solid #333; border-radius: {config.S(3)}px;")
                     l_row = QHBoxLayout(w_row)
-                    l_row.setContentsMargins(6, 2, 2, 2)
+                    l_row.setContentsMargins(config.S(6), config.S(2), config.S(2), config.S(2))
 
                     lbl_name = QLabel(p)
-                    lbl_name.setStyleSheet("color: #aaa; border: none; font-size: 9pt;")
+                    lbl_name.setStyleSheet(f"color: #aaa; border: none; font-size: {config.FS_PX(9)}px;")
 
                     btn_del = CloseIconButton(size=20)
 
@@ -2205,7 +2439,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         self.chk_attach_logs = TrackSquareCheckbox(
             self.txt("lbl_include_logs_with_report"),
             is_checked=True,
-            font_size=config.FS(9.5),
+            font_size=config.FS_PX(9.5),
             parent=page_support
         )
         self.chk_attach_logs.setToolTip(self.txt("tt_include_logs_with_report"))
@@ -2386,10 +2620,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         card_lay.setSpacing(config.S(8))
 
         lbl_app = QLabel(f"BadWords v{config.VERSION}")
-        lbl_app.setStyleSheet(f"font-size: {config.FS(13)}pt; font-weight: bold; color: #fff; background: transparent; border: none;")
+        lbl_app.setStyleSheet(f"font-size: {config.FS_PX(13)}px; font-weight: bold; color: #fff; background: transparent; border: none;")
         lbl_desc = QLabel("Local AI-powered video editing and silence removal for DaVinci Resolve.")
         lbl_desc.setWordWrap(True)
-        lbl_desc.setStyleSheet(f"font-size: {config.FS(9.5)}pt; color: #888; background: transparent; border: none;")
+        lbl_desc.setStyleSheet(f"font-size: {config.FS_PX(9.5)}px; color: #888; background: transparent; border: none;")
         card_lay.addWidget(lbl_app)
         card_lay.addWidget(lbl_desc)
         layout.addWidget(info_card)
@@ -2429,7 +2663,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         diag_lay.setSpacing(config.S(8))
 
         lbl_diag_hdr = QLabel(self.txt("header_diagnostics"))
-        lbl_diag_hdr.setStyleSheet(f"font-weight: bold; font-size: {config.FS(10.5)}pt; color: #eee;")
+        lbl_diag_hdr.setStyleSheet(f"font-weight: bold; font-size: {config.FS_PX(10.5)}px; color: #eee;")
         diag_lay.addWidget(lbl_diag_hdr)
 
         import os
@@ -2481,7 +2715,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         # Privacy & Telemetry section
         lbl_telem_hdr = QLabel(self.txt("header_privacy_telemetry"))
-        lbl_telem_hdr.setStyleSheet(f"font-weight: bold; font-size: {config.FS(10.5)}pt; color: #eee;")
+        lbl_telem_hdr.setStyleSheet(f"font-weight: bold; font-size: {config.FS_PX(10.5)}px; color: #eee;")
         layout.addSpacing(config.S(6))
         layout.addWidget(lbl_telem_hdr)
 
@@ -2564,6 +2798,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             self.initial_prefs = self.engine.load_preferences() or {}
             # Reset all visible widgets to their default values
             self._restore_state_dict(default_state)
+            if hasattr(self, '_initial_state') and isinstance(self._initial_state, dict):
+                self._initial_state = self._get_current_state_dict()
+            self._schedule_live_ui_scale('auto', None)
             CustomMsgBox(self, self.txt('msg_title_settings'), self.txt('msg_restart_required'), self.txt('btn_ok')).exec()
             try:
                 self._refresh_markers_list()
@@ -2602,18 +2839,18 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             }}
             QLabel {{
                 color: {config.FG_COLOR};
-                font-family: {config.UI_FONT_NAME};
-                font-size: 10pt;
+                font-family: "{config.UI_FONT_NAME}";
+                font-size: {config.FS_PX(10)}px;
                 background: transparent;
             }}
             QPushButton {{
                 background-color: #2d2d2d;
                 color: #aaaaaa;
                 border: 1px solid #3a3a3a;
-                border-radius: 3px;
-                padding: 2px 8px;
-                font-size: 9pt;
-                min-height: 22px;
+                border-radius: {config.S(3)}px;
+                padding: {config.S(2)}px {config.S(8)}px;
+                font-size: {config.FS_PX(9)}px;
+                min-height: {config.S(22)}px;
             }}
             QPushButton:hover {{
                 background-color: #383838;
@@ -2641,7 +2878,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
             # Color dot indicator
             dot = QLabel("●")
-            dot.setStyleSheet(f"color: {hex_col}; font-size: {config.FS(14)}pt; background: transparent;")
+            dot.setStyleSheet(f"color: {hex_col}; font-size: {config.FS_PX(14)}px; background: transparent;")
             dot.setFixedWidth(config.S(20))
             row_layout.addWidget(dot)
 
@@ -2651,7 +2888,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             row_layout.addWidget(lbl_name, 1)
 
             lbl_color = QLabel(f"[{self.txt(f'resolve_color_{color.lower()}')}]")
-            lbl_color.setStyleSheet(f"color: #666666; font-size: {config.FS(9)}pt; background: transparent;")
+            lbl_color.setStyleSheet(f"color: #666666; font-size: {config.FS_PX(9)}px; background: transparent;")
             row_layout.addWidget(lbl_color)
 
             # Edit button
@@ -2668,7 +2905,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                     border: 1px solid #3a3a3a;
                     border-radius: {config.S(3)}px;
                     padding: 0px {config.S(8)}px;
-                    font-size: {config.FS(9)}pt;
+                    font-size: {config.FS_PX(9)}px;
                     min-height: {config.S(24)}px;
                     max-height: {config.S(24)}px;
                 }}
@@ -2682,7 +2919,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 btn_edit.setEnabled(False)
                 btn_edit.setToolTip(self.txt("tooltip_disabled_davinci_colors"))
                 lbl_name.setStyleSheet("color: #666666; font-weight: bold; background: transparent;")
-                dot.setStyleSheet(f"color: #666666; font-size: {config.FS(14)}pt; background: transparent;")
+                dot.setStyleSheet(f"color: #666666; font-size: {config.FS_PX(14)}px; background: transparent;")
             row_layout.addWidget(btn_edit)
 
             def make_del(i):
@@ -2966,11 +3203,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         self.lbl_preview.setStyleSheet(f"""
             background-color: #1a1a1a;
             border: 1px solid #333;
-            border-radius: 4px;
+            border-radius: {config.S(4)}px;
             color: {config.FG_COLOR};
             font-family: "{ff}";
-            font-size: {fs}pt;
-            padding: 12px 14px;
+            font-size: {config.FS_PX(fs)}px;
+            padding: {config.S(12)}px {config.S(14)}px;
         """)
         preview_text = self.txt("lbl_font_preview")
         self.lbl_preview.setPlainText(preview_text)
@@ -2978,7 +3215,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         cursor = self.lbl_preview.textCursor()
         cursor.select(QTextCursor.Document)
         fmt = QTextBlockFormat()
-        fmt.setLineHeight(float(lh), 4)
+        fmt.setLineHeight(float(config.S(lh)), 4)
         cursor.setBlockFormat(fmt)
         cursor.setPosition(0)
         self.lbl_preview.setTextCursor(cursor)
@@ -3101,6 +3338,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             'editor_font_family': self._safe_get('combo_font', old_prefs.get('editor_font_family', config.UI_FONT_NAME), 'currentText'),
             'editor_font_size':   self._safe_get('spin_fsize', old_prefs.get('editor_font_size', 12), 'value'),
             'editor_line_height': self._safe_get('spin_lheight', old_prefs.get('editor_line_height', 7), 'value'),
+            'ui_scale_mode':      getattr(self, '_ui_scale_mode', old_prefs.get('ui_scale_mode', 'auto')),
             'ui_scale_pct':       self._safe_get('slider_ui_scale', old_prefs.get('ui_scale_pct', 100), 'value'),
             'sync_davinci_chapter': self._safe_get('chk_sync_davinci', old_prefs.get('sync_davinci_chapter', True), 'isChecked'),
             'xml_preserve_track_order': self._safe_get('tgl_xml_preserve_track_order', old_prefs.get('xml_preserve_track_order', config.DEFAULT_SETTINGS['xml_preserve_track_order']), 'isChecked'),
@@ -3209,7 +3447,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         self._safe_set('combo_font', _g('editor_font_family', config.UI_FONT_NAME), 'setText')
         self._safe_set('spin_fsize', _g('editor_font_size', 12), 'setValue')
         self._safe_set('spin_lheight', _g('editor_line_height', 7), 'setValue')
-        self._safe_set('slider_ui_scale', _g('ui_scale_pct', 100), 'setValue')
+        restored_mode = str(_g('ui_scale_mode', 'auto')).strip().lower()
+        self._ui_scale_mode = restored_mode if restored_mode in ('auto', 'manual') else 'auto'
+        restored_os = int(config.detect_os_scale_pct(self.screen()))
+        restored_pct = restored_os if self._ui_scale_mode == 'auto' else int(_g('ui_scale_pct', restored_os))
+        self._updating_scale_slider = True
+        try:
+            self._safe_set('slider_ui_scale', max(config.UI_SCALE_MIN, min(config.UI_SCALE_MAX, restored_pct)), 'setValue')
+        finally:
+            self._updating_scale_slider = False
+        if hasattr(self, '_refresh_scale_label') and callable(self._refresh_scale_label):
+            self._refresh_scale_label(restored_pct, self._ui_scale_mode == 'auto')
         
         self.current_custom_markers = _g('custom_markers', [])
         try:

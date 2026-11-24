@@ -198,6 +198,41 @@ def migrate_stray_src_files_to_dev_workspace(install_dir: str, dev_data_dir: str
             pass
 
 
+def read_startup_ui_scale_prefs(install_dir: str = "") -> Tuple[Optional[str], Optional[int]]:
+    """
+    Lightweight read-only helper for startup before OSDoctor/BootSplash initialization.
+    Reads ("ui_scale_mode", "ui_scale_pct") from the active runtime settings.json without
+    creating files or mutating state. Returns (None, None) when missing/uninitialized.
+    """
+    try:
+        base_dir = install_dir or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        is_dev, repo_root = detect_dev_mode(base_dir)
+        candidates = []
+        if is_dev and repo_root:
+            candidates.append(os.path.join(repo_root, ".dev_workspace", "settings.json"))
+        else:
+            candidates.append(os.path.join(base_dir, "settings.json"))
+            candidates.append(os.path.join(get_user_profile_data_dir(), "settings.json"))
+
+        for path in candidates:
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    mode = data.get("ui_scale_mode")
+                    pct = data.get("ui_scale_pct")
+                    norm_mode = mode if mode in ("auto", "manual") else None
+                    norm_pct = int(pct) if pct is not None and norm_mode == "manual" else None
+                    return norm_mode, norm_pct
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None, None
+
+
 # ==========================================
 # 2. ATOMIC JSON PERSISTENCE & CORRUPT SALVAGE
 # ==========================================

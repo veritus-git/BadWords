@@ -117,6 +117,7 @@ DEFAULT_SETTINGS = {
     "force_xml_assembly": True,
     "timeline_assembly_method": "xml",
     # ── UI Scaling (75% to 150%) ─────────────────────────────────────────────
+    "ui_scale_mode": "auto",
     "ui_scale_pct": 100,
     # True (default): automatically link matching video & audio originating from the same media clip
     "link_av_clips": True,

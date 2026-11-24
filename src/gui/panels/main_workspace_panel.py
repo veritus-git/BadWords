@@ -69,7 +69,7 @@ def build_main_workspace_panel(win) -> QFrame:
     win.btn_add_custom_marker = QPushButton(win.txt("lbl_add_custom_marker"))
     win.btn_add_custom_marker.setCursor(Qt.CursorShape.PointingHandCursor)
     win.btn_add_custom_marker.setStyleSheet(f"""
-        QPushButton {{ background: transparent; color: #808080; text-decoration: underline; border: none; text-align: left; padding: {config.S(5)}px; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; }} 
+        QPushButton {{ background: transparent; color: #808080; text-decoration: underline; border: none; text-align: left; padding: {config.S(5)}px; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(9.5)}px; }} 
         QPushButton:hover {{ color: #ffffff; }}
     """)
     win.btn_add_custom_marker.clicked.connect(win._on_add_custom_marker)
@@ -83,13 +83,13 @@ def build_main_workspace_panel(win) -> QFrame:
     l_layer2.setAlignment(Qt.AlignBottom)
     
     win.lbl_analysis_duration = QLabel("")
-    win.lbl_analysis_duration.setStyleSheet(f"color: #a0a0a0; font-size: {config.FS(9)}pt; font-style: italic;")
+    win.lbl_analysis_duration.setStyleSheet(f"color: #a0a0a0; font-size: {config.FS_PX(9)}px; font-style: italic;")
     win.lbl_analysis_duration.setAlignment(Qt.AlignCenter)
     win.lbl_analysis_duration.setVisible(False)
     l_layer2.addWidget(win.lbl_analysis_duration)
     
     win.lbl_pinned_favorites = QLabel(win.txt("lbl_pinned_favorites"))
-    win.lbl_pinned_favorites.setStyleSheet(f"color: #888888; font-size: {config.FS(8)}pt; font-weight: bold; text-transform: uppercase;")
+    win.lbl_pinned_favorites.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(8)}px; font-weight: bold; text-transform: uppercase;")
     win.lbl_pinned_favorites.setVisible(False)
     l_layer2.addWidget(win.lbl_pinned_favorites)
     

@@ -28,6 +28,7 @@ description: Architecture zones, cementing rules, UI quality, verification, and 
 5. Global filter debounce
 6. Auto crash reporting
 7. Runtime data & isolation
+8. Unified UI scaling
 
 ## 4. Coding & Verification Rules
 1. **No Monoliths**: Keep subpackages focused; do not bloat `main_window.py`.

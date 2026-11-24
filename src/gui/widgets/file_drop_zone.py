@@ -104,7 +104,7 @@ class FileDropZone(QWidget):
         self.lbl_prompt.setAlignment(Qt.AlignCenter)
         self.lbl_prompt.setStyleSheet(
             f"color: #a0a0a0; font-family: '{config.UI_FONT_NAME}'; "
-            f"font-size: {config.FS(8.5)}pt; font-weight: 500; background: transparent; border: none;"
+            f"font-size: {config.FS_PX(8.5)}px; font-weight: 500; background: transparent; border: none;"
         )
         empty_l.addWidget(self.lbl_prompt)
 
@@ -113,7 +113,7 @@ class FileDropZone(QWidget):
         self.lbl_subprompt.setCursor(Qt.PointingHandCursor)
         self.lbl_subprompt.setStyleSheet(
             f"color: #1a7a3e; font-family: '{config.UI_FONT_NAME}'; "
-            f"font-size: {config.FS(8.0)}pt; font-weight: bold; background: transparent; border: none;"
+            f"font-size: {config.FS_PX(8.0)}px; font-weight: bold; background: transparent; border: none;"
         )
         empty_l.addWidget(self.lbl_subprompt)
 
@@ -147,14 +147,14 @@ class FileDropZone(QWidget):
         self.lbl_badge.setStyleSheet(
             f"background-color: #1a3a24; color: #38c172; border: 1px solid #1a7a3e; "
             f"border-radius: {config.S(3)}px; padding: 0 {config.S(4)}px; "
-            f"font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(7.5)}pt; font-weight: bold;"
+            f"font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(7.5)}px; font-weight: bold;"
         )
         h_title_row.addWidget(self.lbl_badge)
 
         self.lbl_filename = QLabel()
         self.lbl_filename.setStyleSheet(
             f"color: #ffffff; font-family: '{config.UI_FONT_NAME}'; "
-            f"font-size: {config.FS(9.0)}pt; font-weight: bold; background: transparent; border: none;"
+            f"font-size: {config.FS_PX(9.0)}px; font-weight: bold; background: transparent; border: none;"
         )
         h_title_row.addWidget(self.lbl_filename, 1)
         v_details.addLayout(h_title_row)
@@ -162,7 +162,7 @@ class FileDropZone(QWidget):
         self.lbl_file_info = QLabel()
         self.lbl_file_info.setStyleSheet(
             f"color: #888888; font-family: '{config.UI_FONT_NAME}'; "
-            f"font-size: {config.FS(8.0)}pt; background: transparent; border: none;"
+            f"font-size: {config.FS_PX(8.0)}px; background: transparent; border: none;"
         )
         v_details.addWidget(self.lbl_file_info)
         sel_l.addLayout(v_details, 1)
@@ -180,7 +180,7 @@ class FileDropZone(QWidget):
             QPushButton {{
                 background-color: #242424; color: #38c172;
                 border: 1px solid #3a3a3a; border-radius: {config.S(12)}px;
-                font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(10)}pt; font-weight: bold;
+                font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(10)}px; font-weight: bold;
                 padding: 0;
             }}
             QPushButton:hover {{
@@ -198,7 +198,7 @@ class FileDropZone(QWidget):
             QPushButton {{
                 background-color: #242424; color: #888888;
                 border: 1px solid #3a3a3a; border-radius: {config.S(12)}px;
-                font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(8.5)}pt; font-weight: bold;
+                font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(8.5)}px; font-weight: bold;
                 padding: 0;
             }}
             QPushButton:hover {{
@@ -226,7 +226,7 @@ class FileDropZone(QWidget):
         self.lbl_multi_summary = QLabel()
         self.lbl_multi_summary.setStyleSheet(
             f"color: #a0a0a0; font-family: '{config.UI_FONT_NAME}'; "
-            f"font-size: {config.FS(8.0)}pt; font-weight: bold; background: transparent;"
+            f"font-size: {config.FS_PX(8.0)}px; font-weight: bold; background: transparent;"
         )
         h_multi_top.addWidget(self.lbl_multi_summary, 1)
 
@@ -236,7 +236,7 @@ class FileDropZone(QWidget):
             QPushButton {{
                 background-color: #1a3a24; color: #38c172; border: 1px solid #1a7a3e;
                 border-radius: {config.S(3)}px; padding: {config.S(2)}px {config.S(6)}px;
-                font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(7.5)}pt; font-weight: bold;
+                font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(7.5)}px; font-weight: bold;
             }}
             QPushButton:hover {{ background-color: #214a2f; color: #ffffff; }}
         """)
@@ -249,7 +249,7 @@ class FileDropZone(QWidget):
             QPushButton {{
                 background-color: #242424; color: #888888; border: 1px solid #3a3a3a;
                 border-radius: {config.S(3)}px; padding: {config.S(2)}px {config.S(6)}px;
-                font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(7.5)}pt;
+                font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(7.5)}px;
             }}
             QPushButton:hover {{ background-color: #381e1e; color: #ff5555; border-color: #ff5555; }}
         """)
@@ -407,7 +407,7 @@ class FileDropZone(QWidget):
             self.lbl_badge.setStyleSheet(
                 f"background-color: {badge_bg}; color: {badge_color}; border: 1px solid {badge_border}; "
                 f"border-radius: {config.S(3)}px; padding: 0 {config.S(4)}px; "
-                f"font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(7.5)}pt; font-weight: bold;"
+                f"font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(7.5)}px; font-weight: bold;"
             )
 
             display_name = filename if len(filename) <= 32 else filename[:16] + "..." + filename[-12:]
@@ -490,7 +490,7 @@ class FileDropZone(QWidget):
         btn_up.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; border: none; color: {'#888888' if idx > 0 else '#3a3a3a'};
-                font-size: {config.FS(6.5)}pt; padding: 0;
+                font-size: {config.FS_PX(6.5)}px; padding: 0;
             }}
             QPushButton:hover {{ color: {'#38c172' if idx > 0 else '#3a3a3a'}; }}
         """)
@@ -504,7 +504,7 @@ class FileDropZone(QWidget):
         btn_down.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; border: none; color: {'#888888' if idx < total_count - 1 else '#3a3a3a'};
-                font-size: {config.FS(6.5)}pt; padding: 0;
+                font-size: {config.FS_PX(6.5)}px; padding: 0;
             }}
             QPushButton:hover {{ color: {'#38c172' if idx < total_count - 1 else '#3a3a3a'}; }}
         """)
@@ -522,7 +522,7 @@ class FileDropZone(QWidget):
         badge.setStyleSheet(f"""
             background-color: {b_bg}; color: {b_col};
             border-radius: {config.S(2)}px; padding: 0 {config.S(3)}px;
-            font-size: {config.FS(6.5)}pt; font-weight: bold; font-family: '{config.UI_FONT_NAME}';
+            font-size: {config.FS_PX(6.5)}px; font-weight: bold; font-family: '{config.UI_FONT_NAME}';
             border: none;
         """)
         r_lay.addWidget(badge)
@@ -532,7 +532,7 @@ class FileDropZone(QWidget):
         lbl_name = QLabel(fname)
         lbl_name.setToolTip(file_path)
         lbl_name.setStyleSheet(f"""
-            color: #d4d4d4; font-size: {config.FS(7.5)}pt;
+            color: #d4d4d4; font-size: {config.FS_PX(7.5)}px;
             font-family: '{config.UI_FONT_NAME}'; background: transparent; border: none;
         """)
         r_lay.addWidget(lbl_name, 1)
@@ -542,7 +542,7 @@ class FileDropZone(QWidget):
         if dur_str:
             lbl_dur = QLabel(dur_str)
             lbl_dur.setStyleSheet(f"""
-                color: #888888; font-size: {config.FS(7.0)}pt;
+                color: #888888; font-size: {config.FS_PX(7.0)}px;
                 font-family: '{config.UI_FONT_NAME}'; background: transparent; border: none;
             """)
             r_lay.addWidget(lbl_dur)
@@ -555,7 +555,7 @@ class FileDropZone(QWidget):
         btn_del.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: #707070; border: none;
-                font-size: {config.FS(7.5)}pt; font-weight: bold; padding: 0;
+                font-size: {config.FS_PX(7.5)}px; font-weight: bold; padding: 0;
             }}
             QPushButton:hover {{ color: #ff5555; }}
         """)

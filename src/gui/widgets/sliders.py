@@ -27,7 +27,7 @@ class JumpSlider(QSlider):
     Has zero extra background height, does not push elements apart, and renders
     the handle as an unclipped, perfectly smooth circular dot that gently expands on hover.
     """
-    def __init__(self, orientation=Qt.Horizontal, parent=None):
+    def __init__(self, orientation=Qt.Horizontal, parent=None, snap_step: int = 1):
         super().__init__(orientation, parent)
         import config
         self.config = config
@@ -38,6 +38,19 @@ class JumpSlider(QSlider):
         self._hovered = False
         self._dragging = False
         self._transcription_ratio = None
+        self._snap_step = max(1, int(snap_step))
+
+    def _value_from_x(self, pos_x: float) -> int:
+        w = max(1, self.width())
+        ratio = max(0.0, min(1.0, pos_x / float(w)))
+        if self._transcription_ratio is not None:
+            ratio = min(ratio, self._transcription_ratio)
+        raw_val = self.minimum() + ((self.maximum() - self.minimum()) * ratio)
+        step = getattr(self, "_snap_step", 1)
+        if step > 1:
+            snapped = int(round((raw_val - self.minimum()) / float(step))) * step + self.minimum()
+            return max(self.minimum(), min(self.maximum(), snapped))
+        return max(self.minimum(), min(self.maximum(), int(round(raw_val))))
 
     def set_transcription_progress(self, ratio: float = None):
         """Sets transcription progress ratio (0.0 to 1.0) or None to clear."""
@@ -62,12 +75,8 @@ class JumpSlider(QSlider):
         from PySide6.QtCore import Qt
         if ev.button() == Qt.LeftButton:
             self._dragging = True
-            w = max(1, self.width())
             pos_x = ev.position().x() if hasattr(ev, 'position') else ev.x()
-            ratio = max(0.0, min(1.0, pos_x / float(w)))
-            if self._transcription_ratio is not None:
-                ratio = min(ratio, self._transcription_ratio)
-            val = int(round(self.minimum() + ((self.maximum() - self.minimum()) * ratio)))
+            val = self._value_from_x(pos_x)
             self.setValue(val)
             self.sliderPressed.emit()
             self.sliderMoved.emit(val)
@@ -79,12 +88,8 @@ class JumpSlider(QSlider):
     def mouseMoveEvent(self, ev):
         from PySide6.QtCore import Qt
         if ev.buttons() & Qt.LeftButton:
-            w = max(1, self.width())
             pos_x = ev.position().x() if hasattr(ev, 'position') else ev.x()
-            ratio = max(0.0, min(1.0, pos_x / float(w)))
-            if self._transcription_ratio is not None:
-                ratio = min(ratio, self._transcription_ratio)
-            val = int(round(self.minimum() + ((self.maximum() - self.minimum()) * ratio)))
+            val = self._value_from_x(pos_x)
             self.setValue(val)
             self.sliderMoved.emit(val)
             self.update()

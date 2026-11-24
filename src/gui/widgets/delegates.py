@@ -86,7 +86,10 @@ class MarqueeItemDelegate(QStyledItemDelegate):
         idx = self._lw.model().index(row, 0)
         self.initStyleOption(opt, idx)
         f = getattr(opt, 'font', None)
-        if f is not None and hasattr(f, 'pointSize') and f.pointSize() > 0:
+        if f is not None and (
+            (hasattr(f, 'pointSize') and f.pointSize() > 0)
+            or (hasattr(f, 'pixelSize') and f.pixelSize() > 0)
+        ):
             return QFont(f)
         return QFont(self._lw.font())
 

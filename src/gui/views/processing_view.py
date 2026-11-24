@@ -31,7 +31,7 @@ def build_processing_view(win) -> QWidget:
     win.lbl_processing_status = QLabel(win.txt("status_whisper_init", "Inicjalizowanie transkrypcji..."), page)
     win.lbl_processing_status.setAlignment(Qt.AlignCenter)
     win.lbl_processing_status.setStyleSheet(
-        f"color: {config.NOTE_COL}; font-size: {config.FS(13)}pt;"
+        f"color: {config.NOTE_COL}; font-size: {config.FS_PX(13)}px;"
         f" font-family: '{config.UI_FONT_NAME}'; background: transparent;"
     )
     layout.addWidget(win.lbl_processing_status)
@@ -47,7 +47,7 @@ def build_processing_view(win) -> QWidget:
     win.lbl_first_run_hint.setWordWrap(False)
     win.lbl_first_run_hint.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     win.lbl_first_run_hint.setStyleSheet(
-        f"color: #666666; font-size: {config.FS(10)}pt; font-style: italic;"
+        f"color: #666666; font-size: {config.FS_PX(10)}px; font-style: italic;"
         f" font-family: '{config.UI_FONT_NAME}'; background: transparent; padding: 0 {config.S(20)}px;"
     )
     

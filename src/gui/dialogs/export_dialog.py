@@ -137,7 +137,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             info.setPixmap(scaled_pix)
         else:
             info.setText("🛈")
-            info.setStyleSheet("color: #888888; font-size: 11pt;")
+            info.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(11)}px;")
             info._normal_pix = None
             info._dimmed_pix = None
 
@@ -212,13 +212,13 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             }}
             QLabel#lbl_title {{
                 color: #ffffff;
-                font-size: {config.FS(12.5)}pt;
+                font-size: {config.FS_PX(12.5)}px;
                 font-weight: bold;
                 font-family: "{config.UI_FONT_NAME}";
             }}
             QLabel#lbl_sub {{
                 color: #888888;
-                font-size: {config.FS(8.5)}pt;
+                font-size: {config.FS_PX(8.5)}px;
                 font-family: "{config.UI_FONT_NAME}";
             }}
             QLineEdit {{
@@ -228,7 +228,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
                 border-radius: {config.S(4)}px;
                 padding: {config.S(4)}px {config.S(8)}px;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(9)}pt;
+                font-size: {config.FS_PX(9)}px;
             }}
             QLineEdit:focus {{
                 border-color: #38c172;
@@ -281,7 +281,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         r_fmt.setSpacing(config.S(8))
         lbl_fmt = QLabel(self._t("lbl_export_format", "Export format:"))
         lbl_fmt.setFixedWidth(label_w)
-        lbl_fmt.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
+        lbl_fmt.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS_PX(8.5)}px; font-family: '{config.UI_FONT_NAME}';")
         r_fmt.addWidget(lbl_fmt)
 
         self.format_items = [
@@ -332,7 +332,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         r_name.setSpacing(config.S(8))
         lbl_name = QLabel(self._t("lbl_export_seq_name", "Sequence name:"))
         lbl_name.setFixedWidth(label_w)
-        lbl_name.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
+        lbl_name.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS_PX(8.5)}px; font-family: '{config.UI_FONT_NAME}';")
         r_name.addWidget(lbl_name)
 
         self.txt_seq_name = QLineEdit(self.default_seq_name)
@@ -345,7 +345,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         r_fps.setSpacing(config.S(8))
         lbl_fps = QLabel(self._t("lbl_export_fps", "Timeline frame rate:"))
         lbl_fps.setFixedWidth(label_w)
-        lbl_fps.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
+        lbl_fps.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS_PX(8.5)}px; font-family: '{config.UI_FONT_NAME}';")
         r_fps.addWidget(lbl_fps)
 
         self.fps_options = ["23.976", "24", "25", "29.97", "30", "50", "59.94", "60"]
@@ -361,7 +361,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
         if self.fps_hint:
             lbl_f_hint = QLabel(self.fps_hint)
-            lbl_f_hint.setStyleSheet(f"color: #38c172; font-size: {config.FS(7.5)}pt; font-style: italic; margin-left: {label_w + config.S(8)}px;")
+            lbl_f_hint.setStyleSheet(f"color: #38c172; font-size: {config.FS_PX(7.5)}px; font-style: italic; margin-left: {label_w + config.S(8)}px;")
             c_lay.addWidget(lbl_f_hint)
 
         # ── 4. Timeline Resolution ────────────────────────────────────────────
@@ -369,7 +369,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         r_res.setSpacing(config.S(8))
         lbl_res = QLabel(self._t("lbl_export_res", "Timeline resolution:"))
         lbl_res.setFixedWidth(label_w)
-        lbl_res.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
+        lbl_res.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS_PX(8.5)}px; font-family: '{config.UI_FONT_NAME}';")
         r_res.addWidget(lbl_res)
 
         self.res_options = [
@@ -394,7 +394,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         r_audio.setSpacing(config.S(6))
 
         self.lbl_aud = QLabel(self._t("lbl_export_preserve_audio", "Preserve original audio tracks (A1, A2...)"))
-        self.lbl_aud.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
+        self.lbl_aud.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS_PX(8.5)}px; font-family: '{config.UI_FONT_NAME}';")
         r_audio.addWidget(self.lbl_aud)
 
         # (i) Information icon with comprehensive explanation tooltip
@@ -416,7 +416,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
         lbl_dst = QLabel(self._t("lbl_export_dest", "Output folder:"))
         lbl_dst.setFixedWidth(label_w)
-        lbl_dst.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';")
+        lbl_dst.setStyleSheet(f"color: #bbbbbb; font-size: {config.FS_PX(8.5)}px; font-family: '{config.UI_FONT_NAME}';")
         r_dest.addWidget(lbl_dst)
 
         self.txt_dest_dir = QLineEdit(self.default_dir)
@@ -430,7 +430,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             QPushButton {{
                 background-color: #242424; color: #ffffff; border: 1px solid #3a3a3a;
                 border-radius: {config.S(4)}px; padding: 0px {config.S(12)}px;
-                font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(8.5)}pt;
+                font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS_PX(8.5)}px;
             }}
             QPushButton:hover {{ background-color: #333333; }}
         """)
@@ -452,7 +452,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             QPushButton {{
                 background-color: #242424; color: #a0a0a0; border: 1px solid #3a3a3a;
                 border-radius: {config.S(4)}px; padding: 0px {config.S(18)}px;
-                font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9)}pt; font-weight: bold;
+                font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS_PX(9)}px; font-weight: bold;
             }}
             QPushButton:hover {{ color: #ffffff; background-color: #2d2d2d; }}
         """)
@@ -468,7 +468,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             QPushButton {{
                 background-color: #1a7a3e; color: #ffffff; border: none;
                 border-radius: {config.S(4)}px; padding: 0px {config.S(16)}px;
-                font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS(9.5)}pt; font-weight: bold;
+                font-family: "{config.UI_FONT_NAME}"; font-size: {config.FS_PX(9.5)}px; font-weight: bold;
             }}
             QPushButton:hover {{ background-color: #219653; }}
         """)
@@ -480,7 +480,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
         self.lbl_btn_export_text = QLabel(self._t("btn_export", "Export"))
         self.lbl_btn_export_text.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.lbl_btn_export_text.setStyleSheet(f"color: #ffffff; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS(9.5)}pt; font-weight: bold; background: transparent; border: none;")
+        self.lbl_btn_export_text.setStyleSheet(f"color: #ffffff; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(9.5)}px; font-weight: bold; background: transparent; border: none;")
         btn_exp_lay.addWidget(self.lbl_btn_export_text)
 
         self.lbl_btn_export_icon = QLabel()
@@ -558,7 +558,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         # Update label color (full opacity #bbbbbb vs 35% dimmed #555555)
         lbl_color = "#bbbbbb" if is_supported else "#555555"
         self.lbl_aud.setStyleSheet(
-            f"color: {lbl_color}; font-size: {config.FS(8.5)}pt; font-family: '{config.UI_FONT_NAME}';"
+            f"color: {lbl_color}; font-size: {config.FS_PX(8.5)}px; font-family: '{config.UI_FONT_NAME}';"
         )
 
         # Update info icon dimming
@@ -566,7 +566,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             if hasattr(self.info_aud, '_normal_pix') and self.info_aud._normal_pix:
                 self.info_aud.setPixmap(self.info_aud._normal_pix if is_supported else self.info_aud._dimmed_pix)
             else:
-                self.info_aud.setStyleSheet(f"color: {'#888888' if is_supported else '#444444'}; font-size: 11pt;")
+                self.info_aud.setStyleSheet(f"color: {'#888888' if is_supported else '#444444'}; font-size: {config.FS_PX(11)}px;")
             self.info_aud.setEnabled(is_supported)
 
         # Update toggle switch

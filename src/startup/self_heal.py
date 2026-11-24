@@ -149,28 +149,29 @@ def build_dark_progress_dialog(title, label):
     """Build a dark-themed indeterminate progress dialog for component repair."""
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QDialog, QLabel, QProgressBar, QVBoxLayout
-    from startup.native_dialogs import _apply_dark_titlebar_if_win, _find_window_icon
+    from startup.native_dialogs import _apply_dark_titlebar_if_win, _find_window_icon, _startup_scale_helpers
+    _S, _FS_PX = _startup_scale_helpers()
 
     dlg = QDialog()
     dlg.setWindowTitle(str(title))
     dlg.setWindowModality(Qt.ApplicationModal)
     dlg.setWindowFlags(dlg.windowFlags() & ~Qt.WindowCloseButtonHint)
-    dlg.setMinimumWidth(440)
+    dlg.setMinimumWidth(_S(440))
     dlg.setStyleSheet(
-        """
-        QDialog { background-color: #161616; color: #e6e6e6; }
-        QLabel#HealTitle { color: #ffffff; font-size: 12pt; font-weight: 700; }
-        QLabel#HealLabel { color: #d0d0d0; font-size: 10pt; }
-        QProgressBar {
+        f"""
+        QDialog {{ background-color: #161616; color: #e6e6e6; }}
+        QLabel#HealTitle {{ color: #ffffff; font-size: {_FS_PX(12)}px; font-weight: 700; }}
+        QLabel#HealLabel {{ color: #d0d0d0; font-size: {_FS_PX(10)}px; }}
+        QProgressBar {{
             background-color: #242424;
             border: 1px solid #343434;
-            border-radius: 6px;
-            height: 12px;
-        }
-        QProgressBar::chunk {
+            border-radius: {_S(6)}px;
+            height: {_S(12)}px;
+        }}
+        QProgressBar::chunk {{
             background-color: #1f7a4c;
-            border-radius: 5px;
-        }
+            border-radius: {_S(5)}px;
+        }}
         """
     )
     _apply_dark_titlebar_if_win(dlg)
@@ -179,8 +180,8 @@ def build_dark_progress_dialog(title, label):
         dlg.setWindowIcon(win_icon)
 
     layout = QVBoxLayout(dlg)
-    layout.setContentsMargins(22, 20, 22, 22)
-    layout.setSpacing(12)
+    layout.setContentsMargins(_S(22), _S(20), _S(22), _S(22))
+    layout.setSpacing(_S(12))
 
     lbl_title = QLabel(str(title), dlg)
     lbl_title.setObjectName("HealTitle")

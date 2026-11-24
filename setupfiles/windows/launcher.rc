@@ -13,6 +13,7 @@
 #endif
 
 101 ICON "../../assets/icons/icon_default.ico"
+1 24 "badwords.manifest"
 
 1 VERSIONINFO
 FILEVERSION     BW_VERSION_COMMAS

@@ -224,9 +224,9 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
                 border-radius: 0px;
             }}
             QLabel {{ color: {config.FG_COLOR}; background: transparent; font-family: "{config.UI_FONT_NAME}"; }}
-            QLabel#lbl_title  {{ font-size: {config.FS(15)}pt; font-weight: bold; }}
-            QLabel#lbl_sub    {{ font-size: {config.FS(10)}pt; color: #999; }}
-            QLabel#lbl_status {{ font-size: {config.FS(10)}pt; color: #888; font-style: italic; }}
+            QLabel#lbl_title  {{ font-size: {config.FS_PX(15)}px; font-weight: bold; }}
+            QLabel#lbl_sub    {{ font-size: {config.FS_PX(10)}px; color: #999; }}
+            QLabel#lbl_status {{ font-size: {config.FS_PX(10)}px; color: #888; font-style: italic; }}
             #ver_frame {{
                 background-color: #101010;
                 border: 1px solid #1e1e1e;
@@ -240,7 +240,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
                 min-width: {config.S(90)}px;
                 font-weight: bold;
                 font-family: "{config.UI_FONT_NAME}";
-                font-size: {config.FS(10)}pt;
+                font-size: {config.FS_PX(10)}px;
             }}
             QPushButton:hover    {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
             QPushButton:disabled {{ color: #444; background-color: #181818; }}
@@ -294,10 +294,10 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
             col.setAlignment(Qt.AlignCenter)
             lbl = QLabel(label_txt)
             lbl.setAlignment(Qt.AlignCenter)
-            lbl.setStyleSheet(f"color: #777; font-size: {config.FS(9)}pt; letter-spacing: 1px;")
+            lbl.setStyleSheet(f"color: #777; font-size: {config.FS_PX(9)}px; letter-spacing: 1px;")
             val = QLabel(ver_txt)
             val.setAlignment(Qt.AlignCenter)
-            val.setStyleSheet(f"color: {ver_color}; font-size: {config.FS(22)}pt; font-weight: bold;")
+            val.setStyleSheet(f"color: {ver_color}; font-size: {config.FS_PX(22)}px; font-weight: bold;")
             col.addWidget(lbl)
             col.addWidget(val)
             return col
@@ -309,7 +309,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         ))
 
         lbl_arrow = QLabel("→")
-        lbl_arrow.setStyleSheet(f"color: #444; font-size: {config.FS(26)}pt; padding: 0 {config.S(36)}px 0 {config.S(36)}px;")
+        lbl_arrow.setStyleSheet(f"color: #444; font-size: {config.FS_PX(26)}px; padding: 0 {config.S(36)}px 0 {config.S(36)}px;")
         lbl_arrow.setAlignment(Qt.AlignCenter)
         ver_layout.addWidget(lbl_arrow)
 
@@ -321,19 +321,19 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         if release_notes:
             from PySide6.QtWidgets import QTextEdit
             notes_card = QFrame()
-            notes_card.setStyleSheet("""
-                QFrame {
+            notes_card.setStyleSheet(f"""
+                QFrame {{
                     background-color: #121212;
                     border: 1px solid #222222;
-                    border-radius: 6px;
-                }
+                    border-radius: {config.S(6)}px;
+                }}
             """)
             notes_layout = QVBoxLayout(notes_card)
             notes_layout.setContentsMargins(config.S(14), config.S(10), config.S(14), config.S(10))
             notes_layout.setSpacing(config.S(6))
 
             lbl_hdr = QLabel(_txt(lang, 'update_notify_notes_title', default="Release Notes / Update Message:"))
-            lbl_hdr.setStyleSheet(f"color: #888; font-size: {config.FS(9)}pt; font-weight: bold; background: transparent; border: none;")
+            lbl_hdr.setStyleSheet(f"color: #888; font-size: {config.FS_PX(9)}px; font-weight: bold; background: transparent; border: none;")
             notes_layout.addWidget(lbl_hdr)
 
             te_notes = QTextEdit()
@@ -346,7 +346,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
                     background-color: transparent;
                     color: #dcdcdc;
                     border: none;
-                    font-size: {config.FS(10)}pt;
+                    font-size: {config.FS_PX(10)}px;
                     line-height: 1.4;
                     selection-background-color: #2ea043;
                 }}
@@ -394,7 +394,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         self._btn_primary.setText(_txt(self._lang, 'update_notify_updating'))
         self._btn_dismiss.setEnabled(False)
         self._lbl_status.setText(_txt(self._lang, 'update_notify_wait'))
-        self._lbl_status.setStyleSheet(f"color: #888; font-style: italic; font-size: {config.FS(10)}pt;")
+        self._lbl_status.setStyleSheet(f"color: #888; font-style: italic; font-size: {config.FS_PX(10)}px;")
         self._lbl_status.show()
         self.adjustSize()
 
@@ -479,7 +479,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         if success:
             log_info("[UpdateCheck] Auto-update completed successfully.")
             self._lbl_status.setText(_txt(self._lang, 'update_notify_success'))
-            self._lbl_status.setStyleSheet("color: #39ff7a; font-size: 10pt; font-style: normal;")
+            self._lbl_status.setStyleSheet(f"color: #39ff7a; font-size: {config.FS_PX(10)}px; font-style: normal;")
             self._btn_primary.hide()
             self._btn_dismiss.setText(_txt(self._lang, 'btn_close'))
             self._btn_dismiss.clicked.disconnect()
@@ -488,7 +488,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         else:
             log_error(f"[UpdateCheck] Auto-update failed: {error_msg}")
             self._lbl_status.setText(_txt(self._lang, 'update_notify_failed'))
-            self._lbl_status.setStyleSheet("color: #ed4245; font-size: 10pt; font-style: normal;")
+            self._lbl_status.setStyleSheet(f"color: #ed4245; font-size: {config.FS_PX(10)}px; font-style: normal;")
             self._btn_primary.setText(_txt(self._lang, 'update_notify_win_btn'))
             self._btn_primary.clicked.disconnect()
             self._btn_primary.clicked.connect(lambda: self._open_url(self._gh_url))
