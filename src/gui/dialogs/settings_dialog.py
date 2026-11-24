@@ -36,7 +36,7 @@ from gui.widgets.sliders import JumpSlider
 from gui.widgets.labels import QLabel
 from gui.widgets.text_edits import WrappingPlaceholderTextEdit
 from gui.widgets.delegates import MarqueeItemDelegate
-from gui.utils import _txt, _app_icon, _center_on_screen, apply_app_icon_everywhere
+from gui.utils import _txt, _app_icon, _center_on_screen
 from gui.vsync import track_window_screen
 
 from gui.dialogs.msgbox import CustomMsgBox
@@ -254,7 +254,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 color: {config.NOTE_COL};
                 font-family: "{config.UI_FONT_NAME}", "Ubuntu", sans-serif;
                 font-size: {config.FS_PX(10)}px;
-                padding: {config.S(10)}px {config.S(16)}px;
+                height: {config.S(35)}px;
+                padding: 0px {config.S(16)}px;
                 border-radius: 0px;
             }}
             QListWidget::item:selected,
@@ -417,10 +418,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         self.category_list = QListWidget()
         self.category_list.setFocusPolicy(Qt.NoFocus)
+        self.category_list.setSpacing(0)
         self.category_list.setFont(config.make_font(config.UI_FONT_NAME, 10))
         # Disable horizontal scrollbar - marquee handles overflow instead
         self.category_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._marquee_delegate = MarqueeItemDelegate(self.category_list, padding=config.S(16))
+        self._marquee_delegate = MarqueeItemDelegate(self.category_list, padding=config.S(16), row_height=config.S(35))
         self.category_list.setItemDelegate(self._marquee_delegate)
         left_layout.addWidget(self.category_list, 1)
 
@@ -1775,16 +1777,6 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             self._ui_scale_mode = 'manual'
             _refresh_scale_label(int(v), False)
 
-        def _on_scale_released():
-            v = int(self.slider_ui_scale.value())
-            self._ui_scale_mode = 'manual'
-            self.engine.save_preferences({"ui_scale_mode": "manual", "ui_scale_pct": v})
-            if hasattr(self, '_initial_state') and isinstance(self._initial_state, dict):
-                self._initial_state['ui_scale_mode'] = 'manual'
-                self._initial_state['ui_scale_pct'] = v
-            _refresh_scale_label(v, False)
-            self._schedule_live_ui_scale('manual', v)
-
         def _reset_scale(_val):
             cur_os = int(config.detect_os_scale_pct(self.screen()))
             self._ui_scale_mode = 'auto'
@@ -1794,14 +1786,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             finally:
                 self._updating_scale_slider = False
             _refresh_scale_label(cur_os, True)
-            self.engine.save_preferences({"ui_scale_mode": "auto", "ui_scale_pct": cur_os})
-            if hasattr(self, '_initial_state') and isinstance(self._initial_state, dict):
-                self._initial_state['ui_scale_mode'] = 'auto'
-                self._initial_state['ui_scale_pct'] = cur_os
-            self._schedule_live_ui_scale('auto', None)
 
         self.slider_ui_scale.valueChanged.connect(_on_scale_val)
-        self.slider_ui_scale.sliderReleased.connect(_on_scale_released)
 
         min_scale_row_w = config.S(120) + config.S(8) + lbl_fixed_w
         max_scale_row_w = config.S(165) + config.S(8) + lbl_fixed_w
@@ -2800,7 +2786,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             self._restore_state_dict(default_state)
             if hasattr(self, '_initial_state') and isinstance(self._initial_state, dict):
                 self._initial_state = self._get_current_state_dict()
-            self._schedule_live_ui_scale('auto', None)
+            self._apply_live_ui_scale('auto', None)
             CustomMsgBox(self, self.txt('msg_title_settings'), self.txt('msg_restart_required'), self.txt('btn_ok')).exec()
             try:
                 self._refresh_markers_list()
@@ -3547,19 +3533,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         self.engine.save_preferences(new_prefs)
         self.initial_prefs = self.engine.load_preferences() or {}
         self._initial_state = self._get_current_state_dict()
-        self.btn_apply.setText(self.txt("txt_saved"))
-        self.btn_apply.setStyleSheet(f"background-color: #1a7a3e; color: white;")
-        from PySide6.QtCore import QTimer
-        def restore_btn():
-            self.btn_apply.setText(self.txt("btn_apply"))
-            self.btn_apply.setStyleSheet("")
-        QTimer.singleShot(1500, restore_btn)
 
         main_win = self._get_main_window()
-        icon_changed = new_prefs.get('app_icon') != old_prefs.get('app_icon')
-        if icon_changed:
-            new_icon_name = new_prefs.get('app_icon', 'default')
-            apply_app_icon_everywhere(new_icon_name)
 
         if main_win and hasattr(main_win, 'text_canvas'):
             main_win.text_canvas.invalidate_font_cache()
@@ -3583,6 +3558,34 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                     main_win.show()
             self.set_always_on_top_state(is_top)
 
+        new_mode = str(new_prefs.get('ui_scale_mode', 'auto')).strip().lower()
+        if new_mode not in ('auto', 'manual'):
+            new_mode = 'auto'
+        new_pct = int(new_prefs.get('ui_scale_pct', 100))
+        old_mode = str(old_prefs.get('ui_scale_mode', 'auto')).strip().lower()
+        old_pct = int(old_prefs.get('ui_scale_pct', 100))
+        scale_changed = (
+            (new_mode != old_mode)
+            or (new_mode == 'manual' and new_pct != old_pct)
+            or (new_mode != getattr(config, 'UI_SCALE_MODE', 'auto'))
+            or (new_mode == 'manual' and new_pct != int(getattr(config, 'UI_SCALE_PERCENT', 100)))
+        )
+        if scale_changed:
+            self._apply_live_ui_scale(new_mode, None if new_mode == 'auto' else new_pct)
+
+        if hasattr(self, 'btn_apply') and self.btn_apply is not None:
+            btn_ref = self.btn_apply
+            btn_ref.setText(self.txt("txt_saved"))
+            btn_ref.setStyleSheet("background-color: #1a7a3e; color: white;")
+            from PySide6.QtCore import QTimer
+            def restore_btn(b=btn_ref):
+                try:
+                    if getattr(self, 'btn_apply', None) is b:
+                        b.setText(self.txt("btn_apply"))
+                        b.setStyleSheet("")
+                except RuntimeError:
+                    pass
+            QTimer.singleShot(1500, restore_btn)
 
         if restart_needed:
             lang = old_prefs.get('gui_lang', 'en')
@@ -3600,6 +3603,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         new_prefs = self._get_current_state_dict()
         diff = {}
         for k, new_val in new_prefs.items():
+            if k in ('ui_scale_mode', 'ui_scale_pct'):
+                continue
             old_val = old_prefs.get(k)
             if old_val is None:
                 old_val = config.DEFAULT_SETTINGS.get(k)
@@ -3630,6 +3635,22 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                         is_different = True
                 if is_different:
                     diff[k] = (old_val, new_val)
+
+        # Compare UI scaling cleanly as a single logical setting (mode + pct)
+        old_mode = str(old_prefs.get('ui_scale_mode', 'auto')).strip().lower()
+        new_mode = str(new_prefs.get('ui_scale_mode', 'auto')).strip().lower()
+        old_pct = int(old_prefs.get('ui_scale_pct', 100))
+        new_pct = int(new_prefs.get('ui_scale_pct', 100))
+        if new_mode == 'auto':
+            if old_mode != 'auto':
+                badge = self.txt('ui_scale_system_badge')
+                if badge == 'ui_scale_system_badge':
+                    badge = 'System'
+                cur_os = int(config.detect_os_scale_pct(self.screen()))
+                diff['ui_scale_mode'] = (f"{old_pct}%", f"{cur_os}% ({badge})")
+        elif old_mode != 'manual' or new_pct != old_pct:
+            diff['ui_scale_pct'] = (old_pct, f"{new_pct}%")
+
         return diff, new_prefs
 
     def has_unsaved_changes(self) -> bool:
@@ -3651,9 +3672,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                 'gui_lang': f"{self.txt('tab_general')}: {self.txt('lbl_language')}",
                 'app_icon': f"{self.txt('tab_general')}: {self.txt('lbl_app_icon')}",
                 'view_mode': f"{self.txt('tab_transcript')}: {self.txt('lbl_display_mode')}",
-                'editor_font_family': f"{self.txt('tab_transcript')}: {self.txt('lbl_transcript_font')}",
-                'editor_font_size': f"{self.txt('tab_transcript')}: {self.txt('lbl_font_size_pt')}",
-                'editor_line_height': f"{self.txt('tab_transcript')}: {self.txt('lbl_line_spacing_px')}",
+                'editor_font_family': f"{self.txt('tab_appearance')}: {self.txt('lbl_transcript_font')}",
+                'editor_font_size': f"{self.txt('tab_appearance')}: {self.txt('lbl_font_size_pt')}",
+                'editor_line_height': f"{self.txt('tab_appearance')}: {self.txt('lbl_line_spacing_px')}",
+                'ui_scale_mode':      f"{self.txt('tab_appearance')}: {self.txt('lbl_ui_scaling')}",
+                'ui_scale_pct':       f"{self.txt('tab_appearance')}: {self.txt('lbl_ui_scaling')}",
                 'chunk_max_words': f"{self.txt('tab_transcript')}: {self.txt('lbl_chunk_max_words')}",
                 'chunk_lookahead': f"{self.txt('tab_transcript')}: {self.txt('lbl_chunk_lookahead')}",
                 'chunk_min_chars': f"{self.txt('tab_transcript')}: {self.txt('lbl_chunk_min_chars')}",
@@ -3691,6 +3714,10 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                         if k.startswith('shortcuts.'):
                             sub_k = k.split('.', 1)[1]
                             new_prefs['shortcuts'][sub_k] = diff[k][0]
+                        elif k in ('ui_scale_mode', 'ui_scale_pct'):
+                            snap = getattr(self, '_initial_state', self.engine.load_preferences() or {})
+                            new_prefs['ui_scale_mode'] = snap.get('ui_scale_mode', 'auto')
+                            new_prefs['ui_scale_pct'] = snap.get('ui_scale_pct', 100)
                         else:
                             new_prefs[k] = diff[k][0] 
                     else:

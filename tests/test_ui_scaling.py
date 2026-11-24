@@ -218,13 +218,83 @@ class TestUIScalingUnified(unittest.TestCase):
             self.assertTrue(icons, "Expected info icon inside right-hand control container")
             self.assertLess(icons[0].x(), dlg.slider_ui_scale.parentWidget().x() + dlg.slider_ui_scale.parentWidget().width())
 
-            # Trigger live rebuild to 150% while staying on Appearance tab (index 1)
-            config.apply_ui_scaling(mode="manual", pct=150)
-            dlg.rebuild_ui_for_scale()
+            # Explicit uniform category row height across Windows/Linux/macOS (35px at 100%)
+            self.assertEqual(dlg.category_list.spacing(), 0)
+            row_hint = dlg.category_list.itemDelegate().sizeHint(
+                dlg.category_list.viewOptions() if hasattr(dlg.category_list, "viewOptions") else __import__("PySide6.QtWidgets", fromlist=["QStyleOptionViewItem"]).QStyleOptionViewItem(),
+                dlg.category_list.model().index(0, 0),
+            )
+            self.assertEqual(row_hint.height(), config.S(35))
+
+            # Moving slider does NOT apply live rebuild immediately; only Apply does
+            dlg.slider_ui_scale.setValue(150)
+            app.processEvents()
+            self.assertEqual(dlg.lbl_ui_scale_val.text(), "150%")
+            self.assertNotEqual(config.UI_SCALE_PERCENT, 150)
+            self.assertIn("ui_scale_pct", dlg._compute_unsaved_diff()[0])
+
+            # Clicking Apply saves and rebuilds to 150% live while keeping active tab
+            dlg._apply_settings()
             app.processEvents()
             self.assertEqual(dlg.category_list.currentRow(), 1)
             self.assertEqual(config.UI_SCALE_PERCENT, 150)
+            self.assertEqual(config.UI_SCALE_MODE, "manual")
             self.assertEqual(dlg._compute_unsaved_diff()[0], {})
+        finally:
+            dlg.close()
+            dlg.deleteLater()
+
+    def test_startup_finish_uses_load_preferences_so_saved_scale_persists(self):
+        """Regression: AppController._finish_startup must read engine.load_preferences() (never missing .prefs) cleanly."""
+        import main as app_main
+
+        config.apply_ui_scaling(mode="auto")
+        fake_engine = MagicMock(spec=["load_preferences", "os_doc"])
+        fake_engine.load_preferences.return_value = {"ui_scale_mode": "manual", "ui_scale_pct": 150}
+        fake_resolve = MagicMock()
+
+        captured = {}
+
+        class _DummyWin:
+            def __init__(self, ae, rh):
+                captured["ui_scale_pct"] = config.UI_SCALE_PERCENT
+                captured["ui_scale_mode"] = config.UI_SCALE_MODE
+                captured["factor"] = config.SCALE_FACTOR
+                self.closeEvent_callback = None
+
+            def showMaximized(self): pass
+            def raise_(self): pass
+            def activateWindow(self): pass
+            def windowHandle(self): return None
+
+        import gui
+        orig_bw_gui = gui.BadWordsGUI
+        gui.BadWordsGUI = _DummyWin
+        try:
+            ctrl = app_main.AppController(splash=None)
+            ctrl._finish_startup(fake_resolve, fake_engine)
+        finally:
+            gui.BadWordsGUI = orig_bw_gui
+
+        self.assertEqual(captured.get("ui_scale_mode"), "manual")
+        self.assertEqual(captured.get("ui_scale_pct"), 150)
+
+    def test_app_icon_requires_restart_and_never_calls_hot_swap_setwindowicon(self):
+        """Regression: changing app_icon saves + flags restart_needed without calling apply_app_icon_everywhere live."""
+        engine, _ = self._make_mock_engine({"app_icon": "default", "ui_scale_mode": "manual", "ui_scale_pct": 100})
+        dlg = SettingsDialog(engine)
+        try:
+            dlg._ensure_page_built(0)
+            for btn in dlg.icon_group.buttons():
+                if btn.property("icon_name") == "white":
+                    btn.setChecked(True)
+                    break
+            with patch("gui.dialogs.settings_dialog.CustomMsgBox") as mock_msg, \
+                 patch("gui.utils.apply_app_icon_everywhere") as mock_hot_swap:
+                mock_msg.return_value.exec.return_value = 0
+                dlg._apply_settings()
+                mock_hot_swap.assert_not_called()
+                mock_msg.assert_called_once()
         finally:
             dlg.close()
             dlg.deleteLater()

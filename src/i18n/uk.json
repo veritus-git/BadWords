@@ -584,7 +584,7 @@
   "tt_assembly_drt": "Native DaVinci Resolve Timeline container. Retains Fusion effects, but does not support track linking.",
   "tt_assembly_drt_disabled_free": "DRT container export is blocked in DaVinci Resolve Free 21.1+ (Blackmagic Design restriction). XML assembly is required.",
   "lbl_ui_scaling": "UI Scaling",
-  "tt_ui_scaling": "Adjust interface scale factor between 75% and 200%.",
+  "tt_ui_scaling": "Налаштуйте масштаб інтерфейсу від 75% до 200%. Натисніть Застосувати, щоб зберегти та побачити зміни.",
   "lbl_include_logs_with_report": "Attach diagnostic log files",
   "tt_include_logs_with_report": "Automatically attach badwords_debug.log to help diagnose your issue.",
   "header_diagnostics": "Diagnostics & Logs",

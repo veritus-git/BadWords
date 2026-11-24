@@ -162,7 +162,11 @@ class AppController:
             import gui
             import config
 
-            prefs = getattr(audio_engine, "prefs", {}) or {}
+            prefs = {}
+            if hasattr(audio_engine, "load_preferences"):
+                prefs = audio_engine.load_preferences() or {}
+            elif hasattr(audio_engine, "os_doc") and isinstance(getattr(audio_engine.os_doc, "settings", None), dict):
+                prefs = audio_engine.os_doc.settings
             app = QApplication.instance()
             config.init_ui_scaling(
                 app,

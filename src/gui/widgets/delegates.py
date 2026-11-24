@@ -37,10 +37,11 @@ class MarqueeItemDelegate(QStyledItemDelegate):
     """
     _PADDING = 16  # default for main views and settings tabs
 
-    def __init__(self, list_widget, padding=None):
+    def __init__(self, list_widget, padding=None, row_height=None):
         super().__init__(list_widget)
         self._lw = list_widget
         self._padding = self._PADDING if padding is None else padding
+        self._row_height = int(row_height) if row_height is not None else None
         # State per row index
         self._mq_pos   = {}   # float offset
         self._mq_alpha = {}   # 0.0–1.0 fade
@@ -256,6 +257,8 @@ class MarqueeItemDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option, index):
         hint = super().sizeHint(option, index)
+        if getattr(self, "_row_height", None) is not None and self._row_height > 0:
+            hint.setHeight(int(self._row_height))
         # Prevent item width from exceeding viewport width so horizontal layout stays clean
         try:
             vp_w = self._lw.viewport().width()

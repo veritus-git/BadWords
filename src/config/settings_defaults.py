@@ -158,5 +158,5 @@ DEFAULT_SETTINGS = {
 
 
 # Keys in DEFAULT_SETTINGS whose change requires an application restart.
-RESTART_REQUIRED_KEYS = ["compute_type", "device", "gui_lang", "ai_compute_type"]
+RESTART_REQUIRED_KEYS = ["compute_type", "device", "gui_lang", "ai_compute_type", "app_icon"]
 

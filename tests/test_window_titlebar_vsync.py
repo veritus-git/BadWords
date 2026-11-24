@@ -398,8 +398,8 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
         self.assertFalse(dlg._tb.btn_max.isHidden())
         self.assertFalse(dlg._tb.btn_close.isHidden())
 
-        # Verify changing app_icon or always_on_top does NOT flag restart_needed
-        self.assertNotIn("app_icon", config.RESTART_REQUIRED_KEYS)
+        # App Icon requires restart (prevents Win32 WM_SETICON from painting Windows 7 Basic caption chrome)
+        self.assertIn("app_icon", config.RESTART_REQUIRED_KEYS)
         self.assertNotIn("always_on_top", config.RESTART_REQUIRED_KEYS)
 
         # Render default Settings window
