@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 import config
-from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
+from gui.components.mixins import FramelessWindowMixin, _BaseMainWindow, _HAS_QFRAMELESS
 from gui.components.titlebar import CustomTitleBar
 from gui.widgets.buttons import (
     QPushButton, ToggleSwitch, ShortcutCaptureButton,
@@ -141,11 +141,13 @@ class _CenteredPageHost(QWidget):
         self._sync_margins()
 
 
-class SettingsDialog(FramelessWindowMixin, _BaseDialog):
-    """Settings Dialog - left category menu + right stacked pages.
+class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
+    """Settings Window - 1:1 top-level QMainWindow matching BadWordsGUI framing & titlebar.
     All I/O goes through engine.load_preferences / engine.save_preferences
     which delegate to osdoc's smart router.
     """
+
+    finished = Signal(int)
 
     # Fallback defaults (for revert buttons)
     DEFAULTS = {
@@ -205,12 +207,11 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         prefs = self.engine.load_preferences() or {}
 
         # ── Global stylesheet ─────────────────────────────────────────────
-        dialog_bg = "transparent" if getattr(self, '_use_linux_csd_shadow', False) else config.BG_COLOR
         self.setStyleSheet(f"""
-            QDialog {{ background-color: {dialog_bg}; }}
+            QMainWindow {{ background-color: {config.BG_COLOR}; }}
             #MainInnerFrame {{
                 background-color: {config.BG_COLOR};
-                border: 1px solid #0f0f0f;
+                border: none;
             }}
             QPushButton {{
                 padding: {config.S(6)}px {config.S(16)}px;
@@ -327,41 +328,19 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
         """)
 
         # ─────────────────────────────────────────────────────────────────
-        # Root layout: [LEFT menu | RIGHT content]
+        # Root layout: 1:1 central QFrame matching BadWordsGUI (no CSD shadow)
         # ─────────────────────────────────────────────────────────────────
-        main_layout = QVBoxLayout(self)
-        if getattr(self, '_use_linux_csd_shadow', False):
-            m = getattr(self, '_csd_shadow_margin', 14)
-            main_layout.setContentsMargins(m, m, m, m)
-        else:
-            main_layout.setContentsMargins(0, 0, 0, 0)
-
-        class SolidFrame(QFrame):
-            def paintEvent(self, e):
-                from PySide6.QtGui import QPainter, QColor
-                p = QPainter(self)
-                p.fillRect(self.rect(), QColor(config.BG_COLOR))
-                super().paintEvent(e)
-
-        self.inner_frame = SolidFrame(self)
+        self.inner_frame = QFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
-
-        if getattr(self, '_use_linux_csd_shadow', False):
-            from PySide6.QtWidgets import QGraphicsDropShadowEffect
-            from PySide6.QtGui import QColor
-            shadow = QGraphicsDropShadowEffect(self)
-            shadow.setBlurRadius(28)
-            shadow.setColor(QColor(0, 0, 0, 150))
-            shadow.setOffset(0, 0)
-            self.inner_frame.setGraphicsEffect(shadow)
-
-        main_layout.addWidget(self.inner_frame)
+        self._root_frame = self.inner_frame
+        self.setCentralWidget(self.inner_frame)
 
         outer_layout = QVBoxLayout(self.inner_frame)
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
         self._tb = CustomTitleBar(self, prefs.get("gui_lang", "en"), parent=self.inner_frame)
+        self._title_bar = self._tb
         if _HAS_QFRAMELESS and getattr(self, '_is_win', False) and hasattr(self, 'setTitleBar'):
             self.setTitleBar(self._tb)
         self._tb.set_title(self.txt("tool_settings"))
@@ -483,19 +462,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
 
         self._build_ui()
 
-        pad_extra = (getattr(self, '_csd_shadow_margin', 14) * 2) if getattr(self, '_use_linux_csd_shadow', False) else 0
-        init_w = config.SETTINGS_WINDOW_W + pad_extra
-        init_h = config.SETTINGS_WINDOW_H + pad_extra
+        init_w = config.SETTINGS_WINDOW_W
+        init_h = config.SETTINGS_WINDOW_H
         _center_on_screen(self, init_w, init_h, reference_window=self._main_window)
         self.init_normal_geometry(
-            saved_w=self.width(),
-            saved_h=self.height(),
+            saved_w=None,
+            saved_h=None,
             screen=self.screen() or QGuiApplication.primaryScreen(),
             ratio=0.70,
             min_w=config.S(640),
             min_h=config.S(460),
             apply_geometry=False,
-            always_restore_default=True,
         )
 
     def _compute_ideal_sidebar_width(self) -> int:
@@ -3474,11 +3451,24 @@ class SettingsDialog(FramelessWindowMixin, _BaseDialog):
                 
                 if save_needed:
                     self._apply_settings()
-                super().reject()
+                self._finish_close(0)
             else:
                 return 
         else:
-            super().reject()
+            self._finish_close(0)
+
+    def _finish_close(self, result: int = 0):
+        self.hide()
+        self.finished.emit(result)
+
+    def accept(self):
+        self._finish_close(1)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.reject()
+            return
+        super().keyPressEvent(event)
 
     def closeEvent(self, event):
         self.reject()

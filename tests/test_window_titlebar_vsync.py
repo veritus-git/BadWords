@@ -45,6 +45,7 @@ from gui.components.mixins import (
     HTTOPRIGHT,
     FramelessWindowMixin,
     compute_default_normal_geometry,
+    compute_win_nccalcsize_rect,
     compute_win_nchittest,
 )
 from gui.components.titlebar import AnimatedTitleButton, CustomTitleBar
@@ -109,14 +110,39 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
             HTCLIENT,
         )
 
-        # When maximized, edge hit-test is disabled and top pixels hit titlebar
-        self.assertEqual(compute_win_nchittest(400, 2, w, h, b, True, False, tb), HTCAPTION)
+        # When maximized, ALL 8 resize edges are disabled: top-right corner (w-1, 0) hits close (HTCLIENT),
+        # top edge (y=0) hits HTCAPTION for effortless ripping, and btn_max hits HTMAXBUTTON.
+        self.assertEqual(compute_win_nchittest(400, 0, w, h, b, True, False, tb), HTCAPTION)
         self.assertEqual(
-            compute_win_nchittest(950, 2, w, h, b, True, False, tb, is_on_max_btn=True),
+            compute_win_nchittest(w - 1, 0, w, h, b, True, False, tb, is_on_interactive_child=True),
+            HTCLIENT,
+        )
+        self.assertEqual(
+            compute_win_nchittest(950, 0, w, h, b, True, False, tb, is_on_max_btn=True),
             HTMAXBUTTON,
         )
 
-    def test_70pct_rip_vs_button_restore_and_settings_default_size(self):
+        # Verify WM_NCCALCSIZE pure rect math (kills Windows 8px black bar & right/bottom clipping!)
+        # 1. Windowed (IsZoomed=False): rect untouched -> 0px non-client area
+        self.assertEqual(
+            compute_win_nccalcsize_rect((100, 100, 1100, 800), is_zoomed=False, is_fullscreen=False,
+                                        work_rect=(0, 0, 1920, 1040), monitor_rect=(0, 0, 1920, 1080)),
+            (100, 100, 1100, 800),
+        )
+        # 2. Maximized (IsZoomed=True, overhanging -8px): snaps directly to monitor rcWork
+        self.assertEqual(
+            compute_win_nccalcsize_rect((-8, -8, 1928, 1048), is_zoomed=True, is_fullscreen=False,
+                                        work_rect=(0, 0, 1920, 1040), monitor_rect=(0, 0, 1920, 1080)),
+            (0, 0, 1920, 1040),
+        )
+        # 3. Maximized with auto-hide taskbar (rcWork == rcMonitor): reserves 1px bottom strip
+        self.assertEqual(
+            compute_win_nccalcsize_rect((-8, -8, 1928, 1088), is_zoomed=True, is_fullscreen=False,
+                                        work_rect=(0, 0, 1920, 1080), monitor_rect=(0, 0, 1920, 1080)),
+            (0, 0, 1920, 1079),
+        )
+
+    def test_70pct_rip_vs_button_restore_and_settings_1to1_parity(self):
         screen_geo = QRect(0, 0, 1920, 1080)
         geo = compute_default_normal_geometry(screen_geo, ratio=0.70, min_w=640, min_h=460)
         self.assertEqual(geo.width(), 1344)
@@ -133,42 +159,32 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
         fake_screen = MagicMock()
         fake_screen.availableGeometry.return_value = screen_geo
         win = _DummyWin()
-        win.init_normal_geometry(screen=fake_screen, ratio=0.70, apply_geometry=True, always_restore_default=False)
+        win.init_normal_geometry(screen=fake_screen, ratio=0.70, apply_geometry=True)
 
-        with patch.object(win, "screen", return_value=fake_screen):
-            # 1. Button restore with NO user customization -> 70% x 70%
+        with patch.object(win, "screen", return_value=fake_screen), \
+             patch("gui.components.mixins.QGuiApplication.screenAt", return_value=fake_screen):
+            # 1. Button restore with NO prior pre-maximize geometry -> 70% x 70% centered
             win.resize(1920, 1080)
             win._restore_after_unmaximize(via_button=True)
             self.assertEqual(win.size(), QSize(1344, 756))
 
-            # 2. User snaps window to right half of screen during session
+            # 2. User places window at exact custom position/size, then maximizes -> snapshot captured
             win._restoring_from_max = False
-            win._session_user_geometry = QRect(960, 0, 960, 1080)
+            win._last_normal_geo = QRect(960, 0, 960, 1080)
+            win._snapshot_pre_maximize_geometry()
+            self.assertEqual(win._pre_maximize_geometry, QRect(960, 0, 960, 1080))
 
             # 3. Ripping out of maximize (via_button=False) ALWAYS uses 70% x 70%
             win.resize(1920, 1080)
             win._restore_after_unmaximize(via_button=False)
             self.assertEqual(win.size(), QSize(1344, 756))
 
-            # 4. Clicking Restore button (via_button=True) restores the user's in-session right-half geometry
+            # 4. ONLY clicking Restore button (via_button=True) restores exact pre-max geometry + position
+            win._restoring_from_max = False
             win.resize(1920, 1080)
             win._restore_after_unmaximize(via_button=True)
             self.assertEqual(win.geometry(), QRect(960, 0, 960, 1080))
         win.close()
-
-        # 5. Settings-style window (always_restore_default=True) ALWAYS restores to its small default size
-        settings_win = _DummyWin()
-        settings_win.init_normal_geometry(
-            saved_w=768, saved_h=598, screen=fake_screen, apply_geometry=True, always_restore_default=True
-        )
-        with patch.object(settings_win, "screen", return_value=fake_screen):
-            settings_win.resize(1100, 750)  # User stretched it while windowed
-            settings_win._restore_after_unmaximize(via_button=True)
-            self.assertEqual(settings_win.size(), QSize(768, 598))
-            settings_win.resize(1200, 800)
-            settings_win._restore_after_unmaximize(via_button=False)
-            self.assertEqual(settings_win.size(), QSize(768, 598))
-        settings_win.close()
 
     def test_button_restore_exact_premax_geometry_and_rip_ignores_stale_flag(self):
         screen_geo = QRect(0, 0, 1920, 1080)
@@ -181,12 +197,14 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
         fake_screen.availableGeometry.return_value = screen_geo
         win = _DummyWin()
         win.init_normal_geometry(screen=fake_screen, ratio=0.70, apply_geometry=True)
-        with patch.object(win, "screen", return_value=fake_screen):
-            win._session_user_geometry = QRect(137, 91, 1001, 703)  # exact geometry before maximizing
+        with patch.object(win, "screen", return_value=fake_screen), \
+             patch("gui.components.mixins.QGuiApplication.screenAt", return_value=fake_screen):
+            win._last_normal_geo = QRect(137, 91, 1001, 703)
+            win._snapshot_pre_maximize_geometry()
             win.resize(1920, 1080)
             win._restore_after_unmaximize(via_button=True)
             self.assertEqual(win.geometry(), QRect(137, 91, 1001, 703))
-            # A stale button flag must not leak: rip afterwards is always 70% x 70%
+            # Stale button flag must never leak: ripping afterwards is ALWAYS 70% x 70%
             self.assertFalse(win._restore_via_button)
             win._restoring_from_max = False
             win.resize(1920, 1080)
@@ -194,23 +212,38 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
             self.assertEqual(win.size(), QSize(1344, 756))
         win.close()
 
-    def test_maximized_grips_hidden_and_snapped_csd_shadow_collapses(self):
+    def test_maximized_grips_and_border_overlay_hidden_and_1to1_settings(self):
         engine = self._create_mock_engine()
         from PySide6.QtWidgets import QMainWindow
         main_win = QMainWindow()
         main_win._always_on_top_active = False
 
-        # Test Linux CSD shadow collapses on Aero Snap (half-screen right) AND grips hide when maximized
         dlg = SettingsDialog(engine, main_win)
+        # 1:1 parity with BadWordsGUI: SettingsDialog is now a true QMainWindow (zero QDialog X11 shadow!)
+        self.assertIsInstance(dlg, QMainWindow)
+        self.assertIs(dlg._title_bar, dlg._tb)
+        self.assertIs(dlg._root_frame, dlg.inner_frame)
         dlg.show()
         app.processEvents()
 
-        # Floating window -> grips visible; maximized -> ALL 8 resize grips hidden (no top-edge/top-right resize)
+        # Windowed -> grips visible + 1px mouse-transparent border overlay visible
+        dlg._update_border_overlay()
         dlg._update_grips()
         self.assertTrue(all(not g.isHidden() for g in dlg._grips))
+        self.assertIsNotNone(dlg._border_overlay)
+        self.assertFalse(dlg._border_overlay.isHidden())
+        self.assertTrue(dlg._border_overlay.testAttribute(Qt.WA_TransparentForMouseEvents))
+
+        # Maximized -> ALL 8 resize grips hidden AND border overlay hidden (0px obstruction at corner X & y=0!)
         with patch.object(dlg, "isMaximized", return_value=True):
+            dlg._update_border_overlay()
             dlg._update_grips()
             self.assertTrue(all(g.isHidden() for g in dlg._grips))
+            self.assertTrue(dlg._border_overlay.isHidden())
+            # Titlebar sits at exact y=0 and btn_close reaches exact right edge w-1
+            self.assertEqual(dlg._tb.y(), 0)
+            self.assertEqual(dlg._tb.btn_close.x() + dlg._tb.btn_close.width(), dlg._tb.width())
+        dlg._update_border_overlay()
         dlg._update_grips()
 
         # Render Polish 0.85-scaled SettingsDialog (1280x800 laptop/VM scenario) to verify zero right-edge clipping
@@ -381,12 +414,11 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
         self.assertLessEqual(host._content.width(), config.S(660))
         self.assertTrue(dlg.grab().save(os.path.join(art_dir, "point3_settings_maximized.png")))
 
-        # Settings mirrors the main window 1:1: no CSD drop-shadow padding, flush window + 1px border
+        # Settings mirrors the main window 1:1: QMainWindow, no CSD drop-shadow, flush frame + 1px overlay border
         self.assertFalse(dlg._use_linux_csd_shadow)
-        m0 = dlg.layout().contentsMargins()
-        self.assertEqual((m0.left(), m0.top(), m0.right(), m0.bottom()), (0, 0, 0, 0))
         self.assertIsNone(dlg.inner_frame.graphicsEffect())
-        self.assertIn("border: 1px solid", dlg.styleSheet())
+        self.assertIsNotNone(dlg._border_overlay)
+        self.assertFalse(dlg._border_overlay.isHidden())
 
         # Verify Wayland Always on Top hint renders when Wayland is active
         with patch.dict(os.environ, {"XDG_SESSION_TYPE": "wayland"}):

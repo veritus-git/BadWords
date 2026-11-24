@@ -266,7 +266,7 @@ class CustomTitleBar(QWidget):
         )
 
         self.btn_min.clicked.connect(self._minimize_window)
-        self.btn_max.clicked.connect(self._toggle_maximize)
+        self.btn_max.clicked.connect(lambda: self._toggle_maximize(via_button=True))
         self.btn_close.clicked.connect(self._close_window)
 
         for btn in (self.btn_min, self.btn_max, self.btn_close):
@@ -567,7 +567,7 @@ class CustomTitleBar(QWidget):
                 pass
         win.close()
 
-    def _toggle_maximize(self):
+    def _toggle_maximize(self, via_button: bool = True):
         win = self.window()
         if not getattr(win, '_is_root', False):
             return
@@ -576,25 +576,29 @@ class CustomTitleBar(QWidget):
             try:
                 import ctypes
                 hwnd = int(win.winId())
-                if win.isMaximized():
-                    win._restore_via_button = True
+                is_max = bool(win._is_effectively_maximized()) if hasattr(win, '_is_effectively_maximized') else win.isMaximized()
+                if is_max:
+                    win._restore_via_button = bool(via_button)
                     if hasattr(win, '_sync_win_normal_placement'):
-                        win._sync_win_normal_placement(use_button_restore=True)
+                        win._sync_win_normal_placement(use_button_restore=bool(via_button))
                     ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF120, 0)  # SC_RESTORE
                 else:
-                    # INVARIANT: never touch WINDOWPLACEMENT before SC_MAXIMIZE - on a normal window
-                    # SetWindowPlacement moves/resizes it first (visible 70% jump before maximizing).
+                    if hasattr(win, '_snapshot_pre_maximize_geometry'):
+                        win._snapshot_pre_maximize_geometry()
                     ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF030, 0)  # SC_MAXIMIZE
                 return
             except Exception:
                 pass
 
-        if win.isMaximized():
-            win._restore_via_button = True
+        is_max = bool(win._is_effectively_maximized()) if hasattr(win, '_is_effectively_maximized') else win.isMaximized()
+        if is_max:
+            win._restore_via_button = bool(via_button)
             win.showNormal()
             if hasattr(win, '_restore_after_unmaximize'):
-                win._restore_after_unmaximize(via_button=True)
+                win._restore_after_unmaximize(via_button=bool(via_button))
         else:
+            if hasattr(win, '_snapshot_pre_maximize_geometry'):
+                win._snapshot_pre_maximize_geometry()
             win.showMaximized()
 
     def mousePressEvent(self, event):
@@ -604,6 +608,7 @@ class CustomTitleBar(QWidget):
         if event.button() == Qt.LeftButton:
             self._is_dragging = True
             self._click_pos = event.position().toPoint()
+            self._press_global_pos = event.globalPosition().toPoint()
             event.accept()
             return
         super().mousePressEvent(event)
@@ -616,12 +621,42 @@ class CustomTitleBar(QWidget):
             super().mouseMoveEvent(event)
             return
 
+        cur_global = event.globalPosition().toPoint()
+        press_global = getattr(self, '_press_global_pos', cur_global)
+        if (cur_global - press_global).manhattanLength() < 4:
+            event.accept()
+            return
+
         win = self.window()
         self._is_dragging = False
 
-        # Ripping out of maximized MUST always restore to 70% x 70% (main) or default size (Settings)
-        if win.isMaximized():
+        # INVARIANT: On Linux/macOS, ripping out of maximized MUST un-maximize & resize to exact
+        # 70% x 70% BEFORE startSystemMove() so Cinnamon/KWin/Mutter drag the 70% window and never
+        # revert it to a stale WM-cached size.
+        is_max = bool(win._is_effectively_maximized()) if hasattr(win, '_is_effectively_maximized') else win.isMaximized()
+        if is_max and not getattr(win, '_is_win', False):
             win._restore_via_button = False
+            win._restoring_from_max = True
+            try:
+                scr = QGuiApplication.screenAt(cur_global) or win.screen() or QGuiApplication.primaryScreen()
+                sg = scr.availableGeometry() if scr else None
+                rip_geo = win._compute_rip_geometry(screen=scr) if hasattr(win, '_compute_rip_geometry') else None
+                if rip_geo and rip_geo.isValid():
+                    tw, th = rip_geo.width(), rip_geo.height()
+                    click_x = getattr(self, '_click_pos', QPoint(win.width() // 2, 16)).x()
+                    click_y = getattr(self, '_click_pos', QPoint(win.width() // 2, 16)).y()
+                    ratio_x = max(0.08, min(0.82, float(click_x) / max(1, win.width())))
+                    nx = int(round(cur_global.x() - tw * ratio_x))
+                    ny = int(round(cur_global.y() - click_y))
+                    if sg and sg.isValid():
+                        ny = max(sg.top(), min(ny, sg.bottom() - th + 1))
+                    win.showNormal()
+                    win.setGeometry(nx, ny, tw, th)
+                    if hasattr(win, 'windowHandle') and win.windowHandle():
+                        win.windowHandle().setGeometry(nx, ny, tw, th)
+            finally:
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(120, lambda w=win: setattr(w, '_restoring_from_max', False))
 
         if hasattr(win, 'windowHandle') and win.windowHandle():
             try:
@@ -641,5 +676,6 @@ class CustomTitleBar(QWidget):
             event.ignore()
             return
         if event.button() == Qt.LeftButton:
-            self._toggle_maximize()
+            self._is_dragging = False
+            self._toggle_maximize(via_button=False)
         super().mouseDoubleClickEvent(event)

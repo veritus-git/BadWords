@@ -330,7 +330,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.setStyleSheet(f"""
             * {{ outline: none; }}
             QMainWindow {{
-                background-color: transparent;
+                background-color: {config.BG_COLOR};
             }}
             QWidget {{
                 background-color: {config.BG_COLOR};

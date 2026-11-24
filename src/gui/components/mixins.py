@@ -8,14 +8,20 @@
 MODULE: mixins.py
 ROLE: GUI Component (Red Zone)
 DESCRIPTION:
-Cross-platform frameless window mixin providing CSD titlebar integration,
-8-edge/corner resize hit-testing, Windows DWM shadow/Snap Layouts, Linux CSD
-shadow management, user normal-size restoration, and popup Always-on-Top inheritance.
+Cross-platform frameless window mixin providing 1:1 root window behavior across
+BadWordsGUI and SettingsDialog:
+- Windows: zero-artifact WM_NCCALCSIZE (live IsZoomed -> exact rcWork), WM_NCPAINT
+  suppression, dark WM_ERASEBKGND brush, ScreenToClient WM_NCHITTEST (8 edges when
+  windowed, 100% disabled when maximized for Fitts's Law corner X & top-edge rip),
+  Windows 11 Snap Layouts (HTMAXBUTTON), and Win32 WINDOWPLACEMENT restore/rip.
+- Linux / macOS: 8 ResizeGrips (strictly hidden when maximized), 1px mouse-transparent
+  window border overlay (hidden when maximized, zero shadow margin), and pre-unmaximize
+  70% x 70% rip geometry before startSystemMove() so WMs never revert to stale sizes.
 """
 
 from PySide6.QtWidgets import QWidget, QMainWindow, QDialog, QAbstractButton, QLineEdit
 from PySide6.QtCore import Qt, QPoint, QRect, QSize, QTimer, QEvent
-from PySide6.QtGui import QGuiApplication, QCursor, QColor
+from PySide6.QtGui import QGuiApplication, QCursor, QColor, QPainter, QPen
 
 _HAS_QFRAMELESS = False
 _BaseMainWindow = QMainWindow
@@ -34,6 +40,44 @@ HTBOTTOM = 15
 HTBOTTOMLEFT = 16
 HTBOTTOMRIGHT = 17
 
+# Subtle 1px outer frame border for windowed root windows (slightly darker than #191919 / #1c1c1c UI)
+_WINDOW_BORDER_COLOR = "#101010"
+
+
+def compute_win_nccalcsize_rect(
+    rect: tuple[int, int, int, int],
+    is_zoomed: bool,
+    is_fullscreen: bool,
+    work_rect: tuple[int, int, int, int] | None = None,
+    monitor_rect: tuple[int, int, int, int] | None = None,
+    fallback_bx: int = 8,
+    fallback_by: int = 8,
+) -> tuple[int, int, int, int]:
+    """
+    Pure Win32 WM_NCCALCSIZE client-rect calculator.
+    # INVARIANT:
+    # - When NOT maximized (is_zoomed=False) or fullscreen: leave rect 100% untouched
+    #   (0px non-client area -> zero black bar, zero native caption buttons, zero clipping).
+    # - When maximized (live Win32 IsZoomed=True, never stale Qt isMaximized()): snap client
+    #   rect directly to the active monitor's rcWork (minus 1px bottom only for auto-hide taskbar).
+    """
+    left, top, right, bottom = rect
+    if is_fullscreen or not is_zoomed:
+        return (left, top, right, bottom)
+
+    if work_rect is not None:
+        wl, wt, wr, wb = work_rect
+        if wr > wl and wb > wt:
+            if monitor_rect is not None and work_rect == monitor_rect:
+                # Auto-hide taskbar edge safeguard (1px) so mouse at bottom edge still raises taskbar
+                wb = max(wt + 1, wb - 1)
+            return (wl, wt, wr, wb)
+
+    # Fallback if GetMonitorInfoW is unavailable
+    bx = max(0, int(fallback_bx))
+    by = max(0, int(fallback_by))
+    return (left + bx, top + by, right - bx, bottom - by)
+
 
 def compute_win_nchittest(
     rel_x: int,
@@ -46,18 +90,26 @@ def compute_win_nchittest(
     titlebar_height: int,
     is_on_max_btn: bool = False,
     is_on_interactive_child: bool = False,
+    top_border_px: int = 4,
 ) -> int:
     """
     Pure cross-platform hit-test classifier returning Win32 HT* constants.
-    # INVARIANT: Supports all 8 resize edges/corners when not maximized/fullscreen,
-    # HTMAXBUTTON (9) on the maximize button (Windows 11 Snap Layouts), and
-    # HTCAPTION (2) on empty titlebar area (Aero Snap + drag-detach).
+    # INVARIANT:
+    # - When maximized or fullscreen: ALL 8 resize edges/corners are 100% disabled so
+    #   top-right corner (win_w-1, 0) hits close button (HTCLIENT) and top edge (y=0)
+    #   hits HTCAPTION for effortless drag-detach ('ripping').
+    # - When windowed: supports all 8 resize edges/corners with a thin top strip (4px,
+    #   3px over titlebar buttons) so top/corner resizing never blocks clicking buttons.
     """
     if not is_maximized and not is_fullscreen and win_w > 0 and win_h > 0:
         b = max(2, int(border_px))
+        bt = max(2, int(top_border_px))
+        if is_on_interactive_child or is_on_max_btn:
+            bt = min(bt, 3)
+
         lx = rel_x < b
         rx = rel_x >= win_w - b
-        ty = rel_y < b
+        ty = rel_y < bt
         by = rel_y >= win_h - b
 
         if ty and lx:
@@ -112,6 +164,32 @@ def compute_default_normal_geometry(
     return QRect(x, y, w, h)
 
 
+class _WindowBorderOverlay(QWidget):
+    """
+    1px mouse-transparent outer border drawn on top of windowed root windows
+    (hidden when maximized/fullscreen) so overlapping windows separate cleanly
+    without shrinking layout margins or blocking Fitts's Law corner clicks.
+    """
+
+    def __init__(self, parent, color: str = _WINDOW_BORDER_COLOR):
+        super().__init__(parent)
+        self._border_color = QColor(color)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WA_NoSystemBackground, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setFocusPolicy(Qt.NoFocus)
+
+    def paintEvent(self, event):
+        w, h = self.width(), self.height()
+        if w < 2 or h < 2:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(self._border_color, 1))
+        painter.drawRect(0, 0, w - 1, h - 1)
+
+
 class ResizeGrip(QWidget):
     """Transparent edge/corner hit zone triggering native window resizing on Unix."""
 
@@ -146,10 +224,12 @@ class ResizeGrip(QWidget):
 
 class FramelessWindowMixin:
     """
-    Mixin that turns any QMainWindow / QDialog into a frameless, CSD window.
+    Mixin that turns any root QMainWindow (BadWordsGUI, SettingsDialog) or popup QDialog
+    into a clean cross-platform frameless window with identical titlebar & restore rules.
     """
 
-    _RESIZE_BORDER = 5   # px - hit-test sensitivity at window edges
+    _RESIZE_BORDER = 5      # px - left/right/bottom resize hit zone
+    _TOP_RESIZE_BORDER = 4  # px - thin top resize strip (3px over buttons)
 
     def frameless_init(self, is_popup: bool = False, use_linux_csd_shadow: bool = False):
         """Call once, right after super().__init__()."""
@@ -159,25 +239,25 @@ class FramelessWindowMixin:
         self._is_wayland = QGuiApplication.platformName() == "wayland"
         self._is_popup = bool(is_popup)
         self._is_root = not self._is_popup
-        self._use_linux_csd_shadow = bool(
-            use_linux_csd_shadow and self._is_root and not self._is_win and not self._is_mac
-        )
-        self._default_normal_size = None
-        self._session_user_geometry = None
-        self._always_restore_default_size = False
-        self._restore_via_button = False
+        # Root windows use clean opaque framing + 1px border overlay (no CSD shadow padding)
+        self._use_linux_csd_shadow = False
         self._normal_ratio = 0.70
         self._normal_min_w = 640
         self._normal_min_h = 460
+        self._last_normal_geo = None
+        self._pre_maximize_geometry = None
+        self._last_normal_win_rect = None
+        self._pre_maximize_win_rect = None
+        self._restore_via_button = False
         self._restoring_from_max = False
-        self._last_restored_geo = None
-        self._csd_shadow_margin = 14
-        self._csd_shadow_collapsed = None
+        self._was_maximized = False
+        self._dark_brush = None
+        self._border_overlay = None
 
         if self._is_win:
             if self._is_root:
                 # Root window: FramelessWindowHint removes native NC chrome; DWM shadow,
-                # animations, Snap Layouts, and 8-edge resize are restored in showEvent + nativeEvent.
+                # animations, Snap Layouts, and 8-edge resize are wired in showEvent + nativeEvent.
                 self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
             else:
                 self.setWindowFlags(
@@ -193,11 +273,9 @@ class FramelessWindowMixin:
                 | Qt.WindowFullscreenButtonHint
             )
         elif self._is_root:
-            # INVARIANT: Linux root windows must remain Qt.Window (never Qt.Dialog)
-            # to preserve maximize, minimize, Alt+Tab, and window manager actions.
+            # INVARIANT: Linux root windows must be opaque Qt.Window (never Qt.Dialog / Qt.Tool)
+            # with zero drop-shadow padding so maximize, Aero Snap, Alt+Tab, and Fitts's Law work 1:1.
             self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
-            if self._use_linux_csd_shadow:
-                self.setAttribute(Qt.WA_TranslucentBackground, True)
         else:
             # Linux and macOS popups/dialogs: frameless translucent dialogs
             self.setWindowFlags(
@@ -208,11 +286,14 @@ class FramelessWindowMixin:
         if self._is_popup:
             self._sync_popup_always_on_top()
 
+        if self._is_root and not self._is_mac:
+            self._border_overlay = _WindowBorderOverlay(self, _WINDOW_BORDER_COLOR)
+
         if self._is_root and not self._is_win and not self._is_mac:
             self._setup_grips()
 
     def _get_root_frame(self):
-        """Return the topmost styled QFrame to apply border-radius or shadow to."""
+        """Return the topmost styled QFrame."""
         return getattr(self, 'inner_frame', getattr(self, '_root_frame', None))
 
     def _get_reference_main_window(self):
@@ -243,10 +324,9 @@ class FramelessWindowMixin:
 
     def _is_effectively_maximized(self) -> bool:
         """
-        True whenever the window is maximized or fullscreen.
-        # INVARIANT: Top/corner resize grips and WM_NCHITTEST edges MUST be
-        # completely disabled when maximized so top-right close clicks and
-        # top-edge drag-detach ('ripping') never trigger resize.
+        True whenever the window is maximized, fullscreen, or filling the screen work area.
+        # INVARIANT: Top/corner resize grips, border overlay, and Win32 edge hit-testing MUST
+        # be completely disabled whenever maximized so Fitts's Law corner X & top-edge rip work.
         """
         if self.isMaximized() or self.isFullScreen():
             return True
@@ -258,55 +338,24 @@ class FramelessWindowMixin:
                     return True
             except Exception:
                 pass
-        return False
-
-    def _is_snapped_or_tiled(self) -> bool:
-        """
-        Returns True when a Linux CSD window is maximized, fullscreen, or snapped/tiled
-        against screen edges (left/right/top/bottom half or quarter Aero Snap), so the
-        outer translucent drop-shadow padding collapses to 0px and the window sits flush.
-        """
-        if self._is_effectively_maximized():
-            return True
-        if not getattr(self, '_use_linux_csd_shadow', False):
-            return False
-        if not self.isVisible():
-            return False
-        geo = self.frameGeometry()
-        if not geo.isValid() or geo.width() <= 0 or geo.height() <= 0:
-            return False
-        scr = (
-            QGuiApplication.screenAt(geo.center())
-            or self.screen()
-            or QGuiApplication.primaryScreen()
-        )
-        if not scr:
-            return False
-        avail = scr.availableGeometry()
-        if not avail.isValid() or avail.width() <= 0 or avail.height() <= 0:
-            return False
-
-        tol = 4
-        touch_left = abs(geo.left() - avail.left()) <= tol
-        touch_right = abs(geo.right() - avail.right()) <= tol
-        touch_top = abs(geo.top() - avail.top()) <= tol
-        touch_bottom = abs(geo.bottom() - avail.bottom()) <= tol
-
-        # Left/right half-screen snap or vertical maximize (touches both top and bottom)
-        if touch_top and touch_bottom:
-            return True
-        # Top/bottom half-screen snap or horizontal maximize (touches both left and right)
-        if touch_left and touch_right:
-            return True
-        # Quarter-screen snap (touches corner + matches ~half width & ~half height)
-        if (touch_left or touch_right) and (touch_top or touch_bottom):
-            half_w = avail.width() // 2
-            half_h = avail.height() // 2
-            if abs(geo.width() - half_w) <= 36 and abs(geo.height() - half_h) <= 36:
-                return True
-        # Pseudo-maximized (fills available work area without Qt.WindowMaximized flag)
-        if geo.width() >= avail.width() - tol and geo.height() >= avail.height() - tol:
-            return True
+        elif getattr(self, '_is_root', False) and not getattr(self, '_is_mac', False) and self.isVisible():
+            try:
+                geo = self.frameGeometry()
+                scr = QGuiApplication.screenAt(geo.center()) or self.screen() or QGuiApplication.primaryScreen()
+                if scr is not None:
+                    avail = scr.availableGeometry()
+                    if (
+                        avail.isValid()
+                        and avail.width() > 0
+                        and avail.height() > 0
+                        and geo.width() >= avail.width() - 2
+                        and geo.height() >= avail.height() - 2
+                        and abs(geo.left() - avail.left()) <= 2
+                        and abs(geo.top() - avail.top()) <= 2
+                    ):
+                        return True
+            except Exception:
+                pass
         return False
 
     def init_normal_geometry(
@@ -321,69 +370,28 @@ class FramelessWindowMixin:
         always_restore_default: bool = False,
     ) -> QRect:
         """
-        Initializes default normal (non-maximized) geometry.
-        - Main window (always_restore_default=False): default is 70% x 70% of active screen;
-          ripping out of maximized ALWAYS uses 70% x 70%, while Restore button uses the
-          user's last in-session geometry if they manually resized/snapped it.
-        - Settings window (always_restore_default=True): exiting maximize ALWAYS returns
-          to the small default size (saved_w x saved_h).
+        Initializes the 70% x 70% default normal geometry on *screen*.
+        Ripping out of maximized ALWAYS uses 70% x 70% of the active screen;
+        clicking the Restore button (btn_max) restores the exact pre-maximize geometry
+        (or 70% x 70% centered if the window started directly maximized).
         """
         self._normal_ratio = float(ratio)
         self._normal_min_w = int(min_w)
         self._normal_min_h = int(min_h)
-        self._always_restore_default_size = bool(always_restore_default)
         if screen is None:
             screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         sg = screen.availableGeometry() if screen else QRect(100, 100, 1280, 720)
-        default_geo = compute_default_normal_geometry(sg, ratio=ratio, min_w=min_w, min_h=min_h)
+        geo = compute_default_normal_geometry(sg, ratio=ratio, min_w=min_w, min_h=min_h)
 
-        if isinstance(saved_w, (int, float)) and isinstance(saved_h, (int, float)) and saved_w >= min_w and saved_h >= min_h:
-            w = max(min(min_w, sg.width()), min(int(saved_w), sg.width()))
-            h = max(min(min_h, sg.height()), min(int(saved_h), sg.height()))
-            x = sg.x() + (sg.width() - w) // 2
-            y = sg.y() + (sg.height() - h) // 2
-            geo = QRect(x, y, w, h)
-        else:
-            geo = default_geo
-
-        self._default_normal_size = QSize(geo.width(), geo.height())
-        self._session_user_geometry = None
         if apply_geometry:
             self.setGeometry(geo)
         return geo
 
-    def get_session_user_geometry(self) -> QRect | None:
-        return getattr(self, '_session_user_geometry', None)
-
-    def _compute_restore_target_geometry(self, via_button: bool = False) -> QRect:
-        """
-        Computes exact target geometry when leaving maximized state:
-        - Settings window (_always_restore_default_size=True): ALWAYS small default size.
-        - Main window ripped by titlebar (via_button=False): ALWAYS 70% x 70% of active screen.
-        - Main window Restore button (via_button=True): last in-session user geometry if set
-          (e.g. half-screen Aero Snap or manual resize), otherwise 70% x 70% centered.
-        """
-        scr = self.screen() or QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
-        sg = scr.availableGeometry() if scr else QRect(100, 100, 1280, 720)
-
-        if getattr(self, '_always_restore_default_size', False):
-            def_sz = getattr(self, '_default_normal_size', None)
-            if def_sz and def_sz.isValid():
-                w = min(def_sz.width(), sg.width())
-                h = min(def_sz.height(), sg.height())
-                x = sg.x() + (sg.width() - w) // 2
-                y = sg.y() + (sg.height() - h) // 2
-                return QRect(x, y, w, h)
-
-        if via_button:
-            user_geo = getattr(self, '_session_user_geometry', None)
-            if user_geo and user_geo.isValid() and user_geo.width() > 0 and user_geo.height() > 0:
-                w = min(user_geo.width(), sg.width())
-                h = min(user_geo.height(), sg.height())
-                x = max(sg.left(), min(user_geo.x(), sg.right() - w + 1))
-                y = max(sg.top(), min(user_geo.y(), sg.bottom() - h + 1))
-                return QRect(x, y, w, h)
-
+    def _compute_rip_geometry(self, screen=None) -> QRect:
+        """ALWAYS returns 70% width x 70% height of the active screen, centered."""
+        if screen is None:
+            screen = QGuiApplication.screenAt(QCursor.pos()) or self.screen() or QGuiApplication.primaryScreen()
+        sg = screen.availableGeometry() if screen else QRect(100, 100, 1280, 720)
         return compute_default_normal_geometry(
             sg,
             ratio=getattr(self, '_normal_ratio', 0.70),
@@ -391,25 +399,106 @@ class FramelessWindowMixin:
             min_h=getattr(self, '_normal_min_h', 460),
         )
 
+    def _compute_restore_target_geometry(self, via_button: bool = False) -> QRect:
+        """
+        Computes exact target geometry when leaving maximized state:
+        - ONLY Restore button click (via_button=True): restores EXACT size & position
+          from right before maximizing (_pre_maximize_geometry), clamped to active screen
+          bounds (falls back to 70% x 70% centered if never windowed before maximizing).
+        - Ripping / double-click / any other un-maximize (via_button=False): ALWAYS 70% x 70%.
+        """
+        scr = self.screen() or QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        sg = scr.availableGeometry() if scr else QRect(100, 100, 1280, 720)
+
+        if via_button:
+            pre_geo = getattr(self, '_pre_maximize_geometry', None)
+            if pre_geo and pre_geo.isValid() and pre_geo.width() > 0 and pre_geo.height() > 0:
+                target_scr = QGuiApplication.screenAt(pre_geo.center()) or scr
+                tsg = target_scr.availableGeometry() if target_scr else sg
+                w = min(pre_geo.width(), tsg.width())
+                h = min(pre_geo.height(), tsg.height())
+                x = max(tsg.left(), min(pre_geo.x(), tsg.right() - w + 1))
+                y = max(tsg.top(), min(pre_geo.y(), tsg.bottom() - h + 1))
+                return QRect(x, y, w, h)
+
+        return self._compute_rip_geometry(screen=scr)
+
+    def _snapshot_pre_maximize_geometry(self):
+        """Captures the exact normal geometry right before entering maximized state."""
+        if not getattr(self, '_is_root', False):
+            return
+        if getattr(self, '_last_normal_geo', None) is not None:
+            self._pre_maximize_geometry = QRect(self._last_normal_geo)
+        if getattr(self, '_is_win', False) and getattr(self, '_last_normal_win_rect', None) is not None:
+            self._pre_maximize_win_rect = tuple(self._last_normal_win_rect)
+
+    def _record_normal_geometry(self):
+        """Tracks the window's latest non-maximized geometry so Maximize can snapshot it cleanly."""
+        if (
+            not getattr(self, '_is_root', False)
+            or not self.isVisible()
+            or self.isMinimized()
+            or self._is_effectively_maximized()
+            or getattr(self, '_restoring_from_max', False)
+        ):
+            return
+        geo = QRect(self.geometry())
+        if not geo.isValid() or geo.width() <= 0 or geo.height() <= 0:
+            return
+        scr = QGuiApplication.screenAt(geo.center()) or self.screen() or QGuiApplication.primaryScreen()
+        sg = scr.availableGeometry() if scr else None
+        if sg and geo.width() >= int(sg.width() * 0.98) and geo.height() >= int(sg.height() * 0.98):
+            return
+        self._last_normal_geo = geo
+
+        if getattr(self, '_is_win', False) and self.testAttribute(Qt.WA_WState_Created):
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                class WINDOWPLACEMENT(ctypes.Structure):
+                    _fields_ = [
+                        ('length', wintypes.UINT),
+                        ('flags', wintypes.UINT),
+                        ('showCmd', wintypes.UINT),
+                        ('ptMinPosition', wintypes.POINT),
+                        ('ptMaxPosition', wintypes.POINT),
+                        ('rcNormalPosition', wintypes.RECT),
+                    ]
+
+                hwnd = int(self.winId())
+                if hwnd and not ctypes.windll.user32.IsZoomed(hwnd):
+                    wp = WINDOWPLACEMENT()
+                    wp.length = ctypes.sizeof(WINDOWPLACEMENT)
+                    if ctypes.windll.user32.GetWindowPlacement(hwnd, ctypes.byref(wp)):
+                        r = wp.rcNormalPosition
+                        if r.right > r.left and r.bottom > r.top:
+                            self._last_normal_win_rect = (r.left, r.top, r.right, r.bottom)
+            except Exception:
+                pass
+
     def _sync_win_normal_placement(self, use_button_restore: bool = False):
         """
-        Updates Win32 WINDOWPLACEMENT.rcNormalPosition:
-        - use_button_restore=False (default while maximized): sets rcNormalPosition to 70% x 70%
-          (or small default for Settings) so Windows Aero drag-detach ('ripping') ALWAYS detaches
-          at that exact size.
-        - use_button_restore=True (right before SC_RESTORE button click): sets rcNormalPosition to
-          the in-session user geometry (if any) or 70% x 70% / default size.
+        Updates Win32 WINDOWPLACEMENT.rcNormalPosition ONLY while maximized (IsZoomed=True),
+        so calling SetWindowPlacement NEVER causes a normal window to jump before maximizing.
+        - use_button_restore=False (default while maximized): sets rcNormalPosition to exact
+          70% x 70% of the active monitor (computed in native physical pixels via GetMonitorInfoW),
+          so Windows Aero drag-detach ('ripping') ALWAYS detaches smoothly at 70% x 70%.
+        - use_button_restore=True (right before btn_max SC_RESTORE): writes back the exact raw
+          Win32 _pre_maximize_win_rect (or 70% x 70% if none).
         """
         if not getattr(self, '_is_win', False) or not getattr(self, '_is_root', False):
             return
         if not self.testAttribute(Qt.WA_WState_Created):
             return
-        target_geo = self._compute_restore_target_geometry(via_button=use_button_restore)
-        if not target_geo or not target_geo.isValid():
-            return
         try:
             import ctypes
             from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            hwnd = int(self.winId())
+            if not hwnd or not user32.IsZoomed(hwnd):
+                return
 
             class WINDOWPLACEMENT(ctypes.Structure):
                 _fields_ = [
@@ -421,47 +510,67 @@ class FramelessWindowMixin:
                     ('rcNormalPosition', wintypes.RECT),
                 ]
 
-            hwnd = int(self.winId())
-            if not hwnd:
-                return
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ('cbSize', wintypes.DWORD),
+                    ('rcMonitor', wintypes.RECT),
+                    ('rcWork', wintypes.RECT),
+                    ('dwFlags', wintypes.DWORD),
+                ]
+
             wp = WINDOWPLACEMENT()
             wp.length = ctypes.sizeof(WINDOWPLACEMENT)
-            if not ctypes.windll.user32.GetWindowPlacement(hwnd, ctypes.byref(wp)):
+            if not user32.GetWindowPlacement(hwnd, ctypes.byref(wp)):
                 return
 
-            dpr = max(1.0, float(self.devicePixelRatioF()))
-            phys_x = int(round(target_geo.x() * dpr))
-            phys_y = int(round(target_geo.y() * dpr))
-            phys_w = int(round(target_geo.width() * dpr))
-            phys_h = int(round(target_geo.height() * dpr))
+            if use_button_restore and getattr(self, '_pre_maximize_win_rect', None) is not None:
+                l, t, r, b = self._pre_maximize_win_rect
+                wp.rcNormalPosition.left = l
+                wp.rcNormalPosition.top = t
+                wp.rcNormalPosition.right = r
+                wp.rcNormalPosition.bottom = b
+                user32.SetWindowPlacement(hwnd, ctypes.byref(wp))
+                return
 
-            wp.rcNormalPosition.left = phys_x
-            wp.rcNormalPosition.top = phys_y
-            wp.rcNormalPosition.right = phys_x + phys_w
-            wp.rcNormalPosition.bottom = phys_y + phys_h
-            ctypes.windll.user32.SetWindowPlacement(hwnd, ctypes.byref(wp))
+            # Compute exact 70% x 70% in native Win32 workspace coordinates (zero DPI drift!)
+            hmon = user32.MonitorFromWindow(hwnd, 2)  # MONITOR_DEFAULTTONEAREST
+            if not hmon:
+                return
+            mi = MONITORINFO()
+            mi.cbSize = ctypes.sizeof(MONITORINFO)
+            if not user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+                return
+
+            # Primary monitor work-area offset (rcNormalPosition is in workspace coords)
+            pt_zero = wintypes.POINT(0, 0)
+            hprim = user32.MonitorFromPoint(pt_zero, 1)  # MONITOR_DEFAULTTOPRIMARY
+            prim_off_x, prim_off_y = 0, 0
+            if hprim:
+                pmi = MONITORINFO()
+                pmi.cbSize = ctypes.sizeof(MONITORINFO)
+                if user32.GetMonitorInfoW(hprim, ctypes.byref(pmi)):
+                    prim_off_x = pmi.rcWork.left
+                    prim_off_y = pmi.rcWork.top
+
+            work = mi.rcWork
+            avail_w = max(1, work.right - work.left)
+            avail_h = max(1, work.bottom - work.top)
+            ratio = getattr(self, '_normal_ratio', 0.70)
+            phys_w = max(1, int(round(avail_w * ratio)))
+            phys_h = max(1, int(round(avail_h * ratio)))
+            left = (work.left - prim_off_x) + (avail_w - phys_w) // 2
+            top = (work.top - prim_off_y) + (avail_h - phys_h) // 2
+
+            wp.rcNormalPosition.left = left
+            wp.rcNormalPosition.top = top
+            wp.rcNormalPosition.right = left + phys_w
+            wp.rcNormalPosition.bottom = top + phys_h
+            user32.SetWindowPlacement(hwnd, ctypes.byref(wp))
         except Exception:
             pass
 
-    def _sync_csd_shadow_state(self):
-        """On Linux CSD windows with drop shadow, collapse outer shadow margin when maximized, fullscreen, or snapped/tiled."""
-        if not getattr(self, '_use_linux_csd_shadow', False):
-            return
-        collapse = self._is_snapped_or_tiled()
-        if collapse == getattr(self, '_csd_shadow_collapsed', None):
-            return
-        self._csd_shadow_collapsed = collapse
-        lay = self.layout()
-        if lay is not None:
-            m = 0 if collapse else getattr(self, '_csd_shadow_margin', 14)
-            lay.setContentsMargins(m, m, m, m)
-        frame = self._get_root_frame()
-        if frame is not None and frame.graphicsEffect() is not None:
-            frame.graphicsEffect().setEnabled(not collapse)
-        self._update_grips()
-
     def _restore_after_unmaximize(self, via_button: bool = False):
-        """Enforces exact post-maximize geometry (button restore vs titlebar rip vs Settings default)."""
+        """Enforces exact post-maximize geometry on Unix (btn_max -> pre-max rect; otherwise -> 70% x 70%)."""
         if not getattr(self, '_is_root', False):
             return
         if self._is_effectively_maximized():
@@ -473,10 +582,15 @@ class FramelessWindowMixin:
 
         self._restoring_from_max = True
         try:
-            if via_button or getattr(self, '_always_restore_default_size', False):
+            if via_button:
                 self.setGeometry(target_geo)
+                # Re-assert after WM async settle on X11/Wayland
+                def _reassert():
+                    if not self._is_effectively_maximized():
+                        self.setGeometry(target_geo)
+                    self._restoring_from_max = False
+                QTimer.singleShot(35, _reassert)
             else:
-                # Ripping out of maximized: always enforce exact 70% x 70% size while keeping window under cursor/on screen
                 self.resize(target_geo.width(), target_geo.height())
                 scr = self.screen() or QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
                 sg = scr.availableGeometry() if scr else None
@@ -489,10 +603,25 @@ class FramelessWindowMixin:
                         x = max(sg.left(), min(cur_x, sg.right() - target_geo.width() + 1))
                         y = max(sg.top(), min(cur_y, sg.bottom() - target_geo.height() + 1))
                         self.move(x, y)
-            self._last_restored_geo = QRect(self.geometry())
+                QTimer.singleShot(60, lambda: setattr(self, '_restoring_from_max', False))
+        except Exception:
+            self._restoring_from_max = False
         finally:
             self._restore_via_button = False
-            QTimer.singleShot(80, lambda: setattr(self, '_restoring_from_max', False))
+
+    def _update_border_overlay(self):
+        """Shows crisp 1px outer border when windowed; hides it when maximized/fullscreen."""
+        overlay = getattr(self, '_border_overlay', None)
+        if overlay is None:
+            return
+        if self._is_effectively_maximized():
+            if not overlay.isHidden():
+                overlay.hide()
+            return
+        overlay.setGeometry(0, 0, self.width(), self.height())
+        if overlay.isHidden():
+            overlay.show()
+        overlay.raise_()
 
     def changeEvent(self, event):
         if event.type() == QEvent.Type.WindowStateChange:
@@ -503,9 +632,11 @@ class FramelessWindowMixin:
             was_max = getattr(self, '_was_maximized', False)
             now_max = self.isMaximized()
 
+            if not was_max and now_max:
+                self._snapshot_pre_maximize_geometry()
+
             if not _HAS_QFRAMELESS and getattr(self, '_is_win', False) and getattr(self, '_is_root', False):
-                # INVARIANT: No DWM cloak / SWP_FRAMECHANGED on maximize/restore transitions - they blank the
-                # window white for a moment while ripping it out of maximized. Only repair styles if missing.
+                # Repair styles ONLY if missing; never cloak/SWP_FRAMECHANGED on normal restore (no white flash)
                 try:
                     import ctypes
                     hwnd = int(self.winId())
@@ -516,24 +647,24 @@ class FramelessWindowMixin:
                         wanted = style | 0x00040000 | 0x00C00000 | 0x00080000 | 0x00020000 | 0x00010000
                         if wanted != style:
                             user32.SetWindowLongW(hwnd, GWL_STYLE, wanted)
-                            user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0020)
+                            user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0027)
                 except Exception:
                     pass
 
             self._was_maximized = now_max
-            self._sync_csd_shadow_state()
+            self._update_border_overlay()
             self._update_grips()
             self._refresh_max_state()
 
             if now_max and getattr(self, '_is_win', False):
-                # Keep Win32 rcNormalPosition at rip size (70% or Settings default) while maximized
+                # Now that IsZoomed(hwnd) is True, set rcNormalPosition to 70% x 70% for smooth Aero ripping
                 self._sync_win_normal_placement(use_button_restore=False)
 
             if was_max and not now_max and not self.isFullScreen():
                 via_btn = bool(getattr(self, '_restore_via_button', False))
-                self._restore_via_button = False  # never let a stale button flag leak into the next rip
-                if not getattr(self, '_is_win', False):
-                    # Windows restores through WINDOWPLACEMENT.rcNormalPosition (no post-correction = no jump/flash)
+                self._restore_via_button = False
+                if not getattr(self, '_is_win', False) and not getattr(self, '_restoring_from_max', False):
+                    # Windows uses WINDOWPLACEMENT.rcNormalPosition natively; Unix enforces exact geometry
                     QTimer.singleShot(0, lambda vb=via_btn: self._restore_after_unmaximize(via_button=vb))
         elif event.type() == QEvent.Type.ActivationChange:
             if hasattr(self, '_update_shortcut_enabled_states'):
@@ -541,8 +672,7 @@ class FramelessWindowMixin:
         super().changeEvent(event)
 
     def _apply_dark_class_brush(self, hwnd: int):
-        """Sets the Win32 window-class background brush to the app BG color so freshly exposed
-        client area (maximize/rip resize) is dark instead of flashing white."""
+        """Sets the Win32 window-class background brush to BG_COLOR (#1c1c1c) so resize/rip never flashes white."""
         try:
             import ctypes
             import config as _cfg
@@ -587,8 +717,6 @@ class FramelessWindowMixin:
                 pass
 
         super().showEvent(event)
-        self._sync_csd_shadow_state()
-        self._update_grips()
 
         if not _HAS_QFRAMELESS and getattr(self, '_is_win', False):
             try:
@@ -602,7 +730,7 @@ class FramelessWindowMixin:
                     style = user32.GetWindowLongW(hwnd, GWL_STYLE)
                     style |= 0x00040000  # WS_THICKFRAME
                     style |= 0x00C00000  # WS_CAPTION
-                    style |= 0x00080000  # WS_SYSMENU (system context menu on titlebar right-click)
+                    style |= 0x00080000  # WS_SYSMENU
                     style |= 0x00020000  # WS_MINIMIZEBOX
                     style |= 0x00010000  # WS_MAXIMIZEBOX
                     user32.SetWindowLongW(hwnd, GWL_STYLE, style)
@@ -612,11 +740,11 @@ class FramelessWindowMixin:
                     if dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(dark_val), 4) != 0:
                         dwmapi.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(dark_val), 4)
 
-                    # Force DWM NC rendering enabled (shadow)
+                    # Force DWM NC rendering enabled (native drop shadow)
                     nc_policy = ctypes.c_int(2)
                     dwmapi.DwmSetWindowAttribute(hwnd, 2, ctypes.byref(nc_policy), 4)
 
-                    # 1px top DWM frame strip for Aero Snap preview and shadow anchoring
+                    # 1px bottom DWM margin anchors native drop shadow without touching top titlebar
                     class MARGINS(ctypes.Structure):
                         _fields_ = [
                             ('left', ctypes.c_int),
@@ -624,16 +752,19 @@ class FramelessWindowMixin:
                             ('top', ctypes.c_int),
                             ('bottom', ctypes.c_int),
                         ]
-                    margins = MARGINS(0, 0, 1, 0)
+                    margins = MARGINS(0, 0, 0, 1)
                     dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
 
-                    self._sync_win_normal_placement()
                     self._apply_dark_class_brush(hwnd)
 
                     user32.SetWindowPos(
                         hwnd, None, 0, 0, 0, 0,
                         0x0001 | 0x0002 | 0x0004 | 0x0020
                     )
+
+                    if user32.IsZoomed(hwnd):
+                        self._was_maximized = True
+                        self._sync_win_normal_placement(use_button_restore=False)
 
                     QTimer.singleShot(35, self._dwm_uncloak)
                 elif hwnd:
@@ -650,8 +781,10 @@ class FramelessWindowMixin:
             except Exception:
                 pass
 
-        # Refresh grips after Win32/WM show so hidden grips are never raised over maximized titlebar
+        self._update_border_overlay()
         self._update_grips()
+        self._refresh_max_state()
+        self._record_normal_geometry()
 
     def _refresh_max_state(self):
         is_max = self.isMaximized()
@@ -675,40 +808,17 @@ class FramelessWindowMixin:
             grip = ResizeGrip(self, edge)
             self._grips.append(grip)
 
-    def _record_session_user_geometry_if_applicable(self):
-        """Records in-session manual geometry (e.g., manual resize or Aero Snap) for Main Window Restore button."""
-        if (
-            not getattr(self, '_is_root', False)
-            or getattr(self, '_always_restore_default_size', False)
-            or not self.isVisible()
-            or self._is_effectively_maximized()
-            or getattr(self, '_restoring_from_max', False)
-        ):
-            return
-        geo = QRect(self.geometry())
-        if not geo.isValid() or geo.width() <= 0 or geo.height() <= 0:
-            return
-        scr = self.screen() or QGuiApplication.primaryScreen()
-        sg = scr.availableGeometry() if scr else None
-        if sg and geo.width() >= int(sg.width() * 0.96) and geo.height() >= int(sg.height() * 0.96):
-            return
-        # Ignore exact echo of programmatic restore geometry
-        last_rest = getattr(self, '_last_restored_geo', None)
-        if last_rest is not None and abs(geo.width() - last_rest.width()) <= 2 and abs(geo.height() - last_rest.height()) <= 2 and abs(geo.x() - last_rest.x()) <= 2 and abs(geo.y() - last_rest.y()) <= 2:
-            return
-        self._session_user_geometry = geo
-
     def moveEvent(self, event):
         super().moveEvent(event)
-        self._sync_csd_shadow_state()
+        self._update_border_overlay()
         self._update_grips()
-        self._record_session_user_geometry_if_applicable()
+        self._record_normal_geometry()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._sync_csd_shadow_state()
+        self._update_border_overlay()
         self._update_grips()
-        self._record_session_user_geometry_if_applicable()
+        self._record_normal_geometry()
 
     def _update_grips(self):
         if not hasattr(self, '_grips'):
@@ -716,14 +826,10 @@ class FramelessWindowMixin:
 
         is_full = self._is_effectively_maximized()
         b = 6
-        b_top = 4  # Thin top border strip so titlebar close/min/max buttons remain unobstructed
+        b_top = 3       # Thin top resize strip so titlebar drag & buttons remain unobstructed
+        b_corner = 5    # Compact top corner hit zones when windowed
 
-        # When CSD shadow padding is active on Linux, place grips tightly around inner_frame
-        frame = self._get_root_frame() if getattr(self, '_use_linux_csd_shadow', False) else None
-        if frame is not None and frame.width() > 0 and frame.height() > 0:
-            fx, fy, fw, fh = frame.x(), frame.y(), frame.width(), frame.height()
-        else:
-            fx, fy, fw, fh = 0, 0, self.width(), self.height()
+        fw, fh = self.width(), self.height()
 
         for grip in self._grips:
             if is_full:
@@ -734,21 +840,21 @@ class FramelessWindowMixin:
                 grip.show()
 
             if grip.edge == Qt.TopEdge:
-                grip.setGeometry(fx + b, fy, max(1, fw - 2 * b), b_top)
+                grip.setGeometry(b_corner, 0, max(1, fw - 2 * b_corner), b_top)
             elif grip.edge == Qt.BottomEdge:
-                grip.setGeometry(fx + b, fy + fh - b, max(1, fw - 2 * b), b)
+                grip.setGeometry(b, fh - b, max(1, fw - 2 * b), b)
             elif grip.edge == Qt.LeftEdge:
-                grip.setGeometry(fx, fy + b, b, max(1, fh - 2 * b))
+                grip.setGeometry(0, b_corner, b, max(1, fh - b_corner - b))
             elif grip.edge == Qt.RightEdge:
-                grip.setGeometry(fx + fw - b, fy + b, b, max(1, fh - 2 * b))
+                grip.setGeometry(fw - b, b_corner, b, max(1, fh - b_corner - b))
             elif grip.edge == (Qt.TopEdge | Qt.LeftEdge):
-                grip.setGeometry(fx, fy, b, b)
+                grip.setGeometry(0, 0, b_corner, b_corner)
             elif grip.edge == (Qt.TopEdge | Qt.RightEdge):
-                grip.setGeometry(fx + fw - b, fy, b, b)
+                grip.setGeometry(fw - b_corner, 0, b_corner, b_corner)
             elif grip.edge == (Qt.BottomEdge | Qt.LeftEdge):
-                grip.setGeometry(fx, fy + fh - b, b, b)
+                grip.setGeometry(0, fh - b, b, b)
             elif grip.edge == (Qt.BottomEdge | Qt.RightEdge):
-                grip.setGeometry(fx + fw - b, fy + fh - b, b, b)
+                grip.setGeometry(fw - b, fh - b, b, b)
             grip.raise_()
 
     # ── Windows Native Event Handling ────────────────────────────────────────
@@ -766,7 +872,7 @@ class FramelessWindowMixin:
             SC_MAXIMIZE = 0xF030
             MF_ENABLED = 0x0000
             MF_GRAYED = 0x0001
-            is_max = self.isMaximized()
+            is_max = bool(user32.IsZoomed(hwnd))
             user32.EnableMenuItem(hmenu, SC_RESTORE, MF_ENABLED if is_max else MF_GRAYED)
             user32.EnableMenuItem(hmenu, SC_MOVE, MF_GRAYED if is_max else MF_ENABLED)
             user32.EnableMenuItem(hmenu, SC_SIZE, MF_GRAYED if is_max else MF_ENABLED)
@@ -794,124 +900,138 @@ class FramelessWindowMixin:
         from ctypes import wintypes
         msg = wintypes.MSG.from_address(int(message))
 
-        # ── WM_GETMINMAXINFO (0x0024) ─────────────────────────────────────────
-        # Constrains maximized geometry to the active monitor's rcWork area.
-        if msg.message == 0x0024:
+        # ── WM_NCCALCSIZE (0x0083) ────────────────────────────────────────────
+        # INVARIANT: Query live Win32 IsZoomed(hwnd), NEVER stale Qt isMaximized(),
+        # and NEVER pair this with a custom WM_GETMINMAXINFO that shrinks ptMaxSize.
+        if msg.message == 0x0083:
+            if not msg.wParam:
+                return True, 0
             try:
                 hwnd = int(self.winId())
                 user32 = ctypes.windll.user32
+                is_zoomed = bool(hwnd and user32.IsZoomed(hwnd))
+                params = ctypes.cast(msg.lParam, ctypes.POINTER(wintypes.RECT))
+                r0 = params[0]
 
-                class MINMAXINFO(ctypes.Structure):
-                    _fields_ = [
-                        ('ptReserved', wintypes.POINT),
-                        ('ptMaxSize', wintypes.POINT),
-                        ('ptMaxPosition', wintypes.POINT),
-                        ('ptMinTrackSize', wintypes.POINT),
-                        ('ptMaxTrackSize', wintypes.POINT),
-                    ]
+                work_tuple = None
+                mon_tuple = None
+                bx, by = 8, 8
+                if is_zoomed:
+                    class MONITORINFO(ctypes.Structure):
+                        _fields_ = [
+                            ('cbSize', wintypes.DWORD),
+                            ('rcMonitor', wintypes.RECT),
+                            ('rcWork', wintypes.RECT),
+                            ('dwFlags', wintypes.DWORD),
+                        ]
+                    hmon = user32.MonitorFromWindow(hwnd, 2)  # MONITOR_DEFAULTTONEAREST
+                    if hmon:
+                        mi = MONITORINFO()
+                        mi.cbSize = ctypes.sizeof(MONITORINFO)
+                        if user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+                            work_tuple = (mi.rcWork.left, mi.rcWork.top, mi.rcWork.right, mi.rcWork.bottom)
+                            mon_tuple = (mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right, mi.rcMonitor.bottom)
+                    if work_tuple is None:
+                        try:
+                            dpi = user32.GetDpiForWindow(hwnd) or 96
+                            pad = user32.GetSystemMetricsForDpi(92, dpi)
+                            bx = user32.GetSystemMetricsForDpi(32, dpi) + pad
+                            by = user32.GetSystemMetricsForDpi(33, dpi) + pad
+                        except Exception:
+                            pad = user32.GetSystemMetrics(92)
+                            bx = user32.GetSystemMetrics(32) + pad
+                            by = user32.GetSystemMetrics(33) + pad
 
-                class MONITORINFO(ctypes.Structure):
-                    _fields_ = [
-                        ('cbSize', wintypes.DWORD),
-                        ('rcMonitor', wintypes.RECT),
-                        ('rcWork', wintypes.RECT),
-                        ('dwFlags', wintypes.DWORD),
-                    ]
+                nl, nt, nr, nb = compute_win_nccalcsize_rect(
+                    (r0.left, r0.top, r0.right, r0.bottom),
+                    is_zoomed=is_zoomed,
+                    is_fullscreen=self.isFullScreen(),
+                    work_rect=work_tuple,
+                    monitor_rect=mon_tuple,
+                    fallback_bx=bx,
+                    fallback_by=by,
+                )
+                r0.left, r0.top, r0.right, r0.bottom = nl, nt, nr, nb
+            except Exception:
+                pass
+            return True, 0
 
-                hmon = user32.MonitorFromWindow(hwnd, 2)  # MONITOR_DEFAULTTONEAREST
-                if hmon:
-                    mi = MONITORINFO()
-                    mi.cbSize = ctypes.sizeof(MONITORINFO)
-                    if user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
-                        mmi = ctypes.cast(msg.lParam, ctypes.POINTER(MINMAXINFO))
-                        work = mi.rcWork
-                        mon = mi.rcMonitor
-                        mmi[0].ptMaxPosition.x = work.left - mon.left
-                        mmi[0].ptMaxPosition.y = work.top - mon.top
-                        mmi[0].ptMaxSize.x = work.right - work.left
-                        mmi[0].ptMaxSize.y = work.bottom - work.top
-                        if (
-                            work.left == mon.left
-                            and work.top == mon.top
-                            and work.right == mon.right
-                            and work.bottom == mon.bottom
-                        ):
-                            # Auto-hide taskbar edge safeguard (1px)
-                            mmi[0].ptMaxSize.y = max(1, mmi[0].ptMaxSize.y - 1)
-                        return True, 0
+        # ── WM_NCPAINT (0x0085) ───────────────────────────────────────────────
+        # Suppress native non-client border & caption button painting completely.
+        if msg.message == 0x0085:
+            return True, 0
+
+        # ── WM_ERASEBKGND (0x0014) ────────────────────────────────────────────
+        # Fill exposed client area with dark app background so resize/rip never flashes white.
+        if msg.message == 0x0014:
+            try:
+                hwnd = int(self.winId())
+                if hwnd and msg.wParam:
+                    if getattr(self, '_dark_brush', None) is None:
+                        self._apply_dark_class_brush(hwnd)
+                    brush = getattr(self, '_dark_brush', None)
+                    if brush:
+                        rc = wintypes.RECT()
+                        if ctypes.windll.user32.GetClientRect(hwnd, ctypes.byref(rc)):
+                            ctypes.windll.user32.FillRect(
+                                ctypes.c_void_p(msg.wParam),
+                                ctypes.byref(rc),
+                                ctypes.c_void_p(brush),
+                            )
+                            return True, 1
             except Exception:
                 pass
 
-        # ── WM_NCCALCSIZE (0x0083) ────────────────────────────────────────────
-        if msg.message == 0x0083:
-            if msg.wParam and self.isMaximized():
-                hwnd = int(self.winId())
-                user32 = ctypes.windll.user32
-                try:
-                    dpi = user32.GetDpiForWindow(hwnd) or 96
-                    pad = user32.GetSystemMetricsForDpi(92, dpi)  # SM_CXPADDEDBORDER
-                    bx = user32.GetSystemMetricsForDpi(32, dpi) + pad  # SM_CXSIZEFRAME
-                    by = user32.GetSystemMetricsForDpi(33, dpi) + pad  # SM_CYSIZEFRAME
-                except Exception:
-                    pad = user32.GetSystemMetrics(92)
-                    bx = user32.GetSystemMetrics(32) + pad
-                    by = user32.GetSystemMetrics(33) + pad
-                params = ctypes.cast(msg.lParam, ctypes.POINTER(wintypes.RECT))
-                params[0].left += bx
-                params[0].top += by
-                params[0].right -= bx
-                params[0].bottom -= by
-            return True, (0x0300 if msg.wParam else 0)  # WVR_REDRAW
-
-        # ── WM_ENTERSIZEMOVE (0x0231) ─────────────────────────────────────────
-        if msg.message == 0x0231:
-            hwnd = int(self.winId())
-            if hwnd:
-                ctypes.windll.user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0027)
-            return super().nativeEvent(eventType, message)
-
         # ── WM_NCACTIVATE (0x0086) ────────────────────────────────────────────
+        # Return TRUE without calling DefWindowProcW (unless minimized) so Windows
+        # allows activation changes without ever painting native NC chrome/buttons.
         if msg.message == 0x0086:
             hwnd = int(self.winId())
-            ctypes.windll.user32.DefWindowProcW(
-                hwnd, 0x0086, msg.wParam, ctypes.c_long(-1)
-            )
-            return True, 1
+            if hwnd and not ctypes.windll.user32.IsIconic(wintypes.HWND(hwnd)):
+                return True, 1
+            return super().nativeEvent(eventType, message)
 
         # ── WM_MOUSEACTIVATE (0x0021) ─────────────────────────────────────────
         if msg.message == 0x0021:
             return True, 1  # MA_ACTIVATE
 
         # ── WM_NCHITTEST (0x0084) ─────────────────────────────────────────────
+        # Uses ScreenToClient + GetClientRect so coordinates match Qt client pixels 1:1
+        # even when maximized (overhanging -8px frame) or across mixed-DPI monitors.
         if msg.message == 0x0084:
-            x = msg.lParam & 0xFFFF
-            if x & 0x8000:
-                x -= 0x10000
-            y = (msg.lParam >> 16) & 0xFFFF
-            if y & 0x8000:
-                y -= 0x10000
+            sx = msg.lParam & 0xFFFF
+            if sx & 0x8000:
+                sx -= 0x10000
+            sy = (msg.lParam >> 16) & 0xFFFF
+            if sy & 0x8000:
+                sy -= 0x10000
 
             hwnd = int(self.winId())
-            rc = wintypes.RECT()
             user32 = ctypes.windll.user32
-            if hwnd and user32.GetWindowRect(hwnd, ctypes.byref(rc)):
-                ratio = max(1.0, float(self.devicePixelRatioF()))
-                rel_x = int(round((x - rc.left) / ratio))
-                rel_y = int(round((y - rc.top) / ratio))
-                w = max(1, int(round((rc.right - rc.left) / ratio)))
-                h = max(1, int(round((rc.bottom - rc.top) / ratio)))
+            w = max(1, self.width())
+            h = max(1, self.height())
+            pt = wintypes.POINT(sx, sy)
+            crc = wintypes.RECT()
+            if hwnd and user32.ScreenToClient(hwnd, ctypes.byref(pt)) and user32.GetClientRect(hwnd, ctypes.byref(crc)) and crc.right > 0 and crc.bottom > 0:
+                rel_x = int(pt.x * w // crc.right) if pt.x >= 0 else -1
+                rel_y = int(pt.y * h // crc.bottom) if pt.y >= 0 else -1
             else:
                 ratio = max(1.0, float(self.devicePixelRatioF()))
-                pos_pt = self.mapFromGlobal(QPoint(int(round(x / ratio)), int(round(y / ratio))))
+                pos_pt = self.mapFromGlobal(QPoint(int(round(sx / ratio)), int(round(sy / ratio))))
                 rel_x, rel_y = pos_pt.x(), pos_pt.y()
-                w, h = self.width(), self.height()
+
+            is_max = self._is_effectively_maximized()
+            if is_max:
+                # Clamp extreme top/corner edge hits cleanly inside [0..w-1, 0..h-1] for Fitts's Law
+                rel_x = max(0, min(rel_x, w - 1))
+                rel_y = max(0, min(rel_y, h - 1))
 
             _tb = getattr(self, '_title_bar', getattr(self, '_tb', None))
             tb_height = (_tb.height() if (_tb and _tb.isVisible()) else 0)
 
             is_on_max_btn = False
             is_on_interactive = False
-            if 0 <= rel_y < tb_height:
+            if 0 <= rel_y < tb_height and 0 <= rel_x < w:
                 child = self.childAt(QPoint(rel_x, rel_y))
                 btn_max = getattr(_tb, 'btn_max', None) if _tb else None
                 cur = child
@@ -930,11 +1050,12 @@ class FramelessWindowMixin:
                 win_w=w,
                 win_h=h,
                 border_px=self._RESIZE_BORDER,
-                is_maximized=self._is_effectively_maximized(),
+                is_maximized=is_max,
                 is_fullscreen=self.isFullScreen(),
                 titlebar_height=tb_height,
                 is_on_max_btn=is_on_max_btn,
                 is_on_interactive_child=is_on_interactive,
+                top_border_px=self._TOP_RESIZE_BORDER,
             )
 
             _tb_btn_max = getattr(_tb, 'btn_max', None) if _tb else None
@@ -967,24 +1088,25 @@ class FramelessWindowMixin:
             if btn_max and hasattr(btn_max, 'set_native_pressed'):
                 btn_max.set_native_pressed(False)
             if _tb and hasattr(_tb, '_toggle_maximize'):
-                _tb._toggle_maximize()
+                _tb._toggle_maximize(via_button=True)
             return True, 0
 
         # ── WM_NCRBUTTONUP (0x00A5) on HTCAPTION ─────────────────────────────
         if msg.message == 0x00A5 and msg.wParam == HTCAPTION:
-            x = msg.lParam & 0xFFFF
-            if x & 0x8000:
-                x -= 0x10000
-            y = (msg.lParam >> 16) & 0xFFFF
-            if y & 0x8000:
-                y -= 0x10000
-            self._show_win_system_menu(int(self.winId()), x, y)
+            sx = msg.lParam & 0xFFFF
+            if sx & 0x8000:
+                sx -= 0x10000
+            sy = (msg.lParam >> 16) & 0xFFFF
+            if sy & 0x8000:
+                sy -= 0x10000
+            self._show_win_system_menu(int(self.winId()), sx, sy)
             return True, 0
 
         # ── WM_NCLBUTTONDBLCLK (0x00A3) ───────────────────────────────────────
+        # Double-clicking titlebar un-maximizes to 70% x 70% (ONLY btn_max restores pre-max rect)
         if msg.message == 0x00A3:
             if _tb and hasattr(_tb, '_toggle_maximize') and msg.wParam == HTCAPTION:
-                _tb._toggle_maximize()
+                _tb._toggle_maximize(via_button=False)
             return True, 0
 
         return super().nativeEvent(eventType, message)
