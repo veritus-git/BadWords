@@ -44,9 +44,7 @@ class VideoLoadingWidget(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     def set_text(self, text: str):
-        # Strip any emojis from text to guarantee zero emojis
-        cleaned = text.replace("⏳", "").replace("⌛", "").strip()
-        self._text = cleaned
+        self._text = str(text or "").strip()
         self.update()
 
     def start(self, text: str = ""):
@@ -146,7 +144,7 @@ class VideoPreviewWidget(QFrame):
         self.lbl_placeholder = QLabel(self)
         self.lbl_placeholder.setAlignment(Qt.AlignCenter)
         self.lbl_placeholder.setStyleSheet(f"color: #4a4a4a; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(8.5)}px; font-style: italic;")
-        self.lbl_placeholder.setText("Video Preview")
+        self.lbl_placeholder.setText(self.txt("lbl_video_preview", "Video Preview"))
         self.lbl_placeholder.hide()
         layout.addWidget(self.lbl_placeholder)
 
@@ -155,11 +153,11 @@ class VideoPreviewWidget(QFrame):
         w = int(h * 16.0 / 9.0)
         return QSize(w, h)
 
-    def show_placeholder(self, show: bool = True, text: str = "Video Preview") -> None:
+    def show_placeholder(self, show: bool = True, text: str = None) -> None:
         if show:
             self.loading_widget.stop()
             self.lbl_placeholder.setStyleSheet(f"color: #4a4a4a; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(8.5)}px; font-style: italic;")
-            self.lbl_placeholder.setText(text)
+            self.lbl_placeholder.setText(text if text else self.txt("lbl_video_preview", "Video Preview"))
             self.lbl_placeholder.show()
             self.video_widget.hide()
         else:
@@ -167,11 +165,11 @@ class VideoPreviewWidget(QFrame):
             if not self.loading_widget.isVisible():
                 self.video_widget.show()
 
-    def show_loading(self, show: bool = True, text: str = "Generating preview...") -> None:
+    def show_loading(self, show: bool = True, text: str = None) -> None:
         if show:
             self.lbl_placeholder.hide()
             self.video_widget.hide()
-            self.loading_widget.start(text)
+            self.loading_widget.start(text if text else self.txt("lbl_generating_preview", "Generating preview..."))
         else:
             self.loading_widget.stop()
             if not self.lbl_placeholder.isVisible():

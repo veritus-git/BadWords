@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QPainter, QPainterPath, QColor, QPen, QFont, QCursor
 
 import config
-from gui.utils import _txt, get_svg_icon
+from gui.utils import _txt, get_svg_icon, get_vector_icon
 
 
 class FileDropZone(QWidget):
@@ -172,15 +172,20 @@ class FileDropZone(QWidget):
         h_single_actions.setContentsMargins(0, 0, 0, 0)
         h_single_actions.setSpacing(config.S(6))
 
-        self.btn_add_more_single = QPushButton("+")
+        self.btn_add_more_single = QPushButton()
         self.btn_add_more_single.setFixedSize(config.S(24), config.S(24))
         self.btn_add_more_single.setCursor(Qt.PointingHandCursor)
         self.btn_add_more_single.setToolTip(_txt(self._lang, "tt_add_more_files", "Add more files to sequence"))
+        _plus_norm = get_vector_icon("plus", size=12, color="#38c172")
+        _plus_hov = get_vector_icon("plus", size=12, color="#ffffff")
+        self.btn_add_more_single.setIcon(_plus_norm)
+        self.btn_add_more_single.setIconSize(QSize(config.S(12), config.S(12)))
+        self.btn_add_more_single.enterEvent = lambda e, b=self.btn_add_more_single, ic=_plus_hov: (b.setIcon(ic), QPushButton.enterEvent(b, e))
+        self.btn_add_more_single.leaveEvent = lambda e, b=self.btn_add_more_single, ic=_plus_norm: (b.setIcon(ic), QPushButton.leaveEvent(b, e))
         self.btn_add_more_single.setStyleSheet(f"""
             QPushButton {{
                 background-color: #242424; color: #38c172;
                 border: 1px solid #3a3a3a; border-radius: {config.S(12)}px;
-                font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(10)}px; font-weight: bold;
                 padding: 0;
             }}
             QPushButton:hover {{
@@ -190,15 +195,20 @@ class FileDropZone(QWidget):
         self.btn_add_more_single.clicked.connect(lambda: self.browse_files(append=True))
         h_single_actions.addWidget(self.btn_add_more_single)
 
-        self.btn_clear = QPushButton("✕")
+        self.btn_clear = QPushButton()
         self.btn_clear.setFixedSize(config.S(24), config.S(24))
         self.btn_clear.setCursor(Qt.PointingHandCursor)
-        self.btn_clear.setToolTip(_txt(self._lang, "tt_clear_file", "Clear file"))
+        self.btn_clear.setToolTip(_txt(self._lang, "tt_clear_file", "Clear file / Choose another"))
+        _x_norm = get_vector_icon("close", size=10, color="#888888")
+        _x_hov = get_vector_icon("close", size=10, color="#ff5555")
+        self.btn_clear.setIcon(_x_norm)
+        self.btn_clear.setIconSize(QSize(config.S(10), config.S(10)))
+        self.btn_clear.enterEvent = lambda e, b=self.btn_clear, ic=_x_hov: (b.setIcon(ic), QPushButton.enterEvent(b, e))
+        self.btn_clear.leaveEvent = lambda e, b=self.btn_clear, ic=_x_norm: (b.setIcon(ic), QPushButton.leaveEvent(b, e))
         self.btn_clear.setStyleSheet(f"""
             QPushButton {{
                 background-color: #242424; color: #888888;
                 border: 1px solid #3a3a3a; border-radius: {config.S(12)}px;
-                font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(8.5)}px; font-weight: bold;
                 padding: 0;
             }}
             QPushButton:hover {{
@@ -302,8 +312,10 @@ class FileDropZone(QWidget):
             self.btn_multi_add.setText(f"+ {add_txt}" if not add_txt.startswith("+") else add_txt)
         if clear_txt and hasattr(self, 'btn_multi_clear'):
             self.btn_multi_clear.setText(clear_txt)
+        if hasattr(self, 'btn_add_more_single') and hasattr(self, '_lang'):
+            self.btn_add_more_single.setToolTip(_txt(self._lang, "tt_add_more_files", "Add more files to sequence"))
         if hasattr(self, 'btn_clear') and hasattr(self, '_lang'):
-            self.btn_clear.setToolTip(_txt(self._lang, "tt_clear_file", "Clear file"))
+            self.btn_clear.setToolTip(_txt(self._lang, "tt_clear_file", "Clear file / Choose another"))
         if queue_txt:
             self._queue_prefix = queue_txt
 
@@ -425,7 +437,7 @@ class FileDropZone(QWidget):
                 else:
                     sz_str = f"{sz_bytes / 1024:.0f} KB"
             except Exception:
-                sz_str = "Unknown size"
+                sz_str = _txt(self._lang, "lbl_unknown_size", "Unknown size")
 
             dur_str = self._probe_duration_str(self._current_file)
             self.lbl_file_info.setText(f"{dur_str} • {sz_str}" if dur_str else sz_str)
@@ -451,7 +463,7 @@ class FileDropZone(QWidget):
             tm = tm % 60
             tot_str = f"{th:02d}:{tm:02d}:{ts:02d}" if th > 0 else f"{tm:02d}:{ts:02d}"
 
-            q_lbl = getattr(self, '_queue_prefix', 'Kolejka')
+            q_lbl = getattr(self, '_queue_prefix', None) or _txt(self._lang, "lbl_queue", "Queue")
             self.lbl_multi_summary.setText(f"{q_lbl}: {count} • {tot_str}")
 
             for idx, fp in enumerate(self._files):
@@ -483,31 +495,33 @@ class FileDropZone(QWidget):
         r_lay.setSpacing(config.S(4))
 
         # Reorder buttons: Up and Down
-        btn_up = QPushButton("▲")
+        btn_up = QPushButton()
         btn_up.setFixedSize(config.S(14), config.S(14))
         btn_up.setCursor(Qt.PointingHandCursor if idx > 0 else Qt.ArrowCursor)
         btn_up.setEnabled(idx > 0)
-        btn_up.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; border: none; color: {'#888888' if idx > 0 else '#3a3a3a'};
-                font-size: {config.FS_PX(6.5)}px; padding: 0;
-            }}
-            QPushButton:hover {{ color: {'#38c172' if idx > 0 else '#3a3a3a'}; }}
-        """)
+        _up_norm = get_vector_icon("chevron_up", size=9, color="#888888" if idx > 0 else "#3a3a3a")
+        _up_hov = get_vector_icon("chevron_up", size=9, color="#38c172")
+        btn_up.setIcon(_up_norm)
+        btn_up.setIconSize(QSize(config.S(9), config.S(9)))
+        if idx > 0:
+            btn_up.enterEvent = lambda e, b=btn_up, ic=_up_hov: (b.setIcon(ic), QPushButton.enterEvent(b, e))
+            btn_up.leaveEvent = lambda e, b=btn_up, ic=_up_norm: (b.setIcon(ic), QPushButton.leaveEvent(b, e))
+        btn_up.setStyleSheet("QPushButton { background: transparent; border: none; padding: 0; }")
         btn_up.clicked.connect(lambda _, i=idx: self.move_file(i, i - 1))
         r_lay.addWidget(btn_up)
 
-        btn_down = QPushButton("▼")
+        btn_down = QPushButton()
         btn_down.setFixedSize(config.S(14), config.S(14))
         btn_down.setCursor(Qt.PointingHandCursor if idx < total_count - 1 else Qt.ArrowCursor)
         btn_down.setEnabled(idx < total_count - 1)
-        btn_down.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; border: none; color: {'#888888' if idx < total_count - 1 else '#3a3a3a'};
-                font-size: {config.FS_PX(6.5)}px; padding: 0;
-            }}
-            QPushButton:hover {{ color: {'#38c172' if idx < total_count - 1 else '#3a3a3a'}; }}
-        """)
+        _dn_norm = get_vector_icon("chevron_down", size=9, color="#888888" if idx < total_count - 1 else "#3a3a3a")
+        _dn_hov = get_vector_icon("chevron_down", size=9, color="#38c172")
+        btn_down.setIcon(_dn_norm)
+        btn_down.setIconSize(QSize(config.S(9), config.S(9)))
+        if idx < total_count - 1:
+            btn_down.enterEvent = lambda e, b=btn_down, ic=_dn_hov: (b.setIcon(ic), QPushButton.enterEvent(b, e))
+            btn_down.leaveEvent = lambda e, b=btn_down, ic=_dn_norm: (b.setIcon(ic), QPushButton.leaveEvent(b, e))
+        btn_down.setStyleSheet("QPushButton { background: transparent; border: none; padding: 0; }")
         btn_down.clicked.connect(lambda _, i=idx: self.move_file(i, i + 1))
         r_lay.addWidget(btn_down)
 
@@ -548,17 +562,17 @@ class FileDropZone(QWidget):
             r_lay.addWidget(lbl_dur)
 
         # Remove single clip button
-        btn_del = QPushButton("✕")
+        btn_del = QPushButton()
         btn_del.setFixedSize(config.S(14), config.S(14))
         btn_del.setCursor(Qt.PointingHandCursor)
         btn_del.setToolTip(_txt(self._lang, "tt_remove_clip_from_queue", "Remove this clip from queue"))
-        btn_del.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: #707070; border: none;
-                font-size: {config.FS_PX(7.5)}px; font-weight: bold; padding: 0;
-            }}
-            QPushButton:hover {{ color: #ff5555; }}
-        """)
+        _del_norm = get_vector_icon("close", size=8, color="#707070")
+        _del_hov = get_vector_icon("close", size=8, color="#ff5555")
+        btn_del.setIcon(_del_norm)
+        btn_del.setIconSize(QSize(config.S(8), config.S(8)))
+        btn_del.enterEvent = lambda e, b=btn_del, ic=_del_hov: (b.setIcon(ic), QPushButton.enterEvent(b, e))
+        btn_del.leaveEvent = lambda e, b=btn_del, ic=_del_norm: (b.setIcon(ic), QPushButton.leaveEvent(b, e))
+        btn_del.setStyleSheet("QPushButton { background: transparent; border: none; padding: 0; }")
         btn_del.clicked.connect(lambda _, i=idx: self.remove_file(i))
         r_lay.addWidget(btn_del)
 

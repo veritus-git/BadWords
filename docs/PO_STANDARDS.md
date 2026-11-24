@@ -1,0 +1,27 @@
+# Copyright (c) 2026 Szymon Wolarz
+# Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
+# BadWords Product Owner (PO) Standards & Verification Reference
+
+On-demand detailed verification standards and Product Owner engineering preferences for BadWords.
+
+## 1. End-to-End & Empirical Verification Checklist
+- **UI / Dialogs / Animations:** Instantiate real `QApplication` + real widgets (`QT_QPA_PLATFORM=offscreen`), drive clicks, search, toggles, scaling (75%-200%), verify opacity/geometry/text contrast, and save PNG screenshots into `tests/artifacts/`. Visually inspect **every** PNG with `read_file`.
+- **IPC / Bridge / Subprocesses / Launchers:** Execute real subprocess invocations, real atomic file roundtrips, and real Rust/C launcher checks (`cd installer && cargo check && cargo test`).
+- **Audio / FFmpeg / Export / XML / DRT:** Validate generated XML/FCPXML/OTIO/EDL structurally and verify exact frame math across drop-frame rates (`24000/1001`, `30000/1001`).
+- **Network / Relay / Crash Reports:** Keep `run_tests.py` offline-safe via mocked HTTP while testing real payload serialization/validation (`logs.zip` scrubbing, multipart headers) end-to-end.
+
+## 2. Historical PO Decisions & Technical Invariants
+- **Styled Startup & Error Dialogs (2026-11-23):** Never ship bare OS/Qt dialogs; match BadWords dark theme, localized 11-language fallback, and inspect PNGs.
+- **Unify Shared Pipelines (2026-11-23):** Crash report upload + Support contact upload share one relay contract/helper.
+- **Current Resolve 21.1+ Reality (2026-11-23):** Verify against `.agents/skills/davinci-resolve-current/SKILL.md` and Blackmagic release notes (21.1+ Free removes Python scripting, external socket, and DRT export; relies on sandboxed Lua bridge).
+- **Separate Crash Reporting From Telemetry (2026-11-23):** `auto_crash_report` is independent from `telemetry_opt_in`, defaults ON for new users, prompts existing users once regardless of telemetry choice, scrubs paths/usernames/media names, and deduplicates per fingerprint in `user.json`.
+- **Verify Unprivileged Desktop Access (2026-11-23):** Store local KVM VM disks (`badwords-win11`, `badwords-linux-kde`) on internal SSD (`startupPolicy='optional'`) and verify unprivileged session access (e.g. libvirt/virt-manager).
+- **Verify UI Exposure Before Describing Settings (2026-11-23):** Only describe settings actually exposed in `SettingsDialog` / main panels as user-editable (not internal calibration constants).
+- **Clean-OS Installer Zero-Dependency Invariants (2026-11-23):** Statically link Windows CRT (`+crt-static` / `/MT`), ensure VC++ Redistributable on Windows for PySide6/ctranslate2, acquire relocatable `python-build-standalone` on Linux/macOS without `sudo`, keep `setupfiles/*.ps1` pure ASCII without UTF-8 BOM.
+- **Zero Nested `QGraphicsOpacityEffect` Inside Shadowed Dialogs (2026-11-23):** Fade child text/icons via explicit CSS color interpolation + `QPainter.setOpacity()` rather than child `QGraphicsOpacityEffect`; keep `background: transparent; border: none;` on SVG `QLabel`s.
+- **Neutral Titlebar `X` Hover & Native-First Scaling (2026-11-23):** Keep titlebar `X` hover neutral gray; prioritize OS native monitor DPI (`auto` default).
+- **Frameless Root Windows (Win32 + Linux Parity, 2026-11-24):** Never combine custom `WM_GETMINMAXINFO` (`rcWork`) with `WM_NCCALCSIZE` inset; query live `IsZoomed(hwnd)`; handle `WM_NCPAINT=0` + `WM_NCACTIVATE=1`; use `ScreenToClient` + `GetClientRect` in `WM_NCHITTEST`; use 1px mouse-transparent border overlay on `SettingsDialog`; keep `X` corner hittable when maximized; un-maximize before `startSystemMove()` on Linux; restore small default size only on `btn_max` for `SettingsDialog`.
+- **Apply-Triggered Scale, List Spacing & Icon Restart (2026-11-24):** Keep `app_icon` in `RESTART_REQUIRED_KEYS` (never `WM_SETICON` on visible Win32 frameless windows); apply UI scaling on `Apply`; lock `height` + delegate `row_height` on dropdown lists.
+- **Scoped Qt Container QSS & Wrapped Labels (2026-11-24):** Always scope container CSS by `#ObjectName` (`scope_transparent`); never set `QVBoxLayout.setAlignment(Qt.AlignCenter)` on word-wrapped `QLabel` containers.
+- **Settings UX & Search Aesthetics (2026-11-24):** Use `#1c1c1c` viewport + `#242424` cards + `#262626` sidebar; separate `Custom Markers` tab; equal `220px` input widths; fixed-width `{pct}%` beside `JumpSlider` with inline emerald `#169c56` `System` tag on left; `180ms` debounced search with `#1f7a44` highlight + active+EN fallback; About hero + standalone Coffee card (no MIT badge); mandatory sanitized logs + image lightbox in Support.

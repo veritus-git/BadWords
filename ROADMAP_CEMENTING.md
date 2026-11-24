@@ -16,7 +16,7 @@
 - [x] **Punkt 1** - Start aplikacji, dobór środowiska Pythona i „samoleczenie” przy uruchomieniu *(✅ ZAKOŃCZONO 2026-11-23 → `docs/CEMENTED.md` Sekcja 6)*
 - [x] **Punkt 2** - Rozdzielenie trybu roboczego (DEV) od wersji dla użytkownika oraz porządek w plikach danych *(✅ ZAKOŃCZONO 2026-11-23 → `docs/CEMENTED.md` Sekcja 8)*
 - [x] **Punkt 3** - Okno bez ramki, własny pasek tytułu, tryb „Zawsze na wierzchu” i płynność animacji między systemami *(✅ ZAKOŃCZONO 2026-11-23 → `docs/CEMENTED.md` Sekcja 4)*
-- [ ] **Punkt 4** - Spójność języków, brak emoji i tekstów na sztywno, wygląd paska postępu i skalowanie interfejsu
+- [x] **Punkt 4** - Spójność języków, brak emoji i tekstów na sztywno, wygląd paska postępu i skalowanie interfejsu *(✅ ZAKOŃCZONO 2026-11-25 → `docs/CEMENTED.md` Sekcja 10)*
 - [ ] **Punkt 5** - Wyciąganie dźwięku z wideo/osi, normalizacja głośności i wstępne wykrywanie ciszy
 - [ ] **Punkt 6** - Wykrywanie karty graficznej (NVIDIA / Apple Silicon / procesor) i bezpieczny powrót na procesor
 - [ ] **Punkt 7** - Pobieranie modeli AI, uruchamianie transkrypcji i strumieniowanie słów na żywo
@@ -43,7 +43,7 @@
 
 ## Przegląd etapów
 
-1. **Etap 1 (v4.1): Fundamenty, start aplikacji i spójność systemowa** - punkty 1-4 *(ukończono: 3/4)*
+1. **Etap 1 (v4.1): Fundamenty, start aplikacji i spójność systemowa** - punkty 1-4 *(ukończono: 4/4 ✅)*
 2. **Etap 2 (v4.2): Dźwięk, transkrypcja AI i analiza tekstu** - punkty 5-9 *(ukończono: 0/5)*
 3. **Etap 3 (v4.3): Ekran powitalny, edytor, podgląd audio/wideo i okna ustawień** - punkty 10A-10C, 11, 12A-12B, 13-15 *(ukończono: 0/9)*
 4. **Etap 4 (v4.4): DaVinci Resolve, montaż osi czasu, eksport i zapis projektów** - punkty 16-19 *(ukończono: 0/4)*
@@ -185,29 +185,21 @@ Po mojej akceptacji i wdrożeniu: napisz testy i zweryfikuj na żywo działanie 
 
 ---
 
-### 4. Spójność języków, brak emoji i tekstów na sztywno, wygląd paska postępu i skalowanie interfejsu
+### 4. ✅ [ZAKOŃCZONO 2026-11-25] Spójność języków, brak emoji i tekstów na sztywno, wygląd paska postępu i skalowanie interfejsu
 
-- **Co obejmuje:** Zgodność wszystkich 11 wersji językowych, usuwanie tekstów wpisanych „na sztywno” (np. po polsku mimo wybranego angielskiego), całkowite wyeliminowanie systemowych emotek z interfejsu na rzecz czystych ikon wektorowych, ochronę przed narzucaniem systemowych kolorów (np. czarny tekst na czarnym tle), poprawne skalowanie (75%-200%) i zaokrąglenia pasków postępu oraz naprawę starych przycisków Eksportu/Importu, Resetu Ustawień i powiadamiania/autoaktualizacji.
-- **Dlaczego to ważne:** Testerzy zgłaszali dokładnie te problemy w raportach: polskie dymki podpowiedzi przy włączonym angielskim języku, czarny tekst na ciemnym tle, kwadratowo przycięte rogi paska postępu oraz ostrzeżenia o nieobsługiwanym stylu czcionki w dolnym odtwarzaczu. Audyt Ustawień wykazał dodatkowo, że przyciski Eksportu/Importu, Resetu wszystkich ustawień oraz przełączniki powiadomień o aktualizacjach i autoaktualizacji pochodzą ze starszego kodu i mają realne luki działania.
-- **Wykryte luki do naprawy przy realizacji Punktu 4 (audyt z `2026-11-24`, NIE naprawiane wcześniej):**
-  1. **Eksportuj i Importuj Ustawienia (`_on_export_settings`, `_on_import_settings` w `src/gui/dialogs/settings_dialog.py`)**:
-     - Eksport wykonuje ślepe `shutil.copy2` z dysku (`settings.json`), więc pomija niezapisane zmiany w oknie, milczy przy braku pliku `settings.json` i nie pokazuje użytkownikowi żadnego potwierdzenia ani błędu na ekranie.
-     - Import kopiuje wybrany przez użytkownika plik prosto na aktywny `settings.json` bez walidacji JSON, bez sprawdzenia struktury kluczy i bez zapisu atomowego - przy błędnym pliku i tak wyświetla komunikat o udanym imporcie i restarcie, po czym aplikacja cicho cofa dane do `.bak` lub resetuje ustawienia.
-  2. **Zresetuj wszystkie ustawienia (`_restore_all_defaults` w `src/gui/dialogs/settings_dialog.py`)**:
-     - Zapisuje pola prywatności (`telemetry_opt_in`, `telemetry_geo`, `auto_crash_report`) do `settings.json`, choć rzeczywiste zgody mieszkają w `user.json` i nie zostają zresetowane (przełączniki prywatności na ekranie wracają do starych wartości).
-     - Wywołany w **Widoku Podstawowym** nadpisuje ustawienia Zaawansowane w pliku, ale kontrolki Zaawansowane (AI, cisza, próg dB) zostają ze starymi wartościami w oknie - kliknięcie `Zastosuj` zapisuje je z powrotem.
-     - Po usunięciu własnych markerów nie odświeża przycisków/skrótów w oknie głównym, zostawia stare klucze skrótów i nie odświeża opcji `compute_type` po powrocie urządzenia na `Auto`.
-  3. **Powiadamianie o nowych wersjach i Autoaktualizacja (`tgl_auto_check_updates`, `tgl_auto_update_on_start`, `UpdateCheckThread`, `src/gui/main_window.py`, `src/gui/dialogs/update_dialog.py`, `setupfiles/updater.py`)**:
-     - Opis `auto_update_on_start` deklaruje wymóg włączonych powiadomień o wersjach, ale `_start_update_check()` w `main_window.py` odpala cichą autoaktualizację nawet przy wyłączonym `auto_check_updates`, a kontrolki w UI nie są powiązane ani przygaszane.
-     - Karta wersji w Ustawieniach zawsze sprawdza aktualizacje na starcie (ignorując wyłączony przełącznik `auto_check_updates`), a globalna flaga `UpdateCheckThread._checked` blokuje ponowne odświeżenie stanu w tej samej sesji.
-     - Cicha autoaktualizacja w `main_window.py` zapisuje jedynie flagę `_pending_update_ver`, ale metoda `_show_auto_update_done()` jest martwym kodem i nigdy nie informuje użytkownika po zakończeniu aktualizacji w tle.
-     - Zarówno przycisk aktualizacji w Ustawieniach, jak i okno `UpdateNotifyDialog` oraz cicha autoaktualizacja odpalają stary skrypt Pythona `setupfiles/updater.py` (`pip install --upgrade PySide6` i nadpisywanie folderu programu) **podczas gdy BadWords i biblioteki PySide6 są uruchomione i zablokowane przez Windows**, co grozi błędem podmiany lub uszkodzoną instalacją (wymaga ujednolicenia również z Punktem 21).
-  4. **Skrócenie lub zmiana trybu ładowania `.agents/rules/lessons_and_standards.md` (obecnie ~15,6 KB - przekracza limit reguł wstrzykiwanych zawsze)**:
-     - Plik `lessons_and_standards.md` urósł powyżej zalecanego rozmiaru reguł `always_on` i obciąża kontekst każdej rozmowy.
-     - Do zrobienia: skrócić go drastycznie (zostawiając w regule `always_on` tylko krótkie zasady nadrzędne, podobnie do limitu `< 4 000` znaków w `architecture.md`), a szczegółowy dziennik i procedury przenieść do dokumentacji czytanej na żądanie (na wzór `docs/DEV_STATE.md` lub `docs/CEMENTED.md`) albo skilla.
-- **Porządki „pod spodem” pod przyszłe funkcje:** **Tak.** Pomocniczy przycisk informacji „(i)” oraz rysowanie ikon wektorowych są powielone w kilku plikach zamiast być w jednym miejscu, a część okienek ma własne słowniczki zamiast korzystać z centralnych tłumaczeń. Scalenie tego bardzo ułatwi dodawanie kolejnych ekranów i języków.
+> **Status:** ✅ **ZAKOŃCZONO I ZACEMENTOWANO (2026-11-25)**
+> **Co zostało naprawione dla użytkownika:**
+> - Wyrównano wszystkie 11 wersji językowych (`631` kluczy na język): przetłumaczono pozostałe teksty po angielsku (w tym 62 wpisy po chińsku), usunięto polskie wstawki w angielskim interfejsie (ekran ładowania AI, podpowiedzi plików, dialog eksportu, napis `WCZYTYWANIE...` na ekranie startowym), usunięto nieaktualne wzmianki o `BadWords 3.0`, długie myślniki oraz 113 martwych kluczy; brakujące tłumaczenia bezpiecznie wracają do angielskiego.
+> - Zastąpiono wszystkie emotki i niespójne znaczki znakowe (`🛈`, `🔍`, `⏳`, `✔`, `✕`, `▲`/`▼`, `→`, `▾`) ostrymi ikonami wektorowymi SVG z jednego wspólnego systemu rysowania i zunifikowano dymki `(i)` między oknami.
+> - Uodporniono całą aplikację na systemowe jasne motywy Windows, Linux (KDE/GTK) i macOS (jednolita ciemna paleta i zabezpieczenie koloru przesuwanego tekstu przed czarnym napisem na czarnym tle, z zachowaniem natywnych systemowych okien wyboru pliku) oraz usunięto błędy nieobsługiwanych stylów z dolnego odtwarzacza i panelu ścieżek.
+> - Usunięto przycinanie rogów i końcówek paska postępu (również przy 1%-3%), ujednolicono pasek naprawczy na uruchamianiu oraz zabezpieczono napisy przetwarzania i okna Eksportu, Aktualizacji i Migracji przed ucinaniem przycisków przy skalowaniu 75%-200% na mniejszych ekranach.
+> - Naprawiono w Ustawieniach **Eksport i Import ustawień** (zapis bieżących zmian, walidacja pliku przed zapisem i czytelne potwierdzenie/błąd), **Reset wszystkich ustawień** (czyste zerowanie zgód w `user.json`, kontrolek Zaawansowanych i markerów na ekranie głównym) oraz spójność **Powiadamiania o aktualizacjach i Autoaktualizacji** (powiązanie i przygaszanie przełączników, ręczny przycisk „Sprawdź teraz”, blokada sprawdzania w tle przy wyłączonym powiadamianiu i komunikat o restarcie po cichej autoaktualizacji; samo wyeliminowanie nadpisywania z `setupfiles/updater.py` na działającym Windows pozostaje w **Punkcie 21**).
+> - Skrócono stale ładowaną regułę `.agents/rules/lessons_and_standards.md` z 15,6 KB do ok. 3 KB, przenosząc archiwalne wpisy do `docs/PO_STANDARDS.md`.
+> **Gdzie opisano szczegóły i testy:** `docs/CEMENTED.md` (Sekcje 9 i 10), `docs/DEV_STATE.md` (Sekcja 4, pkt 16 i 18), testy regresyjne i wizualne PNG w `tests/test_point4_i18n_theme_dialogs.py` oraz `tests/test_visual_progress_bar.py`.
 
-**Prompt do wklejenia:**
+<details>
+<summary>Archiwalny prompt zrealizowanego punktu 4 (punkt zamknięty - nie uruchamiaj ponownie)</summary>
+
 ```text
 Przeanalizuj punkt 4 planu cementowania: Spójność tłumaczeń, usunięcie tekstów i emoji wpisanych na sztywno, odporność kolorów motywu na systemowe style, paski postępu oraz skalowanie ekranu.
 
@@ -228,6 +220,8 @@ ZASADY PRACY:
 
 Po mojej akceptacji i wdrożeniu: uruchom testy regresyjne i wizualne (tests/ + run_tests.py), sprawdź na żywo przełączanie języków i skali (75%-150%) w uruchomionym oknie, wygeneruj zrzuty ekranu wszystkich zmienionych ekranów/pasków i sam je obejrzyj przed odpowiedzią, wpisz pełną dokumentację do docs/CEMENTED.md, zaktualizuj docs/DEV_STATE.md, dopisz krótkie 3-4 wyrazowe hasło w .agents/rules/architecture.md (Sekcja 3, limit < 4 000 znaków) oraz odhacz Punkt 4 jako [x] ZAKOŃCZONO w ROADMAP_CEMENTING.md.
 ```
+
+</details>
 
 ---
 

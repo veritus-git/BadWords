@@ -192,9 +192,14 @@ def build_dark_progress_dialog(title, label):
     lbl_desc.setWordWrap(True)
     layout.addWidget(lbl_desc)
 
-    bar = QProgressBar(dlg)
-    bar.setTextVisible(False)
-    bar.setRange(0, 0)
+    try:
+        from gui.widgets.progress_bar import LiquidProgressBar
+        bar = LiquidProgressBar(dlg)
+        bar.set_value(-1)
+    except Exception:
+        bar = QProgressBar(dlg)
+        bar.setTextVisible(False)
+        bar.setRange(0, 0)
     layout.addWidget(bar)
 
     dlg.adjustSize()

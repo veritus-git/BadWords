@@ -1,20 +1,21 @@
 # BadWords Development State & Task Tracking
 
 > **Status**: Active  
-> **Last Updated**: 2026-11-24  
+> **Last Updated**: 2026-11-25  
 > **Active Environment**: Development Workspace (`.dev_workspace/`)  
 
 ---
 
 ## 0. Current Focus & Roadmap Position
 
-- **Current Phase**: Stage 1 (v4.1 - Foundations, startup, and system consistency)
+- **Current Phase**: Stage 1 (v4.1 - COMPLETED 4/4 ✅) -> Next: Stage 2 (v4.2 Audio, AI & Text)
 - **Completed Roadmap Items**:
   - ✅ **Point 1** (*Startup pipeline, Python env gate & consent-based self-heal*) - Closed `2026-11-23` (see `docs/CEMENTED.md` Sec. 6 and `ROADMAP_CEMENTING.md`).
   - ✅ **Point 2** (*DEV vs Installed separation, runtime paths, atomic config, single-write logging & session temp cleanup*) - Closed `2026-11-23` (see `docs/CEMENTED.md` Sec. 2 & Sec. 8 and `ROADMAP_CEMENTING.md`).
   - ✅ **Point 3** (*Frameless windows, custom titlebar, Always on Top, solid borders, proportional rip, Win11 startup fix & fast installer shortcuts*) - Closed `2026-11-24` (see `docs/CEMENTED.md` Sec. 4 and `ROADMAP_CEMENTING.md`).
+  - ✅ **Point 4** (*11-lang i18n parity, vector SVG icons/zero emojis, OS Light-theme QPalette immunity, UI scaling 75%-200%, progress bar rounding & Settings Export/Import/Reset/Update coupling*) - Closed `2026-11-25` (see `docs/CEMENTED.md` Sec. 9 & Sec. 10 and `ROADMAP_CEMENTING.md`).
 - **Next Pending Roadmap Item**:
-  - ⬜ **Point 4** (*i18n consistency, zero hardcodes/emojis, QPalette immunity, progress bar rounding*). Note: **UI Scaling redesign & cementing** under Point 4 is completed & cemented (`2026-11-24`, `docs/CEMENTED.md` Sec. 9).
+  - ⬜ **Point 5** (*FFmpeg discovery, audio extraction, loudness normalization, silence detection & speech islands*).
 - **Recent Process / Rules Changes (`2026-11-23`)**:
   - Added continuous self-learning & verification standards (`.agents/rules/lessons_and_standards.md`) and DaVinci Resolve 21.1+ verification skill (`.agents/skills/davinci-resolve-current/SKILL.md`).
   - Upgraded `ROADMAP_CEMENTING.md` with progress tracking (`[x]`/`[ ]`), Point 1 closure status, real user-side scenario reporting requirements, and live verification mandates.
@@ -47,10 +48,11 @@
 
 ## 3. Automated Test Suite (`python3 run_tests.py`)
 
-Test Runner: `run_tests.py` using Python `unittest` (total: **102 tests** across 11 modules, plus **18 Cargo tests** in `installer/`).
+Test Runner: `run_tests.py` using Python `unittest` (total: **108 tests** across 12 modules, plus **18 Cargo tests** in `installer/`).
 
 | Test Module | Coverage | Status |
 | :--- | :--- | :--- |
+| `tests/test_point4_i18n_theme_dialogs.py` | Point 4 cementing suite: 11-lang 631-key parity, zero emojis/dashes/"3.0" refs, empty-key EN fallbacks, localized `BootSplash`, global `Fusion` + dark `QPalette` immunity against hostile OS Light palette, `MarqueeLabel` contrast guard, vector SVG helpers (`info`/`check`/`close`/`arrow_right`/`search`/chevrons), `FileDropZone` localized queue summary, `LiquidProgressBar` self-heal dialog, responsive `fit_dialog_to_screen` (75%-200% on 720p), Settings Export/Import (atomic + `user.json` key stripping + corrupt abort), Reset Defaults (`user.json` + Advanced + markers), `auto_check_updates` <-> `auto_update_on_start` dim/guard & manual `"Check now"`, and live `BadWordsGUI` language/scale rebuild (`point4_*.png`). | **PASS** |
 | `tests/test_ui_scaling.py` | Unified cross-platform UI scaling (`75%-200%`), Auto OS DPI detection without double-multiplication across Win11/Wayland/X11/macOS, mixed-DPI monitor drag recalculation, legacy config one-time migration to `auto`, real `AppController._finish_startup` scale persistence across restarts (`load_preferences`), aspect-ratio sidebar narrowing (`16:10`/`3:2`), Settings uniform `35px` category row height (`MarqueeItemDelegate`), slider Apply-only rebuild behavior, `app_icon` restart-required behavior (no live Win32 `WM_SETICON` Win7 bar), and Resolve-safe live rebuild preserving `ResolveHandler`, `words_data`, and waveform peaks. | **PASS** |
 | `tests/test_window_titlebar_vsync.py` | Point 3 window/titlebar/VSync regression & visual suite: Win32 `nativeEvent` (`msg.hWnd` without `self.winId()` re-entry, 64-bit ctypes APIs, `WM_STYLECHANGED`/`WM_DWMCOMPOSITIONCHANGED` sharp corner enforcement), `WM_NCCALCSIZE` (live `IsZoomed` -> exact `rcWork`, 0px windowed NC area), 8-edge `WM_NCHITTEST` (disabled when maximized for Fitts's Law corner X & top-edge rip) + `HTMAXBUTTON` Snap Layouts + `HTCAPTION`, 1:1 `QMainWindow` `SettingsDialog` parity (no custom shadows, `1px #101010` border overlay), distinct unmaximize semantics (`MainWindow`: `btn_max`->`GetWindowRect` pre-max including half-screen Aero Snap, rip->70%x70%; `SettingsDialog`: always small default size), proportional horizontal cursor rip clamping (`compute_proportional_rip_rect`), zero custom shadows & opaque `#2e2e2e` solid borders across all dialogs/splash, Polish 0.85-scale zero-clipping render, main-window close guard, zero orphan startup flashes, neutral close-button hover, live `apply_app_icon_everywhere`, multi-monitor clamping, and cross-OS VSync. | **PASS** |
 | `tests/test_runtime_data_and_isolation.py` | DEV vs Installed isolation, one-time stray `src/` migration to `.dev_workspace/`, persistent per-user profile fallback on read-only install directories, concurrent atomic JSON writes + `.bak` corrupt config recovery and key salvage, single-write log deduplication under native launcher `stdout`/`stderr` redirection, 5 MB startup log trimming, session-protected 24h temp cleanup (`SessionTempManager`), Mac App Store DaVinci Resolve container discovery, Windows 8.3 short paths in `BadWords Bridge.lua`, and `osdoc` module helpers (`log_warning`, `load_preferences`). | **PASS** |
@@ -181,17 +183,22 @@ Test Runner: `run_tests.py` using Python `unittest` (total: **102 tests** across
     - **Minimalist Custom Markers Polish, UnsavedChangesDialog Visual Parity & Point 4 Roadmap Audit (`settings_dialog.py`, `unsaved_changes_dialog.py`, `i18n/*.json`, `ROADMAP_CEMENTING.md`)**: Streamlined Custom Markers into one flush auto-sized `SettingsCard` (removing redundant headings/inner border/empty scroll pit), replaced Unicode dot + boxy gray badges with vector circular swatches + calm hue-tinted labels and quiet borderless hover buttons, condensed bottom File vs DaVinci usage strip + concise `Marker shortcuts` link across all 11 languages, restyled `UnsavedChangesDialog` to match the Settings card/footer theme (`#242424` elevated list card, category-over-title rows with emerald value pills, `S(26)`/`S(30)` buttons, compact auto-height sizing, zero em-dashes), and completed read-only audit of Export/Import settings, Reset All Defaults, Update Notifications, and Auto-Updater + shortening/moving `.agents/rules/lessons_and_standards.md` logged into **Point 4** of `ROADMAP_CEMENTING.md` (`102` Python tests + `18` Cargo tests).
     - **Support Form, About Decluttering & General Advanced (`settings_dialog.py`, `i18n/*.json`)**: Mandatory `sanitize_crash_text` log/config zip + 256 KB tail cap (hiding footer), `[Bug]`/`[Feature]`/`[Question]` prefixing, required-field validation, drag/drop + `Ctrl+V` + browse thumbnails (max 5) & `ScreenshotPreviewDialog` lightbox; streamlined About hero (removed OSS/MIT pill badge, extracted `AboutCoffeeCta` into standalone top-level card, live `1.0 <-> 0.35` geo dimming); General Advanced App Folder + Copy + Open Folder + direct Open Log File button; updated all 11 `src/i18n/*.json`; expanded `tests/test_settings_and_version.py` (`101` Python tests + `18` Cargo tests PASS) and visually inspected all 23 PNGs in `tests/artifacts/settings_redesign/`.
 
+18. **Point 4 Cementing: 11-Lang i18n Parity, OS Light-Theme Immunity, Vector Icons, Rounded Progress Bars & Settings Maintenance (2026-11-25)**:
+    - **11-Language Parity & Zero Hardcodes (`src/i18n/*.json`, `__loader__.py`, `startup/i18n_lite.py`, `startup/boot_splash.py`, dialogs & previews)**: Audited and synced all 11 locale files identically to **631 keys/lang** (purged 113 dead keys, translated 62 `zh` strings, fixed `de`/`fr`/`nl`/`en`/`tt_assembly_method` gaps, removed `"BadWords 3.0"` & em/en-dashes, stripped `"✓ "` prefix from `lbl_ver_up_to_date`, eliminated UI emojis). Hardened empty-string EN fallbacks in `get_trans()`, `_txt()`, and `startup.i18n_lite.t()`; localized `BootSplash`, `V4MigrationDialog` (removed `_MIGRATION_TEXTS`), `ProcessingView`, `WelcomePageView`, `AudioPreviewWidget`, `VideoPreviewWidget`, `WaveformTimelineWidget`, `FileDropZone`, and `ExportDialog`.
+    - **Vector SVG Icons & OS Theme Immunity (`src/config/palette.py`, `src/main.py`, `src/gui/utils.py`, `src/gui/widgets/labels.py`, `buttons.py`)**: Enforced `Fusion` style + full dark `QPalette` (`Qt.ColorScheme.Dark`) globally via `apply_dark_app_theme(app)` on Windows, Linux (KDE/GTK), and macOS while leaving native file pickers untouched; fixed `MarqueeLabel` / `QLabel._get_text_color()` lightness contrast guard (`>= 140`) preventing black-on-black text; unified vector SVGs (`_VECTOR_SVGS`, `render_svg_pixmap`, `get_vector_icon`, `create_info_icon`) replacing all `🛈`, `🔍`, `⏳`, `✔`, `✕`, `▲`/`▼`, `→`, `▾` glyphs; removed unsupported QSS (`font-feature-settings: 'tnum';`, `text-transform: uppercase;`).
+    - **Progress Bars, Responsive Dialogs & Settings Maintenance (`progress_bar.py`, `self_heal.py`, `gui/utils.py`, `settings_dialog.py`, `main_window.py`)**: Inset `LiquidProgressBar` track clip (`0.5px`) + `1%-3%` left-cap rounding + `sizeHint`; replaced `self_heal.build_dark_progress_dialog` bare `QProgressBar` with indeterminate `LiquidProgressBar`; fixed stretch layout on `processing_view.py` & `editor_view.py` so wrapped status labels never clip; added scroll-aware `fit_dialog_to_screen()` (`#ObjectName`-scoped containers so child button QSS stays intact) across `ExportDialog`, `UpdateNotifyDialog`, and `V4MigrationDialog`. Hardened Settings Export/Import (atomic live state, JSON validation, `user.json` key stripping, formatted `{path}`/`{error}` alerts), `_restore_all_defaults()` (`user.json` privacy reset + `include_advanced=True` + marker/shortcut sync), `auto_check_updates` <-> `auto_update_on_start` dim/block coupling + green vector check + manual `"Check now"`, `BadWordsGUI._start_update_check()` guard & `_show_auto_update_done()`, `rebuild_ui_for_scale()` live language sync, and extracted `docs/PO_STANDARDS.md` trimming `.agents/rules/lessons_and_standards.md` to ~3,017 chars. Verified via `tests/test_point4_i18n_theme_dialogs.py` + `tests/test_visual_progress_bar.py` (108 Python + 18 Cargo tests PASS) and visual inspection of all PNG artifacts; documented in `docs/CEMENTED.md` (Sec. 10).
+
 ---
 
 ## 5. Next Steps for Incoming Reviewer / Developer
 
 1. **Release Hygiene Reminder**:
    - Before cutting the next release tag (e.g., `v4.0.2` / `v4.1.0`), update `src/config/release_notes.json` with all real user-facing changes since `v4.0.1` so the Update dialog displays the complete changelog.
-2. **Continue Roadmap Cementing**: Finish remaining items in **Point 4** in `ROADMAP_CEMENTING.md` (i18n consistency across 11 languages, zero hardcodes/emojis, `QPalette` system-theme immunity, progress bar rounding fixes - UI scaling part is already done and cemented).
+2. **Continue Roadmap Cementing**: Begin Stage 2 starting with **Point 5** in `ROADMAP_CEMENTING.md` (FFmpeg discovery, audio extraction, loudness normalization, silence detection & speech islands). Note: replacing the legacy in-place `setupfiles/updater.py` mechanism remains tracked in **Point 21**.
 3. **Baseline Verification Commands**:
-   - `python3 run_tests.py` (102 tests)
+   - `python3 run_tests.py` (108 tests)
    - `python3 -m compileall src`
    - `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`
    - `cd installer && cargo check && cargo test` (18 tests)
-4. **Rule Size Check**: Verify `.agents/rules/architecture.md` remains strictly `< 4,000` characters whenever adding Section 3 bullets.
+4. **Rule Size Check**: Verify `.agents/rules/architecture.md` and `.agents/rules/lessons_and_standards.md` remain strictly `< 4,000` characters whenever adding rules/index bullets.
 5. **Release Sync**: Ensure `src/`, `installer/`, and `setupfiles/` stay synchronized with `/mnt/dump/BadWords FILES/` on code changes.

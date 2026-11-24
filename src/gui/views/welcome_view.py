@@ -1341,7 +1341,7 @@ class WelcomePageView(QWidget):
         win = self.win
         win.current_source_type = mode
 
-        opt_file = win.txt("src_local_file") if hasattr(win, 'txt') else "Plik lokalny"
+        opt_file = win.txt("src_local_file") if hasattr(win, 'txt') else "Local file"
         opt_dr = win.txt("src_davinci_resolve") if hasattr(win, 'txt') else "DaVinci Resolve"
 
         for combo in (getattr(win, 'combo_source_0', None), getattr(win, 'combo_source_1', None)):
@@ -1449,7 +1449,7 @@ def build_welcome_view(win) -> QWidget:
     else:
         win.current_source_type = "file" if is_standalone else "resolve"
 
-    opt_file = win.txt("src_local_file") if hasattr(win, 'txt') else "Plik lokalny"
+    opt_file = win.txt("src_local_file") if hasattr(win, 'txt') else "Local file"
     opt_dr = win.txt("src_davinci_resolve") if hasattr(win, 'txt') else "DaVinci Resolve"
     source_options = [opt_file, opt_dr] if resolve_installed else [opt_file]
 

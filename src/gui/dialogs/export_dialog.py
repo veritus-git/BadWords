@@ -19,7 +19,7 @@ import time
 from PySide6.QtCore import Qt, QUrl, QSize
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
-    QFrame, QLineEdit, QFileDialog, QSizePolicy
+    QFrame, QLineEdit, QFileDialog, QSizePolicy, QScrollArea
 )
 from PySide6.QtGui import QDesktopServices, QCursor, QPixmap, QPainter
 
@@ -29,7 +29,11 @@ from gui.components.titlebar import CustomTitleBar
 from gui.widgets.buttons import CustomDropdown, ToggleSwitch
 from gui.widgets.labels import IDETooltip
 from gui.dialogs.msgbox import CustomMsgBox
-from gui.utils import _app_icon, _txt, _center_on_screen, get_export_icon, get_export_pixmap, get_layout_icon_path
+from gui.utils import (
+    _app_icon, _txt, _center_on_screen, fit_dialog_to_screen,
+    create_info_icon, render_svg_pixmap, get_vector_pixmap,
+    get_export_icon, get_export_pixmap, get_layout_icon_path,
+)
 import assembler
 
 
@@ -56,17 +60,11 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self.setWindowIcon(_app_icon())
 
         self._local_tooltip = IDETooltip()
-
-        win_w = config.S(560)
-        win_h = config.S(415)
-        self.setFixedSize(win_w, win_h)
-
-        # Center over active main window or active screen (supports negative secondary coordinates)
         parent_w = parent or parent_gui
-        _center_on_screen(self, win_w, win_h, reference_window=parent_w)
 
         self._init_metadata()
         self._build_ui()
+        fit_dialog_to_screen(self, config.S(560), config.S(390), reference_window=parent_w)
 
     def _t(self, key: str, default: str = "") -> str:
         if hasattr(self.parent_gui, "txt"):
@@ -114,89 +112,18 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
             self.default_seq_name = f"BadWords_Timeline_{time.strftime('%Y%m%d_%H%M')}"
 
     def _create_info_icon(self, tooltip_key: str) -> QLabel:
-        """Creates an (i) info icon that opens the tooltip with explanation, with dimming support."""
-        info = QLabel()
-        info_icon_path = get_layout_icon_path("information.png")
-        if os.path.exists(info_icon_path):
-            pix = QPixmap(info_icon_path)
-            dpr = self.devicePixelRatioF() if hasattr(self, 'devicePixelRatioF') else 1.0
-            size = config.S(16)
-            scaled_pix = pix.scaled(int(size * dpr), int(size * dpr), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            scaled_pix.setDevicePixelRatio(dpr)
-
-            dimmed_pix = QPixmap(scaled_pix.size())
-            dimmed_pix.fill(Qt.transparent)
-            painter = QPainter(dimmed_pix)
-            painter.setOpacity(0.35)
-            painter.drawPixmap(0, 0, scaled_pix)
-            painter.end()
-            dimmed_pix.setDevicePixelRatio(dpr)
-
-            info._normal_pix = scaled_pix
-            info._dimmed_pix = dimmed_pix
-            info.setPixmap(scaled_pix)
-        else:
-            info.setText("🛈")
-            info.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(11)}px;")
-            info._normal_pix = None
-            info._dimmed_pix = None
-
-        tt_text = self._t(tooltip_key, tooltip_key)
-        info.custom_tooltip_text = tt_text
-        info.setToolTip(tt_text)
-        info.setCursor(Qt.WhatsThisCursor)
-
-        def _on_enter(e):
-            if not info.isEnabled():
-                return
-            tip = getattr(self.parent_gui, 'shared_tooltip', None) or getattr(self, '_local_tooltip', None)
-            if tip:
-                tip.show_global(info.custom_tooltip_text, QCursor.pos())
-
-        def _on_leave(e):
-            tip = getattr(self.parent_gui, 'shared_tooltip', None) or getattr(self, '_local_tooltip', None)
-            if tip:
-                tip.hide()
-
-        info.enterEvent = _on_enter
-        info.leaveEvent = _on_leave
-        return info
+        """Creates a unified (i) info icon that opens the tooltip with explanation and dimming support."""
+        tip = getattr(self.parent_gui, 'shared_tooltip', None) or getattr(self, '_local_tooltip', None)
+        return create_info_icon(tooltip_key, txt_fn=self._t, tooltip_widget=tip, parent=self)
 
     def _render_svg_icon(self, svg_name: str, height: int, color: str, dpr: float = 2.0) -> QPixmap:
         """Renders an SVG asset with custom fill color into a HighDPI QPixmap."""
-        try:
-            import re
-            from PySide6.QtSvg import QSvgRenderer
-            from PySide6.QtCore import QByteArray
-            p = get_layout_icon_path(svg_name)
-            if not os.path.exists(p):
-                return QPixmap()
-            with open(p, "r", encoding="utf-8") as f:
-                svg_data = f.read()
-
-            if re.search(r'\bfill="[^"]*"', svg_data):
-                svg_data = re.sub(r'\bfill="[^"]*"', f'fill="{color}"', svg_data)
-            else:
-                svg_data = svg_data.replace('<path ', f'<path fill="{color}" ')
-                if f'fill="{color}"' not in svg_data:
-                    svg_data = svg_data.replace('<svg ', f'<svg fill="{color}" ')
-
-            renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
-            vb = renderer.viewBoxF()
-            aspect = (vb.width() / vb.height()) if vb.height() > 0 else 1.0
-            w = max(1, int(round(height * aspect)))
-
-            pixmap = QPixmap(int(w * dpr), int(height * dpr))
-            pixmap.fill(Qt.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.Antialiasing)
-            painter.setRenderHint(QPainter.SmoothPixmapTransform)
-            renderer.render(painter)
-            painter.end()
-            pixmap.setDevicePixelRatio(dpr)
-            return pixmap
-        except Exception:
-            return QPixmap()
+        p = get_layout_icon_path(svg_name)
+        pix = render_svg_pixmap(p, height=height, color=color, dpr=dpr, is_file=True)
+        if not pix.isNull():
+            return pix
+        kind = "warning" if "exclamation" in svg_name else "question"
+        return get_vector_pixmap(kind, size=height, color=color, dpr=dpr)
 
     def _build_ui(self):
         self.setStyleSheet(f"""
@@ -494,7 +421,18 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         h_actions.addWidget(self.btn_export)
 
         c_lay.addLayout(h_actions)
-        root_l.addWidget(container)
+
+        scroll = QScrollArea(self.inner_frame)
+        scroll.setObjectName("ExportScroll")
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(
+            "QScrollArea#ExportScroll, QScrollArea#ExportScroll > QWidget > QWidget {"
+            " background: transparent; border: none; }"
+        )
+        scroll.setWidget(container)
+        root_l.addWidget(scroll, 1)
 
         self._update_audio_toggle_state(animate=False)
         self._update_format_hint()
@@ -563,11 +501,10 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
         # Update info icon dimming
         if hasattr(self, 'info_aud'):
-            if hasattr(self.info_aud, '_normal_pix') and self.info_aud._normal_pix:
-                self.info_aud.setPixmap(self.info_aud._normal_pix if is_supported else self.info_aud._dimmed_pix)
+            if hasattr(self.info_aud, 'set_dimmed'):
+                self.info_aud.set_dimmed(not is_supported)
             else:
-                self.info_aud.setStyleSheet(f"color: {'#888888' if is_supported else '#444444'}; font-size: {config.FS_PX(11)}px;")
-            self.info_aud.setEnabled(is_supported)
+                self.info_aud.setEnabled(is_supported)
 
         # Update toggle switch
         self.tgl_audio.setEnabled(is_supported)
@@ -580,7 +517,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         self.tgl_audio.update()
 
     def _on_browse_dest(self):
-        folder = QFileDialog.getExistingDirectory(self, self._t("lbl_export_dest", "Katalog zapisu"), self.txt_dest_dir.text())
+        folder = QFileDialog.getExistingDirectory(self, self._t("lbl_export_dest", "Save location:"), self.txt_dest_dir.text())
         if folder:
             self.txt_dest_dir.setText(folder)
 
@@ -717,7 +654,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
                 self,
                 self._t("dlg_export_error", "Export Error"),
                 f"{self._t('msg_export_failed', 'Failed to export timeline:')}\n{msg}",
-                "OK"
+                self._t("btn_ok", "OK")
             )
             err_dlg.exec()
 

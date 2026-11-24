@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout, QWidget
 
 import config
 from gui.utils import _app_icon, _center_on_screen, _txt, get_layout_dir, get_layout_icon_path
+from startup.i18n_lite import detect_language
 
 
 def find_splash_path():
@@ -82,10 +83,11 @@ class BootSplash(QWidget):
     """Frameless dark loading window displayed immediately on boot before heavy imports."""
 
     def txt(self, key, **kwargs):
-        return _txt("en", key, **kwargs)
+        return _txt(getattr(self, "_lang", "en"), key, **kwargs)
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._lang = detect_language()
         self.setWindowFlags(
             Qt.Window
             | Qt.FramelessWindowHint
@@ -107,7 +109,8 @@ class BootSplash(QWidget):
         content_layout.setContentsMargins(0, 0, 0, config.S(40))
         content_layout.addStretch()
 
-        self._lbl_loading = QLabel(self.txt("lbl_loading").upper(), self.inner_frame)
+        self._loading_base = (self.txt("lbl_loading") or "Loading").rstrip(".… ").upper() or "LOADING"
+        self._lbl_loading = QLabel(f"{self._loading_base}...", self.inner_frame)
         self._lbl_loading.setAlignment(Qt.AlignCenter)
         self._lbl_loading.setStyleSheet(
             """
@@ -168,7 +171,7 @@ class BootSplash(QWidget):
 
     def _animate(self):
         dots = "." * (self._dot_count % 4)
-        self._lbl_loading.setText("LOADING{0}".format(dots))
+        self._lbl_loading.setText("{0}{1}".format(self._loading_base, dots))
         self._dot_count += 1
 
     def set_status(self, text):

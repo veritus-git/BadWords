@@ -32,6 +32,22 @@ class TestLiquidProgressBarVisual(unittest.TestCase):
         bar.setFixedSize(w, h)
         bar.show()
 
+        # Test at 1% (tiny fill should smoothly stay within track caps without pinching or clipping)
+        bar._value = 1.0
+        pix_1 = bar.grab()
+        img_1 = pix_1.toImage()
+        out_1 = os.path.join(self.artifacts_dir, "liquid_progress_bar_1pct.png")
+        img_1.save(out_1)
+        self.assertTrue(os.path.isfile(out_1))
+        for cx, cy in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]:
+            c = QColor(img_1.pixel(cx, cy))
+            c_mid_right = QColor(img_1.pixel(w - 20, h // 2))
+            self.assertNotEqual(
+                (c.red(), c.green(), c.blue()),
+                (c_mid_right.red(), c_mid_right.green(), c_mid_right.blue()),
+                f"Corner ({cx}, {cy}) squared off at 1%",
+            )
+
         # Test at 50%
         bar._value = 50.0
         pix_50 = bar.grab()

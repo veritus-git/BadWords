@@ -286,6 +286,7 @@ def main():
             app.setDesktopFileName("badwords")
 
         init_high_refresh_sync(app)
+        config.apply_dark_app_theme(app)
         saved_scale_mode, saved_scale_pct = config.runtime_data.read_startup_ui_scale_prefs()
         config.init_ui_scaling(app, scale_pct=saved_scale_pct, scale_mode=saved_scale_mode)
 
@@ -298,7 +299,6 @@ def main():
         app.setFont(default_font)
 
         if sys.platform == "darwin":
-            app.setStyle("Fusion")
             try:
                 if not runtime_mode.is_embedded_in_resolve():
                     setup_macos_standalone_identity(config.APP_NAME)

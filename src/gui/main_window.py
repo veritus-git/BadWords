@@ -725,6 +725,10 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.setUpdatesEnabled(False)
         try:
             prefs = self.engine.load_preferences() or {}
+            new_lang = prefs.get("gui_lang", self.lang)
+            if new_lang in config.TRANS:
+                self.lang = new_lang
+                self.setWindowTitle(config.TRANS[self.lang].get("title", config.APP_NAME))
 
             # 1. Capture state before tearing down old widgets
             page_idx = self._stack.currentIndex() if hasattr(self, '_stack') and self._stack else 0
@@ -1898,7 +1902,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.text_canvas.load_data(ch_words)
         
         tl_name = ch.get("tl_name", "")
-        track_label = f"A1: {tl_name}" if tl_name else "A1: Timeline Audio"
+        track_label = f"A1: {tl_name}" if tl_name else self.txt("lbl_a1_timeline_audio", "A1: Timeline Audio")
         if ch_words and ch_words[0].get("meta_audio_path") and hasattr(self, 'waveform_timeline') and self.waveform_timeline:
             self.waveform_timeline.load_from_audio(ch_words[0]["meta_audio_path"], track_name=track_label)
         elif hasattr(self, 'waveform_timeline') and self.waveform_timeline:
@@ -3989,29 +3993,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.editor_view_stack.setCurrentIndex(0)
 
     def _create_info_icon(self, tooltip_key: str) -> QLabel:
-        info = QLabel()
-        info_icon_path = get_layout_icon_path("information.png")
-        if os.path.exists(info_icon_path):
-            pix = QPixmap(info_icon_path)
-            dpr = self.devicePixelRatioF() if hasattr(self, 'devicePixelRatioF') else 1.0
-            size = config.S(16)
-            scaled_pix = pix.scaled(int(size * dpr), int(size * dpr), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            scaled_pix.setDevicePixelRatio(dpr)
-            info.setPixmap(scaled_pix)
-        else:
-            info.setText("🛈")
-            info.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(11)}px;")
-            
-        tt_text = self.txt(tooltip_key) if hasattr(self, 'txt') else tooltip_key
-        info.custom_tooltip_text = tt_text or ""
-        info.setCursor(Qt.WhatsThisCursor)
-        
-        def instant_tooltip(event):
-            if hasattr(self, 'shared_tooltip'):
-                self.shared_tooltip.show_global(info.custom_tooltip_text, QCursor.pos())
-        info.enterEvent = instant_tooltip
-        info.leaveEvent = lambda e: self.shared_tooltip.hide() if hasattr(self, 'shared_tooltip') else None
-        return info
+        from gui.utils import create_info_icon
+        return create_info_icon(
+            tooltip_key,
+            txt_fn=self.txt if hasattr(self, 'txt') else None,
+            tooltip_widget=getattr(self, 'shared_tooltip', None),
+            parent=self,
+        )
 
 
 
@@ -4037,7 +4025,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         if words_data and words_data[0].get("meta_audio_path") and hasattr(self, 'waveform_timeline') and self.waveform_timeline:
             tl_name = self._transcription_source.get("timeline_name", "") if getattr(self, '_transcription_source', None) else ""
-            track_label = f"A1: {tl_name}" if tl_name else "A1: Timeline Audio"
+            track_label = f"A1: {tl_name}" if tl_name else self.txt("lbl_a1_timeline_audio", "A1: Timeline Audio")
             self.waveform_timeline.load_from_audio(words_data[0]["meta_audio_path"], track_name=track_label)
             if hasattr(self, '_current_clips_layout') and self._current_clips_layout:
                 self.waveform_timeline.set_clips_layout(self._current_clips_layout)
@@ -4261,7 +4249,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'bar_processing'):
             self.bar_processing.set_value(-1)
         if hasattr(self, 'lbl_processing_status'):
-            self.lbl_processing_status.setText(self.txt("status_whisper_init", "Inicjalizowanie transkrypcji..."))
+            self.lbl_processing_status.setText(self.txt("status_whisper_init", "Initializing transcription..."))
 
         # ── First-run hint: check if chosen model has been run before ────────────
         raw_model_for_check = self._combo_model.text() if hasattr(self, '_combo_model') else 'Medium'
@@ -4552,7 +4540,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         ap = getattr(self, "audio_preview", None)
         if ap and hasattr(ap, 'video_preview_widget'):
             ap.video_preview_widget.show_loading(False)
-            ap.video_preview_widget.show_placeholder(True, "DaVinci Resolve Timeline")
+            ap.video_preview_widget.show_placeholder(True, self.txt("lbl_davinci_timeline", "DaVinci Resolve Timeline"))
 
     def _set_live_transcription_lock(self, locked: bool):
         """Locks all actions that require a complete transcript while keeping marking mode and options functional."""
@@ -4757,7 +4745,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self.top_island.set_error(str(err))
         self._set_live_transcription_lock(False)
         if hasattr(self, 'lbl_processing_status'):
-            self.lbl_processing_status.setText(f"Error: {err}")
+            self.lbl_processing_status.setText(
+                self.txt("status_error_prefix", "Error: {err}").replace("{err}", str(err))
+            )
 
         from osdoc import log_error
         from gui.dialogs.msgbox import CustomMsgBox
@@ -5428,15 +5418,18 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         """
         try:
             prefs  = self.engine.load_preferences() or {}
-            notify = prefs.get('auto_check_updates', True)
-            auto   = prefs.get('auto_update_on_start', False)
+            notify = bool(prefs.get('auto_check_updates', True))
+            auto   = bool(prefs.get('auto_update_on_start', False))
+
+            if not notify:
+                return
 
             self._update_thread = UpdateCheckThread(config.VERSION, parent=self)
 
             if auto:
                 # Silent auto-update: no popup, no blocking, no os.execv
                 self._update_thread.update_available.connect(self._do_silent_auto_update)
-            elif notify:
+            else:
                 self._update_thread.update_available.connect(self._show_update_dialog)
 
             self._update_thread.start()
@@ -5470,6 +5463,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 log_info(f"[AutoUpdate] Update to {latest_ver} applied silently. Restart to load new version.")
                 # Store flag - settings card will show "restart to apply" when opened
                 self._pending_update_ver = latest_ver
+                self._show_auto_update_done(latest_ver)
             else:
                 log_error(f"[AutoUpdate] Silent update failed: {err}")
 

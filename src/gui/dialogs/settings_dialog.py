@@ -43,7 +43,7 @@ from gui.widgets.sliders import JumpSlider
 from gui.widgets.labels import QLabel
 from gui.widgets.text_edits import WrappingPlaceholderTextEdit
 from gui.widgets.delegates import MarqueeItemDelegate
-from gui.utils import _txt, _app_icon, _center_on_screen, get_svg_icon
+from gui.utils import _txt, _app_icon, _center_on_screen, get_svg_icon, create_info_icon, get_vector_pixmap
 from gui.vsync import track_window_screen
 
 from gui.dialogs.msgbox import CustomMsgBox
@@ -672,13 +672,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
     # ── Helpers ───────────────────────────────────────────────────────────
 
     def _get_info_icon(self, info_key):
-        parent = self._get_main_window()
-        if parent and hasattr(parent, '_create_info_icon'):
-            return parent._create_info_icon(info_key)
-        lbl_info = QLabel("ⓘ")
-        lbl_info.setToolTip(self.txt(info_key) if hasattr(self, 'txt') else info_key)
-        lbl_info.setStyleSheet(f"color: #888; font-size: {config.FS_PX(11)}px; background: transparent;")
-        return lbl_info
+        main_win = self._get_main_window()
+        tip_widget = getattr(main_win, 'shared_tooltip', None) if main_win else None
+        return create_info_icon(
+            info_key,
+            txt_fn=self.txt if hasattr(self, 'txt') else None,
+            tooltip_widget=tip_widget,
+            parent=self,
+        )
 
     def _open_external_url(self, url: str):
         QDesktopServices.openUrl(QUrl(url))
@@ -1473,8 +1474,21 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         lbl_ver_key.setStyleSheet(f"color: #909090; font-size: {config.FS_PX(9.5)}px; background: transparent;")
         lbl_ver_val = QLabel(config.VERSION, ver_top)
         lbl_ver_val.setStyleSheet(f"color: #ffffff; font-size: {config.FS_PX(11)}px; font-weight: bold; background: transparent;")
+        self._lbl_ver_icon = QLabel(ver_top)
+        self._lbl_ver_icon.setFixedSize(config.S(14), config.S(14))
+        self._lbl_ver_icon.setAlignment(Qt.AlignCenter)
+        self._lbl_ver_icon.setPixmap(get_vector_pixmap("check", size=config.S(12), color="#39ff7a"))
+        scope_transparent(self._lbl_ver_icon)
+        self._lbl_ver_icon.hide()
+
         self._lbl_ver_status = QLabel("...", ver_top)
         self._lbl_ver_status.setStyleSheet(f"color: #777777; font-size: {config.FS_PX(9)}px; background: transparent;")
+        self._btn_ver_check = QPushButton(self.txt("btn_check_updates_now"), ver_top)
+        self._btn_ver_check.setObjectName("btn_ghost_sm")
+        self._btn_ver_check.setStyleSheet(f"padding: {config.S(3)}px {config.S(10)}px; font-size: {config.FS_PX(9)}px;")
+        self._btn_ver_check.setCursor(Qt.PointingHandCursor)
+        self._btn_ver_check.hide()
+
         self._btn_ver_update = QPushButton(self.txt("btn_settings_update_now"), ver_top)
         self._btn_ver_update.setObjectName("btn_ghost_sm")
         self._btn_ver_update.setStyleSheet(f"padding: {config.S(3)}px {config.S(10)}px; font-size: {config.FS_PX(9)}px;")
@@ -1484,13 +1498,16 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         ver_row.addWidget(lbl_ver_key)
         ver_row.addWidget(lbl_ver_val)
         ver_row.addSpacing(config.S(10))
+        ver_row.addWidget(self._lbl_ver_icon)
         ver_row.addWidget(self._lbl_ver_status)
         ver_row.addStretch()
+        ver_row.addWidget(self._btn_ver_check)
         ver_row.addWidget(self._btn_ver_update)
         ver_card._lay.addWidget(ver_top)
 
+        auto_check_on = bool(prefs.get('auto_check_updates', True))
         self.tgl_auto_check_updates = ToggleSwitch()
-        self.tgl_auto_check_updates.setChecked(bool(prefs.get('auto_check_updates', True)), animated=False)
+        self.tgl_auto_check_updates.setChecked(auto_check_on, animated=False)
         self._add_card_row(
             ver_card, "lbl_auto_check_updates", self.tgl_auto_check_updates,
             True, lambda v: self.tgl_auto_check_updates.setChecked(v, animated=True),
@@ -1499,13 +1516,42 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         )
 
         self.tgl_auto_update_on_start = ToggleSwitch()
-        self.tgl_auto_update_on_start.setChecked(bool(prefs.get('auto_update_on_start', False)), animated=False)
-        self._add_card_row(
+        self.tgl_auto_update_on_start.setChecked(
+            bool(prefs.get('auto_update_on_start', False)) if auto_check_on else False,
+            animated=False,
+        )
+        self._row_auto_update_on_start = self._add_card_row(
             ver_card, "lbl_auto_update_on_start", self.tgl_auto_update_on_start,
             False, lambda v: self.tgl_auto_update_on_start.setChecked(v, animated=True),
             info_key="tt_auto_update_on_start", is_advanced=True, tab_key="tab_general",
             keywords_en="auto update startup silent", show_revert=False,
         )
+
+        self._upd_dim_anim = QVariantAnimation(self)
+        self._upd_dim_anim.setDuration(220)
+        self._upd_dim_anim.setEasingCurve(QEasingCurve.InOutCubic)
+        self._upd_dim_anim.valueChanged.connect(self._apply_auto_update_dim_opacity)
+        self._curr_upd_op = 1.0
+
+        def _on_auto_check_toggled(checked: bool):
+            enabled = bool(checked)
+            if not enabled:
+                if self.tgl_auto_update_on_start.isChecked():
+                    self.tgl_auto_update_on_start.setChecked(False, animated=True)
+                self._update_auto_update_availability(False, animated=True)
+                if not getattr(self._get_main_window(), '_pending_update_ver', None) and self._btn_ver_update.isHidden():
+                    self._lbl_ver_icon.hide()
+                    self._lbl_ver_status.setText(self.txt("msg_updates_disabled"))
+                    self._lbl_ver_status.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(9)}px; background: transparent;")
+                    self._btn_ver_check.show()
+            else:
+                self._update_auto_update_availability(True, animated=True)
+                self._btn_ver_check.hide()
+                if self._lbl_ver_status.text() in (self.txt("msg_updates_disabled"), "..."):
+                    self._run_ver_check(force_refresh=False)
+
+        self.tgl_auto_check_updates.toggled.connect(_on_auto_check_toggled)
+        self._update_auto_update_availability(auto_check_on, animated=False)
 
         l_gen.addWidget(ver_card)
 
@@ -1518,6 +1564,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         def _on_update_known_for_card(latest_ver, gh_url, gl_url, release_notes=""):
             try:
+                self._lbl_ver_icon.hide()
+                self._btn_ver_check.hide()
+                self._btn_ver_check.setEnabled(True)
                 main_win = self._get_main_window()
                 pending = getattr(main_win, '_pending_update_ver', None)
                 if pending and pending == latest_ver:
@@ -1650,18 +1699,58 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         def _on_check_done_for_card():
             try:
-                if self._lbl_ver_status.text() == "...":
+                self._btn_ver_check.setEnabled(True)
+                if self._lbl_ver_status.text() in ("...", self.txt("lbl_ver_checking")):
                     self._lbl_ver_status.setText(self.txt("lbl_ver_up_to_date"))
                     self._lbl_ver_status.setStyleSheet(f"color: #39ff7a; font-size: {config.FS_PX(9)}px; background: transparent;")
+                    self._lbl_ver_icon.show()
+                    if not self.tgl_auto_check_updates.isChecked():
+                        self._btn_ver_check.show()
             except RuntimeError:
                 pass
 
-        _thr = UpdateCheckThread(config.VERSION, parent=None)
-        _thr.update_available.connect(_on_update_known_for_card)
-        _thr.finished.connect(_on_check_done_for_card)
-        _thr.finished.connect(_thr.deleteLater)
-        _thr.start()
-        self._settings_ver_thread = _thr
+        def _run_ver_check(force_refresh: bool = False):
+            if force_refresh:
+                UpdateCheckThread._checked = False
+            self._lbl_ver_icon.hide()
+            self._btn_ver_update.hide()
+            self._btn_ver_check.setEnabled(False)
+            self._lbl_ver_status.setText(self.txt("lbl_ver_checking"))
+            self._lbl_ver_status.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(9)}px; background: transparent;")
+            _thr = UpdateCheckThread(config.VERSION, parent=None)
+            _thr.update_available.connect(_on_update_known_for_card)
+            _thr.finished.connect(_on_check_done_for_card)
+            _thr.finished.connect(_thr.deleteLater)
+            self._settings_ver_thread = _thr
+            _thr.start()
+
+        self._run_ver_check = _run_ver_check
+        self._btn_ver_check.clicked.connect(lambda _c=False: _run_ver_check(force_refresh=True))
+
+        def _sync_ver_card_state(auto_enabled: bool):
+            mw = self._get_main_window()
+            p_ver = getattr(mw, '_pending_update_ver', None)
+            if p_ver:
+                self._lbl_ver_status.setText(self.txt('lbl_ver_pending_restart'))
+                self._lbl_ver_status.setStyleSheet(
+                    f"color: #f4a641; font-size: {config.FS_PX(9)}px; font-weight: bold; background: transparent;"
+                )
+                self._lbl_ver_icon.hide()
+                self._btn_ver_check.hide()
+                self._btn_ver_update.hide()
+            elif not auto_enabled:
+                self._lbl_ver_icon.hide()
+                self._btn_ver_update.hide()
+                self._lbl_ver_status.setText(self.txt("msg_updates_disabled"))
+                self._lbl_ver_status.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(9)}px; background: transparent;")
+                self._btn_ver_check.setEnabled(True)
+                self._btn_ver_check.show()
+            else:
+                self._btn_ver_check.hide()
+                _run_ver_check(force_refresh=False)
+
+        self._sync_ver_card_state = _sync_ver_card_state
+        _sync_ver_card_state(auto_check_on)
 
         # ── Main General Preferences Card ─────────────────────────────────
         gen_card = SettingsCard(parent=page_gen)
@@ -3520,6 +3609,38 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         layout.addStretch(1)
         return page_about
 
+    def _apply_auto_update_dim_opacity(self, val: float):
+        self._curr_upd_op = float(val)
+        is_translucent = (val < 0.9)
+        row_w = getattr(self, "_row_auto_update_on_start", None)
+        if row_w is not None:
+            lbl_w = getattr(row_w, "_label_widget", None)
+            if lbl_w is not None:
+                lbl_w.setStyleSheet(
+                    f"color: {_blend_hex('#e4e4e4', SETTINGS_CARD_BG, val)}; "
+                    f"font-size: {config.FS_PX(10)}px; background: transparent; border: none;"
+                )
+        if hasattr(self, "tgl_auto_update_on_start"):
+            self.tgl_auto_update_on_start.setAttribute(Qt.WA_TransparentForMouseEvents, is_translucent)
+            if hasattr(self.tgl_auto_update_on_start, "set_opacity"):
+                self.tgl_auto_update_on_start.set_opacity(val)
+
+    def _update_auto_update_availability(self, enabled: bool, animated: bool = False):
+        if hasattr(self, "tgl_auto_update_on_start"):
+            self.tgl_auto_update_on_start.set_blocked(not enabled)
+        target_op = 1.0 if enabled else 0.35
+        if animated and self.isVisible():
+            self._upd_dim_anim.stop()
+            self._upd_dim_anim.setStartValue(self._curr_upd_op)
+            self._upd_dim_anim.setEndValue(target_op)
+            self._curr_upd_op = target_op
+            self._upd_dim_anim.start()
+        else:
+            if hasattr(self, "_upd_dim_anim"):
+                self._upd_dim_anim.stop()
+            self._curr_upd_op = target_op
+            self._apply_auto_update_dim_opacity(target_op)
+
     def _apply_geo_dim_opacity(self, val: float):
         self._curr_geo_op = float(val)
         is_translucent = (val < 0.9)
@@ -3565,24 +3686,47 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             checkbox_checked=False
         )
         if msg_box.exec() == QDialog.Accepted:
+            self._ensure_all_pages_built()
             old_prefs = self.engine.load_preferences() or {}
             delete_markers = msg_box.is_checkbox_checked()
-            default_state = config.DEFAULT_SETTINGS.copy()
+            default_state = dict(config.DEFAULT_SETTINGS)
             default_state['gui_lang'] = old_prefs.get('gui_lang', 'en')
             default_state['settings_view_mode'] = old_prefs.get('settings_view_mode', 'basic')
-            default_state['telemetry_opt_in'] = False
-            default_state['telemetry_geo'] = True
-            default_state['auto_crash_report'] = True
+            default_state['shortcuts'] = dict(config.DEFAULT_SETTINGS.get('shortcuts', {}))
 
             if not delete_markers:
-                default_state['custom_markers'] = old_prefs.get('custom_markers', [])
+                kept_markers = list(old_prefs.get('custom_markers', []))
+                default_state['custom_markers'] = kept_markers
+                old_sc = old_prefs.get('shortcuts', {}) or {}
+                for m in kept_markers:
+                    mk = f"custom_marker_{m.get('name', '')}"
+                    if mk in old_sc:
+                        default_state['shortcuts'][mk] = old_sc[mk]
             else:
                 default_state['custom_markers'] = []
                 self.current_custom_markers = []
 
             self.engine.save_preferences(default_state)
+
+            # Reset user-privacy toggles in user.json without leaking DEFAULT_USER_DATA keys into settings.json
+            os_doc = getattr(self.engine, 'os_doc', None)
+            if os_doc is not None and hasattr(os_doc, 'set_telemetry_pref'):
+                try:
+                    os_doc.set_telemetry_pref("telemetry_opt_in", False)
+                    os_doc.set_telemetry_pref("telemetry_geo", True)
+                    os_doc.set_telemetry_pref("auto_crash_report", True)
+                except Exception:
+                    pass
+
+            restore_payload = dict(default_state)
+            restore_payload['telemetry_opt_in'] = False
+            restore_payload['telemetry_geo'] = True
+            restore_payload['auto_crash_report'] = True
+
             self.initial_prefs = self.engine.load_preferences() or {}
-            self._restore_state_dict(default_state)
+            self._restore_state_dict(restore_payload, include_advanced=True)
+            if delete_markers:
+                self._save_markers_and_refresh_main()
             if hasattr(self, '_initial_state') and isinstance(self._initial_state, dict):
                 self._initial_state = self._get_current_state_dict()
             self._apply_live_ui_scale('auto', None)
@@ -4056,36 +4200,104 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
     # ── Export / Import ───────────────────────────────────────────────────
 
     def _on_export_settings(self):
-        import shutil
+        import json
         from PySide6.QtWidgets import QFileDialog
         dest, _ = QFileDialog.getSaveFileName(self, self.txt("btn_export_settings"), "badwords_settings.json", "JSON files (*.json)")
-        if dest:
-            try:
-                shutil.copy2(self.engine.os_doc.settings_file, dest)
-            except Exception as e:
-                from osdoc import log_error
-                log_error(f"Export settings failed: {e}")
+        if not dest:
+            return
+        try:
+            self._ensure_all_pages_built()
+            user_keys = set(getattr(config, 'DEFAULT_USER_DATA', {}).keys()) | {'telemetry_opt_in', 'telemetry_geo', 'auto_crash_report'}
+            merged = dict(config.DEFAULT_SETTINGS)
+            disk_prefs = self.engine.load_preferences() or {}
+            for k, v in disk_prefs.items():
+                if k not in user_keys:
+                    merged[k] = v
+            cur_state = self._get_current_state_dict()
+            for k, v in cur_state.items():
+                if k not in user_keys:
+                    merged[k] = v
+
+            atomic_write = getattr(getattr(config, 'runtime_data', None), 'atomic_write_json', None)
+            if callable(atomic_write):
+                atomic_write(dest, merged)
+            else:
+                with open(dest, 'w', encoding='utf-8') as f:
+                    json.dump(merged, f, indent=4, ensure_ascii=False)
+            CustomMsgBox(
+                self,
+                self.txt("msg_settings_export_title"),
+                self.txt("msg_settings_export_ok", path=dest),
+                self.txt("btn_ok"),
+            ).exec()
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"Export settings failed: {e}")
+            CustomMsgBox(
+                self,
+                self.txt("msg_settings_export_title"),
+                self.txt("msg_settings_export_err", error=str(e)),
+                self.txt("btn_ok"),
+            ).exec()
 
     def _on_import_settings(self):
-        import shutil
+        import json
         from PySide6.QtWidgets import QFileDialog
         src, _ = QFileDialog.getOpenFileName(self, self.txt("btn_import_settings"), "", "JSON files (*.json)")
         if not src:
             return
         try:
-            shutil.copy2(src, self.engine.os_doc.settings_file)
-            self.engine.os_doc.settings = self.engine.os_doc.load_settings()
+            with open(src, 'r', encoding='utf-8') as f:
+                raw = json.load(f)
         except Exception as e:
             from osdoc import log_error
             log_error(f"Import settings failed: {e}")
+            CustomMsgBox(
+                self,
+                self.txt("msg_settings_import_title"),
+                self.txt("msg_settings_import_err", error=str(e)),
+                self.txt("btn_ok"),
+            ).exec()
             return
 
-        lang = (self.engine.load_preferences() or {}).get('gui_lang', 'en')
+        valid_keys = set(getattr(config, 'DEFAULT_SETTINGS', {}).keys()) | {'gui_lang', 'custom_markers', 'shortcuts', 'app_icon'}
+        if not isinstance(raw, dict) or not (set(raw.keys()) & valid_keys):
+            CustomMsgBox(self, self.txt("msg_settings_import_title"), self.txt("msg_settings_import_invalid"), self.txt("btn_ok")).exec()
+            return
+
+        # INVARIANT: Never import DEFAULT_USER_DATA consent keys into settings.json; telemetry flags belong strictly to user.json.
+        user_keys = set(getattr(config, 'DEFAULT_USER_DATA', {}).keys()) | {'telemetry_opt_in', 'telemetry_geo', 'auto_crash_report'}
+        clean_cfg = dict(getattr(config, 'DEFAULT_SETTINGS', {}))
+        for k, v in raw.items():
+            if k not in user_keys:
+                clean_cfg[k] = v
+
+        try:
+            self.engine.save_preferences(clean_cfg)
+            os_doc = getattr(self.engine, 'os_doc', None)
+            if os_doc is not None:
+                os_doc.settings = dict(clean_cfg)
+            self._ensure_all_pages_built()
+            self._restore_state_dict(clean_cfg, include_advanced=True)
+            self._save_markers_and_refresh_main()
+            self._initial_state = self._get_current_state_dict()
+        except Exception as e:
+            from osdoc import log_error
+            log_error(f"Apply imported settings failed: {e}")
+            CustomMsgBox(
+                self,
+                self.txt("msg_settings_import_title"),
+                self.txt("msg_settings_import_err", error=str(e)),
+                self.txt("btn_ok"),
+            ).exec()
+            return
+
+        lang = (self.engine.load_preferences() or {}).get('gui_lang', clean_cfg.get('gui_lang', 'en'))
         target = config.TRANS.get(lang, config.TRANS['en'])
         CustomMsgBox(
             self,
-            target.get('msg_title_language_changed', 'Restart Required'),
-            target.get('msg_restart_lang', 'Settings imported. Please restart BadWords to apply all changes.'),
+            target.get('msg_settings_import_title', target.get('msg_title_language_changed', 'Import Settings')),
+            target.get('msg_settings_import_ok', target.get('msg_restart_lang', 'Settings imported. Please restart BadWords to apply all changes.')),
             target.get('btn_ok', 'OK')
         ).exec()
         self.reject()
@@ -4237,7 +4449,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         except Exception:
             pass
 
-    def _restore_state_dict(self, state):
+    def _restore_state_dict(self, state, include_advanced: bool = None):
         def _g(k, d):
             v = state.get(k)
             return v if v is not None else d
@@ -4339,10 +4551,17 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         self._safe_set('tgl_resolve_render_timeline_proxy', _g('resolve_render_timeline_proxy', config.DEFAULT_SETTINGS['resolve_render_timeline_proxy']), 'setChecked')
         self._safe_set('tgl_timestamp_precise', _g('timestamp_precise', config.DEFAULT_SETTINGS['timestamp_precise']), 'setChecked')
         self._safe_set('tgl_show_panel_headers', _g('show_panel_headers', True), 'setChecked')
-        self._safe_set('tgl_auto_check_updates', _g('auto_check_updates', True), 'setChecked')
-        self._safe_set('tgl_auto_update_on_start', _g('auto_update_on_start', False), 'setChecked')
+        auto_chk = bool(_g('auto_check_updates', True))
+        self._safe_set('tgl_auto_check_updates', auto_chk, 'setChecked')
+        self._safe_set('tgl_auto_update_on_start', bool(_g('auto_update_on_start', False)) if auto_chk else False, 'setChecked')
+        if hasattr(self, '_update_auto_update_availability'):
+            self._update_auto_update_availability(auto_chk, animated=False)
+        if hasattr(self, '_sync_ver_card_state') and callable(self._sync_ver_card_state):
+            cur_st = self._lbl_ver_status.text() if hasattr(self, '_lbl_ver_status') else ""
+            if (not auto_chk) or (cur_st in (self.txt("msg_updates_disabled"), "...")):
+                self._sync_ver_card_state(auto_chk)
 
-        if not is_basic:
+        if include_advanced or (include_advanced is None and not is_basic):
             dev_val = _g('device', 'Auto').upper()
             if dev_val == 'AUTO':
                 dev_val = 'Auto'

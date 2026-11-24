@@ -33,16 +33,21 @@ def load_translations(lang_code):
         TRANS[lang_code] = {}
 
 def get_trans(key, lang_code="en"):
+    # INVARIANT: Missing or empty target keys must fall back cleanly to non-empty English strings.
     if lang_code not in TRANS:
         load_translations(lang_code)
-    
-    if key in TRANS.get(lang_code, {}):
-        return TRANS[lang_code][key]
-    
+
+    val = TRANS.get(lang_code, {}).get(key)
+    if isinstance(val, str) and val != "":
+        return val
+
     if "en" not in TRANS:
         load_translations("en")
-        
-    return TRANS.get("en", {}).get(key, key)
+
+    en_val = TRANS.get("en", {}).get(key)
+    if isinstance(en_val, str) and en_val != "":
+        return en_val
+    return key
 
 # Pre-load all supported languages for full GUI compatibility and language selection
 for _lang in SUPPORTED_LANGS:

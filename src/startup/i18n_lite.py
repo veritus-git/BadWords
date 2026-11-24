@@ -130,15 +130,38 @@ def _detect_os_language():
     return "en"
 
 
+def _user_profile_settings_path():
+    """Return per-user persistent fallback settings.json path (stdlib-only)."""
+    import sys
+    home = os.path.expanduser("~")
+    if sys.platform == "win32" or os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.join(home, "AppData", "Local")
+    elif sys.platform == "darwin":
+        base = os.path.join(home, "Library", "Application Support")
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local", "share")
+    return os.path.join(base, "BadWords", "settings.json")
+
+
 def detect_language(src_dir=None):
-    """Read gui_lang from settings.json, falling back to OS locale then 'en'."""
+    """Read gui_lang from active settings.json, falling back to OS locale then 'en'."""
     base = os.path.abspath(src_dir) if src_dir else _default_src_dir()
     parent = os.path.dirname(base)
-    candidates = [
-        os.path.join(parent, ".dev_workspace", "settings.json"),
-        os.path.join(base, "settings.json"),
-        os.path.join(parent, "settings.json"),
-    ]
+    is_dev = (
+        os.environ.get("BADWORDS_DEV") == "1"
+        or os.path.exists(os.path.join(base, ".git"))
+        or os.path.exists(os.path.join(parent, ".git"))
+    )
+    if is_dev and os.environ.get("BADWORDS_FORCE_INSTALLED") != "1":
+        candidates = [
+            os.path.join(parent, ".dev_workspace", "settings.json"),
+        ]
+    else:
+        candidates = [
+            os.path.join(base, "settings.json"),
+            os.path.join(parent, "settings.json"),
+            _user_profile_settings_path(),
+        ]
     for path in candidates:
         if os.path.isfile(path):
             try:
@@ -180,9 +203,9 @@ def t(key, src_dir=None, lang=None, **kwargs):
     en_dict = _load_lang_dict("en", base) if chosen_lang != "en" else lang_dict
 
     text = lang_dict.get(key)
-    if text is None:
+    if not isinstance(text, str) or text == "":
         text = en_dict.get(key)
-    if text is None:
+    if not isinstance(text, str) or text == "":
         text = _BUILTIN_EN.get(key, key)
 
     if kwargs and isinstance(text, str):

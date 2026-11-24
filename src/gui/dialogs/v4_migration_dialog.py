@@ -14,147 +14,14 @@ informing the user about the standalone desktop app transformation and native la
 
 import sys
 import webbrowser
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QPoint, QSize
 from PySide6.QtGui import QMouseEvent, QCursor
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QWidget
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QWidget, QScrollArea
 )
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog
-from gui.utils import _app_icon, _center_on_screen
-
-_MIGRATION_TEXTS = {
-    "pl": {
-        "badge": "BADWORDS 4.0.0",
-        "heading": "Zaktualizowano do BadWords 4.0.0!",
-        "body": (
-            "Twoja instalacja została pomyślnie zaktualizowana do wersji 4.0.0.\n\n"
-            "Od wersji 4.0.0 BadWords stało się nie tylko zaawansowanym pluginem do DaVinci Resolve, "
-            "ale także pełnoprawną, samostojącą aplikacją desktopową z dedykowanymi launcherami i integracją systemową.\n\n"
-            "Zalecamy pobranie najnowszego oficjalnego instalatora ze strony GitHub Releases, "
-            "aby zainstalować dedykowany launcher aplikacji oraz dodać skróty w systemie."
-        ),
-        "btn_github": "Pobierz nowy instalator (GitHub)",
-        "btn_close": "Rozumiem / Zamknij",
-    },
-    "en": {
-        "badge": "BADWORDS 4.0.0",
-        "heading": "Updated to BadWords 4.0.0!",
-        "body": (
-            "Your installation has been successfully updated to version 4.0.0.\n\n"
-            "Starting with version 4.0.0, BadWords is not only an advanced DaVinci Resolve plugin, "
-            "but also a full standalone desktop application with dedicated native launchers and system integration.\n\n"
-            "We recommend downloading the official installer from GitHub Releases "
-            "to set up native launchers, desktop shortcuts, and full system integration."
-        ),
-        "btn_github": "Download New Installer (GitHub)",
-        "btn_close": "Got it / Close",
-    },
-    "de": {
-        "badge": "BADWORDS 4.0.0",
-        "heading": "Auf BadWords 4.0.0 aktualisiert!",
-        "body": (
-            "Ihre Installation wurde erfolgreich auf Version 4.0.0 aktualisiert.\n\n"
-            "Ab Version 4.0.0 ist BadWords nicht nur ein DaVinci Resolve-Plugin, "
-            "sondern auch eine vollwertige, eigenständige Desktop-Anwendung mit nativen Launchern.\n\n"
-            "Wir empfehlen, das offizielle Installationsprogramm von GitHub Releases herunterzuladen, "
-            "um Desktop-Verknüpfungen und die Systemintegration einzurichten."
-        ),
-        "btn_github": "Neuen Installer herunterladen (GitHub)",
-        "btn_close": "Verstanden / Schließen",
-    },
-    "es": {
-        "badge": "BADWORDS 4.0.0",
-        "heading": "¡Actualizado a BadWords 4.0.0!",
-        "body": (
-            "Tu instalación se ha actualizado correctamente a la versión 4.0.0.\n\n"
-            "A partir de la versión 4.0.0, BadWords no es solo un complemento para DaVinci Resolve, "
-            "sino también una aplicación de escritorio independiente con lanzadores nativos.\n\n"
-            "Recomendamos descargar el instalador oficial desde GitHub Releases "
-            "para configurar los accesos directos y la integración en el sistema."
-        ),
-        "btn_github": "Descargar nuevo instalador (GitHub)",
-        "btn_close": "Entendido / Cerrar",
-    },
-    "fr": {
-        "badge": "BADWORDS 4.0.0",
-        "heading": "Mis à jour vers BadWords 4.0.0 !",
-        "body": (
-            "Votre installation a été mise à jour avec succès vers la version 4.0.0.\n\n"
-            "À partir de la version 4.0.0, BadWords n'est plus seulement un plugin DaVinci Resolve, "
-            "mais aussi une application de bureau autonome avec lanceurs natifs.\n\n"
-            "Nous vous recommandons de télécharger le programme d'installation officiel sur GitHub Releases "
-            "pour configurer les raccourcis et l'intégration système."
-        ),
-        "btn_github": "Télécharger le nouvel installateur (GitHub)",
-        "btn_close": "Compris / Fermer",
-    },
-    "it": {
-        "badge": "BADWORDS 4.0.0",
-        "heading": "Aggiornato a BadWords 4.0.0!",
-        "body": (
-            "La tua installazione è stata aggiornata con successo alla versione 4.0.0.\n\n"
-            "A partire dalla versione 4.0.0, BadWords non è solo un plugin per DaVinci Resolve, "
-            "ma anche un'applicazione desktop autonoma completa con launcher nativi.\n\n"
-            "Ti consigliamo di scaricare l'installer ufficiale da GitHub Releases "
-            "per configurare i collegamenti sul desktop e l'integrazione di sistema."
-        ),
-        "btn_github": "Scarica nuovo installer (GitHub)",
-        "btn_close": "Ho capito / Chiudi",
-    },
-    "nl": {
-        "badge": "BADWORDS 4.0.0",
-        "heading": "Bijgewerkt naar BadWords 4.0.0!",
-        "body": (
-            "Uw installatie is succesvol bijgewerkt naar versie 4.0.0.\n\n"
-            "Vanaf versie 4.0.0 is BadWords niet alleen een DaVinci Resolve-plug-in, "
-            "maar ook een volwaardige standalone desktop-applicatie met native launchers.\n\n"
-            "We raden aan het officiële installatieprogramma van GitHub Releases te downloaden "
-            "om snelkoppelingen en systeemintegratie in te stellen."
-        ),
-        "btn_github": "Nieuwe installer downloaden (GitHub)",
-        "btn_close": "Begrepen / Sluiten",
-    },
-    "pt": {
-        "badge": "BADWORDS 4.0.0",
-        "heading": "Atualizado para BadWords 4.0.0!",
-        "body": (
-            "Sua instalação foi atualizada com sucesso para a versão 4.0.0.\n\n"
-            "A partir de la versão 4.0.0, o BadWords é não apenas um plugin para DaVinci Resolve, "
-            "mas também um aplicativo desktop independente com inicializadores nativos.\n\n"
-            "Recomendamos baixar o instalador oficial no GitHub Releases "
-            "para configurar atalhos na área de trabalho e integração ao sistema."
-        ),
-        "btn_github": "Baixar novo instalador (GitHub)",
-        "btn_close": "Entendi / Fechar",
-    },
-    "ru": {
-        "badge": "BADWORDS 4.0.0",
-        "heading": "Обновлено до BadWords 4.0.0!",
-        "body": (
-            "Ваша установка была успешно обновлена до версии 4.0.0.\n\n"
-            "Начиная с версии 4.0.0, BadWords — это не только плагин для DaVinci Resolve, "
-            "но и полноценное автономное приложение с нативными лаунчерами.\n\n"
-            "Мы рекомендуем скачать официальный установщик со страницы GitHub Releases, "
-            "чтобы настроить ярлыки на рабочем столе и интеграцию с системой."
-        ),
-        "btn_github": "Скачать новый установщик (GitHub)",
-        "btn_close": "Понятно / Закрыть",
-    },
-    "uk": {
-        "badge": "BADWORDS 4.0.0",
-        "heading": "Оновлено до BadWords 4.0.0!",
-        "body": (
-            "Вашу установку успішно оновлено до версії 4.0.0.\n\n"
-            "Починаючи з версії 4.0.0, BadWords — це не лише плагін для DaVinci Resolve, "
-            "але й повноцінний автономний застосунок із нативними лаунчерами.\n\n"
-            "Ми рекомендуємо завантажити офіційний інсталятор зі сторінки GitHub Releases, "
-            "щоб налаштувати ярлики на робочому столі та інтеграцію із системою."
-        ),
-        "btn_github": "Завантажити новий інсталятор (GitHub)",
-        "btn_close": "Зрозуміло / Закрити",
-    },
-}
+from gui.utils import _app_icon, _txt, fit_dialog_to_screen, get_vector_icon
 
 
 class V4MigrationDialog(FramelessWindowMixin, _BaseDialog):
@@ -162,13 +29,14 @@ class V4MigrationDialog(FramelessWindowMixin, _BaseDialog):
         super().__init__(parent)
         self.user_choice = "close"
         self._drag_pos = None
+        self._lang = lang if lang in config.TRANS else "en"
 
-        t = _MIGRATION_TEXTS.get(lang, _MIGRATION_TEXTS["en"])
+        def _t(suffix: str) -> str:
+            return _txt(self._lang, f"v4_mig_{suffix}")
 
-        self.setWindowTitle(t["heading"])
+        self.setWindowTitle(_t("heading"))
         self.frameless_init(is_popup=True)
         self.setWindowIcon(_app_icon())
-        self.setFixedWidth(config.S(680))
 
         self.setStyleSheet(f"""
             QDialog {{
@@ -250,62 +118,73 @@ class V4MigrationDialog(FramelessWindowMixin, _BaseDialog):
         """)
 
         outer = QVBoxLayout(self)
-        outer.setSizeConstraint(QVBoxLayout.SetFixedSize)
         outer.setContentsMargins(0, 0, 0, 0)
 
         card = QFrame(self)
         card.setObjectName("MainCard")
         card_layout = QVBoxLayout(card)
-        card_layout.setSizeConstraint(QVBoxLayout.SetFixedSize)
         card_layout.setContentsMargins(config.S(24), config.S(24), config.S(24), config.S(24))
         card_layout.setSpacing(config.S(14))
 
         top_row = QHBoxLayout()
-        badge = QLabel(t["badge"])
+        badge = QLabel(_t("badge"))
         badge.setObjectName("BadgeLabel")
         top_row.addWidget(badge)
         top_row.addStretch()
 
-        close_btn = QPushButton("✕")
+        close_btn = QPushButton()
         close_btn.setObjectName("CloseBtn")
+        close_btn.setFixedSize(config.S(26), config.S(26))
+        close_btn.setIcon(get_vector_icon("close", config.S(12), "#8b949e"))
+        close_btn.setIconSize(QSize(config.S(12), config.S(12)))
         close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.enterEvent = lambda e: close_btn.setIcon(get_vector_icon("close", config.S(12), "#ffffff"))
+        close_btn.leaveEvent = lambda e: close_btn.setIcon(get_vector_icon("close", config.S(12), "#8b949e"))
         close_btn.clicked.connect(self._on_close)
         top_row.addWidget(close_btn)
         card_layout.addLayout(top_row)
 
-        heading = QLabel(t["heading"])
+        heading = QLabel(_t("heading"))
         heading.setObjectName("HeadingLabel")
         heading.setAttribute(Qt.WA_TranslucentBackground, True)
         heading.setWordWrap(True)
         card_layout.addWidget(heading)
 
-        body = QLabel(t["body"])
+        body = QLabel(_t("body"))
         body.setObjectName("BodyLabel")
         body.setAttribute(Qt.WA_TranslucentBackground, True)
         body.setWordWrap(True)
         card_layout.addWidget(body)
 
-        card_layout.addSpacing(6)
+        card_layout.addSpacing(config.S(6))
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
 
-        btn_close = QPushButton(t["btn_close"])
+        btn_close = QPushButton(_t("btn_close"))
         btn_close.setObjectName("SecondaryBtn")
         btn_close.setCursor(Qt.PointingHandCursor)
         btn_close.clicked.connect(self._on_close)
         btn_row.addWidget(btn_close)
 
-        btn_gh = QPushButton(t["btn_github"])
+        btn_gh = QPushButton(_t("btn_github"))
         btn_gh.setObjectName("PrimaryBtn")
         btn_gh.setCursor(Qt.PointingHandCursor)
         btn_gh.clicked.connect(self._on_github)
         btn_row.addWidget(btn_gh)
-
         card_layout.addLayout(btn_row)
-        outer.addWidget(card)
-        self.adjustSize()
-        _center_on_screen(self, self.width(), self.height(), reference_window=parent)
+
+        scroll = QScrollArea(self)
+        scroll.setObjectName("V4MigScroll")
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(
+            "QScrollArea#V4MigScroll { background: transparent; border: none; }"
+        )
+        scroll.setWidget(card)
+        outer.addWidget(scroll, 1)
+        fit_dialog_to_screen(self, config.S(680), 0, reference_window=parent)
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.LeftButton:

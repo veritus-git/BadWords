@@ -272,7 +272,6 @@ class AudioPreviewWidget(QFrame):
                 font-size: {config.FS_PX(9.5)}px;
                 font-weight: bold;
                 color: #ffffff;
-                font-feature-settings: 'tnum';
             }}
             QLabel#StatusLabel {{
                 color: #666666;
@@ -718,7 +717,19 @@ class AudioPreviewWidget(QFrame):
             "waveform": {
                 "_peaks": getattr(wt, "_peaks", None) if wt else None,
                 "_audio_path": getattr(wt, "_audio_path", None) if wt else None,
-                "_clip_name": getattr(wt, "_clip_name", "A1: Timeline Audio") if wt else "A1: Timeline Audio",
+                "_clip_name": getattr(
+                    wt,
+                    "_clip_name",
+                    self.main_window.txt("lbl_a1_timeline_audio", "A1: Timeline Audio")
+                    if self.main_window and hasattr(self.main_window, "txt")
+                    else "A1: Timeline Audio",
+                )
+                if wt
+                else (
+                    self.main_window.txt("lbl_a1_timeline_audio", "A1: Timeline Audio")
+                    if self.main_window and hasattr(self.main_window, "txt")
+                    else "A1: Timeline Audio"
+                ),
                 "_duration": float(getattr(wt, "_duration", 0.0) or 0.0) if wt else 0.0,
                 "_playhead_time": float(getattr(wt, "_playhead_time", 0.0) or 0.0) if wt else 0.0,
                 "_zoom_level": float(getattr(wt, "_zoom_level", 1.0) or 1.0) if wt else 1.0,
@@ -758,7 +769,12 @@ class AudioPreviewWidget(QFrame):
         if wt is not None and wf_state:
             wt._peaks = wf_state.get("_peaks")
             wt._audio_path = wf_state.get("_audio_path")
-            wt._clip_name = wf_state.get("_clip_name", "A1: Timeline Audio")
+            a1_default = (
+                self.main_window.txt("lbl_a1_timeline_audio", "A1: Timeline Audio")
+                if self.main_window and hasattr(self.main_window, "txt")
+                else "A1: Timeline Audio"
+            )
+            wt._clip_name = wf_state.get("_clip_name", a1_default)
             wt._duration = float(wf_state.get("_duration", 0.0) or 0.0)
             wt._playhead_time = float(wf_state.get("_playhead_time", 0.0) or 0.0)
             wt._zoom_level = float(wf_state.get("_zoom_level", 1.0) or 1.0)
@@ -1041,8 +1057,15 @@ class AudioPreviewWidget(QFrame):
             else:
                 clip_name = os.path.basename(audio_path)
         else:
+            fallback_a1 = (
+                self.main_window.txt("lbl_a1_timeline_audio", "A1: Timeline Audio")
+                if self.main_window and hasattr(self.main_window, "txt")
+                else "A1: Timeline Audio"
+            )
             clip_name = os.path.basename(video_file) if video_file else (
-                f"A1: {snap.get('timeline_name', 'Timeline Audio')}" if snap.get("timeline_name") else os.path.basename(audio_path)
+                f"A1: {snap.get('timeline_name')}" if snap.get("timeline_name") else (
+                    fallback_a1 if snap.get("source_type") == "resolve" and not audio_path else os.path.basename(audio_path)
+                )
             )
 
         # Check if we have multiple video clips needing proxy or multi-clip Resolve timeline
@@ -1050,14 +1073,15 @@ class AudioPreviewWidget(QFrame):
         is_bg_proxy_pending = (num_video_clips > 1 and not (proxy_path and os.path.isfile(proxy_path)))
         is_resolve = (snap.get("source_type") == "resolve")
         clips_count = len(getattr(self.main_window, '_current_clips_layout', []) or [])
+        _txt = self.main_window.txt if (self.main_window and hasattr(self.main_window, "txt")) else (lambda k, d="": d or k)
 
         if (is_resolve and clips_count > 1 and not (proxy_path and os.path.isfile(proxy_path))):
             target_source = audio_path
             self.video_preview_widget.show_loading(False)
-            self.video_preview_widget.show_placeholder(True, "DaVinci Resolve Timeline")
+            self.video_preview_widget.show_placeholder(True, _txt("lbl_davinci_timeline", "DaVinci Resolve Timeline"))
         elif is_bg_proxy_pending:
             target_source = audio_path
-            msg = self.main_window.txt("status_generating_proxy_bg") if self.main_window and hasattr(self.main_window, "txt") else "Generating video preview..."
+            msg = _txt("status_generating_proxy_bg", "Generating video preview...")
             self.video_preview_widget.show_loading(True, msg)
         else:
             target_source = video_file if (video_file and self.clean_ops is None) else audio_path
@@ -1066,7 +1090,7 @@ class AudioPreviewWidget(QFrame):
                 self.video_preview_widget.show_placeholder(False)
             else:
                 self.video_preview_widget.show_loading(False)
-                self.video_preview_widget.show_placeholder(True, "Audio Only")
+                self.video_preview_widget.show_placeholder(True, _txt("lbl_audio_only", "Audio Only"))
 
         # Set media player source
         if self._source_audio_path != target_source:

@@ -36,24 +36,250 @@ def init_embedded_fonts():
         pass
 
 
-def get_svg_icon(svg_str: str, size: int = 12) -> QIcon:
-    """Renders an SVG string into a crisp, HighDPI anti-aliased QIcon."""
+_VECTOR_SVGS = {
+    "info": (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">'
+        '<circle cx="12" cy="12" r="9.5" stroke="{color}" stroke-width="1.8"/>'
+        '<circle cx="12" cy="7.6" r="1.25" fill="{color}"/>'
+        '<path d="M12 11.2v5.4" stroke="{color}" stroke-width="2.1" stroke-linecap="round"/>'
+        '</svg>'
+    ),
+    "question": (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">'
+        '<circle cx="12" cy="12" r="9.5" stroke="{color}" stroke-width="1.8"/>'
+        '<path d="M9.6 9.3a2.5 2.5 0 014.8.8c0 1.5-2.4 2-2.4 3.4" stroke="{color}" stroke-width="1.9" stroke-linecap="round"/>'
+        '<circle cx="12" cy="16.8" r="1.15" fill="{color}"/>'
+        '</svg>'
+    ),
+    "warning": (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">'
+        '<circle cx="12" cy="12" r="9.5" stroke="{color}" stroke-width="1.8"/>'
+        '<path d="M12 7.2v6.2" stroke="{color}" stroke-width="2.1" stroke-linecap="round"/>'
+        '<circle cx="12" cy="16.8" r="1.2" fill="{color}"/>'
+        '</svg>'
+    ),
+    "search": (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">'
+        '<circle cx="10.8" cy="10.8" r="6.8" stroke="{color}" stroke-width="2"/>'
+        '<path d="M16 16l4.6 4.6" stroke="{color}" stroke-width="2" stroke-linecap="round"/>'
+        '</svg>'
+    ),
+    "close": (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">'
+        '<path d="M6.5 6.5L17.5 17.5M17.5 6.5L6.5 17.5" stroke="{color}" stroke-width="2.2" stroke-linecap="round"/>'
+        '</svg>'
+    ),
+    "check": (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">'
+        '<path d="M5 12.6l4.6 4.6L19 7.2" stroke="{color}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg>'
+    ),
+    "chevron_up": (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">'
+        '<path d="M6.5 14.5L12 8.8l5.5 5.7" stroke="{color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg>'
+    ),
+    "chevron_down": (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">'
+        '<path d="M6.5 9.5L12 15.2l5.5-5.7" stroke="{color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg>'
+    ),
+    "arrow_right": (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">'
+        '<path d="M4.5 12h14.5M13.8 6.5L19.5 12l-5.7 5.5" stroke="{color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'
+        '</svg>'
+    ),
+    "plus": (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">'
+        '<path d="M12 5.5v13M5.5 12h13" stroke="{color}" stroke-width="2.4" stroke-linecap="round"/>'
+        '</svg>'
+    ),
+    "minus": (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">'
+        '<path d="M5.5 12h13" stroke="{color}" stroke-width="2.4" stroke-linecap="round"/>'
+        '</svg>'
+    ),
+}
+
+
+def render_svg_pixmap(
+    svg_source: str,
+    height: int = 14,
+    width: int = None,
+    color: str = None,
+    dpr: float = 2.0,
+    is_file: bool = False,
+) -> QPixmap:
+    """Renders an SVG file or markup string into a crisp HiDPI QPixmap, preserving aspect ratio."""
     try:
+        import re
         from PySide6.QtSvg import QSvgRenderer
-        from PySide6.QtGui import QPixmap, QPainter
-        from PySide6.QtCore import QByteArray, Qt
-        renderer = QSvgRenderer(QByteArray(svg_str.encode('utf-8')))
-        pixmap = QPixmap(size * 2, size * 2)
+        from PySide6.QtGui import QPainter
+        from PySide6.QtCore import Qt
+
+        if is_file:
+            if not svg_source or not os.path.isfile(svg_source):
+                return QPixmap()
+            with open(svg_source, "r", encoding="utf-8") as f:
+                svg_data = f.read()
+        else:
+            svg_data = svg_source or ""
+
+        if color:
+            if "{color}" in svg_data:
+                svg_data = svg_data.replace("{color}", color)
+            elif is_file:
+                if re.search(r'\bfill="[^"]*"', svg_data):
+                    svg_data = re.sub(r'\bfill="(?!none")[^"]*"', f'fill="{color}"', svg_data)
+                else:
+                    svg_data = svg_data.replace('<path ', f'<path fill="{color}" ')
+                if 'fill=' not in svg_data and 'stroke=' not in svg_data:
+                    svg_data = svg_data.replace('<svg ', f'<svg fill="{color}" ')
+
+        renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
+        if not renderer.isValid():
+            return QPixmap()
+
+        h = max(1, int(round(height)))
+        if width is not None:
+            w = max(1, int(round(width)))
+        else:
+            vb = renderer.viewBoxF()
+            aspect = (vb.width() / vb.height()) if (vb.isValid() and vb.height() > 0) else 1.0
+            w = max(1, int(round(h * aspect)))
+
+        eff_dpr = float(dpr) if (dpr and dpr > 0) else 2.0
+        pixmap = QPixmap(max(1, int(round(w * eff_dpr))), max(1, int(round(h * eff_dpr))))
         pixmap.fill(Qt.transparent)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
         renderer.render(painter)
         painter.end()
-        pixmap.setDevicePixelRatio(2.0)
-        return QIcon(pixmap)
+        pixmap.setDevicePixelRatio(eff_dpr)
+        return pixmap
     except Exception:
-        return QIcon()
+        return QPixmap()
+
+
+def get_svg_icon(svg_str: str, size: int = 12) -> QIcon:
+    """Renders an SVG string into a crisp, HighDPI anti-aliased QIcon."""
+    pix = render_svg_pixmap(svg_str, height=size, width=size, dpr=2.0, is_file=False)
+    return QIcon(pix) if not pix.isNull() else QIcon()
+
+
+def get_vector_pixmap(kind: str, size: int = 14, color: str = "#d4d4d4", dpr: float = 2.0) -> QPixmap:
+    """Returns a crisp HiDPI vector QPixmap for standard UI glyphs (zero system emojis)."""
+    tpl = _VECTOR_SVGS.get(kind)
+    if not tpl:
+        return QPixmap()
+    return render_svg_pixmap(tpl, height=size, width=size, color=color, dpr=dpr, is_file=False)
+
+
+def get_vector_icon(kind: str, size: int = 14, color: str = "#d4d4d4", dpr: float = 2.0) -> QIcon:
+    """Returns a crisp HiDPI vector QIcon for standard UI glyphs (zero system emojis)."""
+    pix = get_vector_pixmap(kind, size=size, color=color, dpr=dpr)
+    return QIcon(pix) if not pix.isNull() else QIcon()
+
+
+def create_info_icon(
+    tooltip_key: str,
+    txt_fn=None,
+    tooltip_widget=None,
+    size: int = 16,
+    dim_opacity: float = 0.35,
+    parent=None,
+):
+    """
+    Unified (i) information icon factory with HiDPI scaling, dimmed pixmap support,
+    vector SVG fallback (zero emojis), and instant shared_tooltip / IDETooltip hover.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QCursor, QPainter
+    from PySide6.QtWidgets import QLabel
+
+    info = QLabel(parent)
+    info.setObjectName("bw_info_icon")
+    info.setStyleSheet("QLabel#bw_info_icon { background: transparent; border: none; }")
+    sz = config.S(size)
+    info.setFixedSize(sz, sz)
+    info.setAlignment(Qt.AlignCenter)
+
+    dpr = info.devicePixelRatioF() if hasattr(info, "devicePixelRatioF") else 2.0
+    if not dpr or dpr < 1.0:
+        dpr = 2.0
+
+    scaled_pix = QPixmap()
+    info_icon_path = get_layout_icon_path("information.png")
+    if info_icon_path and os.path.isfile(info_icon_path):
+        pix = QPixmap(info_icon_path)
+        if not pix.isNull():
+            scaled_pix = pix.scaled(
+                max(1, int(round(sz * dpr))),
+                max(1, int(round(sz * dpr))),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+            scaled_pix.setDevicePixelRatio(dpr)
+
+    if scaled_pix.isNull():
+        scaled_pix = get_vector_pixmap("info", size=sz, color="#888888", dpr=dpr)
+
+    dimmed_pix = QPixmap(scaled_pix.size())
+    dimmed_pix.fill(Qt.transparent)
+    painter = QPainter(dimmed_pix)
+    painter.setOpacity(max(0.05, min(1.0, float(dim_opacity))))
+    painter.drawPixmap(0, 0, scaled_pix)
+    painter.end()
+    dimmed_pix.setDevicePixelRatio(dpr)
+
+    info._normal_pix = scaled_pix
+    info._dimmed_pix = dimmed_pix
+    info.setPixmap(scaled_pix)
+
+    def _set_dimmed(dimmed: bool):
+        info.setPixmap(info._dimmed_pix if dimmed else info._normal_pix)
+        info.setEnabled(not dimmed)
+
+    info.set_dimmed = _set_dimmed
+
+    if callable(txt_fn):
+        tt_text = txt_fn(tooltip_key) or ""
+    elif parent is not None and hasattr(parent, "txt"):
+        tt_text = parent.txt(tooltip_key) or ""
+    else:
+        tt_text = _txt("en", tooltip_key) or tooltip_key
+
+    info.custom_tooltip_text = tt_text
+    info.setToolTip(tt_text)
+    info.setCursor(Qt.WhatsThisCursor)
+
+    def _resolve_tip():
+        if tooltip_widget is not None:
+            return tooltip_widget
+        if parent is not None:
+            win = parent.window() if hasattr(parent, "window") else parent
+            tip = getattr(win, "shared_tooltip", None) or getattr(parent, "shared_tooltip", None) or getattr(parent, "_local_tooltip", None)
+            if tip is not None:
+                return tip
+        w = info.window() if hasattr(info, "window") else None
+        return getattr(w, "shared_tooltip", None) or getattr(w, "_local_tooltip", None)
+
+    def _on_enter(e):
+        if not info.isEnabled():
+            return
+        tip = _resolve_tip()
+        if tip:
+            tip.show_global(info.custom_tooltip_text, QCursor.pos())
+
+    def _on_leave(e):
+        tip = _resolve_tip()
+        if tip:
+            tip.hide()
+
+    info.enterEvent = _on_enter
+    info.leaveEvent = _on_leave
+    return info
 
 
 def get_play_icon(size: int = 12, color: str = "#ffffff", y_offset: float = 1.2) -> QIcon:
@@ -68,35 +294,9 @@ def get_play_icon(size: int = 12, color: str = "#ffffff", y_offset: float = 1.2)
 
 def get_export_pixmap(height: int = 11, color: str = "#ffffff", dpr: float = 2.0) -> QPixmap:
     """Renders the export/upload SVG preserving its native 512x379.661 aspect ratio."""
-    try:
-        from PySide6.QtSvg import QSvgRenderer
-        from PySide6.QtGui import QPixmap, QPainter
-        from PySide6.QtCore import QByteArray, Qt
-        p = get_layout_icon_path("upload-bold-arrow-icon.svg")
-        if os.path.isfile(p):
-            with open(p, "r", encoding="utf-8") as f:
-                svg_data = f.read()
-            if 'fill=' not in svg_data:
-                svg_data = svg_data.replace('<path ', f'<path fill="{color}" ')
-            else:
-                import re
-                svg_data = re.sub(r'fill="[^"]*"', f'fill="{color}"', svg_data)
-
-            renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
-            # Native aspect ratio: 512.0 / 379.661 = 1.34857
-            w = int(round(height * 512.0 / 379.661))
-            pixmap = QPixmap(int(w * dpr), int(height * dpr))
-            pixmap.fill(Qt.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.Antialiasing)
-            painter.setRenderHint(QPainter.SmoothPixmapTransform)
-            renderer.render(painter)
-            painter.end()
-            pixmap.setDevicePixelRatio(dpr)
-            return pixmap
-    except Exception:
-        pass
-    return QPixmap()
+    p = get_layout_icon_path("upload-bold-arrow-icon.svg")
+    w = int(round(height * 512.0 / 379.661))
+    return render_svg_pixmap(p, height=height, width=w, color=color, dpr=dpr, is_file=True)
 
 
 def get_export_icon(size: int = 13, color: str = "#ffffff") -> QIcon:
@@ -313,12 +513,70 @@ def _center_on_screen(widget: QWidget, w: int, h: int, reference_window: QWidget
         widget.setGeometry(x, y, cw, ch)
 
 
+def fit_dialog_to_screen(widget: QWidget, preferred_w: int, preferred_min_h: int = 0, reference_window: QWidget = None):
+    """Fits a dialog proportionally to preferred_w and its scaled layout height while clamping to the active screen."""
+    # INVARIANT: Include inner QScrollArea widget height so scaled dialogs show all buttons and add scrollbars only if screen height is exceeded.
+    from PySide6.QtGui import QGuiApplication, QCursor
+    ref = reference_window or (widget.parentWidget() if widget is not None else None)
+    screen = None
+    ref_geo = None
+    if ref is not None and hasattr(ref, "isVisible") and ref.isVisible():
+        ref_geo = ref.geometry()
+        screen = QGuiApplication.screenAt(ref_geo.center()) or (ref.screen() if hasattr(ref, "screen") else None)
+    if screen is None and widget is not None and hasattr(widget, "screen"):
+        screen = widget.screen()
+    if screen is None:
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+
+    if screen:
+        geo = screen.availableGeometry()
+        avail_w = max(320, geo.width() - (24 if geo.width() > 48 else 0))
+        avail_h = max(240, geo.height() - (28 if geo.height() > 56 else 0))
+    else:
+        avail_w, avail_h = 1240, 690
+
+    target_w = min(max(1, int(preferred_w)), avail_w)
+    widget.setMinimumWidth(min(config.S(300), target_w))
+    widget.setMaximumWidth(target_w)
+    widget.resize(target_w, max(1, preferred_min_h or 1))
+    if widget.layout():
+        widget.layout().activate()
+    sh = widget.sizeHint()
+
+    from PySide6.QtWidgets import QScrollArea
+    extra_scroll_h = 0
+    for sa in widget.findChildren(QScrollArea):
+        inner = sa.widget()
+        if inner is not None:
+            sa_vp_w = max(120, target_w - config.S(6))
+            inner.setFixedWidth(sa_vp_w)
+            inner.adjustSize()
+            inner.setMinimumWidth(0)
+            inner.setMaximumWidth(16777215)
+            if inner.layout():
+                inner.layout().activate()
+            ih = inner.heightForWidth(sa_vp_w) if inner.hasHeightForWidth() else inner.sizeHint().height()
+            extra_scroll_h += max(0, ih - sa.sizeHint().height()) + config.S(4)
+
+    target_h = max(int(preferred_min_h or 0), sh.height() + extra_scroll_h)
+    target_h = min(max(1, target_h), avail_h)
+    widget.setMaximumHeight(avail_h)
+    widget.resize(target_w, target_h)
+    _center_on_screen(widget, target_w, target_h, reference_window=reference_window)
+
+
 def _txt(lang: str, key: str, default: str = None, **kwargs) -> str:
     """Return translation string for *key* in *lang*, falling back to 'en' or default."""
+    # INVARIANT: Non-empty strings only; missing or empty locale entries fall back to English before caller default.
     lang_dict = config.TRANS.get(lang, config.TRANS.get("en", {}))
     en_dict = config.TRANS.get("en", {})
     fallback = default if default is not None else key
-    text = lang_dict.get(key, en_dict.get(key, fallback))
+    raw = lang_dict.get(key)
+    if isinstance(raw, str) and raw != "":
+        text = raw
+    else:
+        en_raw = en_dict.get(key)
+        text = en_raw if (isinstance(en_raw, str) and en_raw != "") else fallback
     if kwargs:
         try:
             return text.format(**kwargs)

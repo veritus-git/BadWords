@@ -13,7 +13,7 @@ Primary transcript editing view with scrollable TranscriptionCanvas, side-by-sid
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QScrollArea, QFrame, QStackedWidget
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QFrame, QStackedWidget, QSizePolicy
 )
 import config
 from gui.components.transcription_canvas import TranscriptionCanvas
@@ -53,20 +53,32 @@ def build_editor_view(win) -> QWidget:
     win.slider_seek.hide()
 
     win.sbs_loading_page = QWidget()
-    win.sbs_loading_page.setStyleSheet(f"background-color: {config.BG_COLOR};")
+    win.sbs_loading_page.setObjectName("sbs_loading_page")
+    win.sbs_loading_page.setStyleSheet(f"QWidget#sbs_loading_page {{ background-color: {config.BG_COLOR}; }}")
     ol_layout = QVBoxLayout(win.sbs_loading_page)
-    ol_layout.setAlignment(Qt.AlignCenter)
+    ol_layout.setContentsMargins(config.S(24), config.S(16), config.S(24), config.S(16))
+    ol_layout.setSpacing(0)
+    ol_layout.addStretch(1)
     
     lbl = QLabel(win.txt("lbl_just_a_second"))
     lbl.setStyleSheet(f"color: {config.NOTE_COL}; font-size: {config.FS_PX(13)}px; font-family: '{config.UI_FONT_NAME}'; background: transparent;")
     lbl.setAlignment(Qt.AlignCenter)
+    lbl.setWordWrap(True)
+    lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
     ol_layout.addWidget(lbl)
     
     ol_layout.addSpacing(config.S(15))
     
     win.sbs_loading_bar = LiquidProgressBar(win.sbs_loading_page)
-    win.sbs_loading_bar.setFixedWidth(config.S(400))
-    ol_layout.addWidget(win.sbs_loading_bar, 0, Qt.AlignCenter)
+    win.sbs_loading_bar.setMinimumWidth(config.S(180))
+    win.sbs_loading_bar.setMaximumWidth(config.S(420))
+    sbs_bar_row = QHBoxLayout()
+    sbs_bar_row.setContentsMargins(0, 0, 0, 0)
+    sbs_bar_row.addStretch(1)
+    sbs_bar_row.addWidget(win.sbs_loading_bar, 10)
+    sbs_bar_row.addStretch(1)
+    ol_layout.addLayout(sbs_bar_row)
+    ol_layout.addStretch(1)
 
     win.editor_view_stack = QStackedWidget(page)
     win.editor_view_stack.setStyleSheet("background: transparent;")

@@ -88,8 +88,8 @@ def build_main_workspace_panel(win) -> QFrame:
     win.lbl_analysis_duration.setVisible(False)
     l_layer2.addWidget(win.lbl_analysis_duration)
     
-    win.lbl_pinned_favorites = QLabel(win.txt("lbl_pinned_favorites"))
-    win.lbl_pinned_favorites.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(8)}px; font-weight: bold; text-transform: uppercase;")
+    win.lbl_pinned_favorites = QLabel(str(win.txt("lbl_pinned_favorites")).upper())
+    win.lbl_pinned_favorites.setStyleSheet(f"color: #888888; font-size: {config.FS_PX(8)}px; font-weight: bold;")
     win.lbl_pinned_favorites.setVisible(False)
     l_layer2.addWidget(win.lbl_pinned_favorites)
     

@@ -29,15 +29,16 @@ description: Architecture zones, cementing rules, UI quality, verification, and 
 6. Auto crash reporting
 7. Runtime data & isolation
 8. Unified UI scaling
+9. i18n, vector UI & theme
 
 ## 4. Coding & Verification Rules
 1. **No Monoliths**: Keep subpackages focused; do not bloat `main_window.py`.
 2. **License Header**: New `.py`, `.rs`, `.cpp`, `.sh` (and requested docs) start with `#Copyright (c) 2026 Szymon Wolarz` + MIT license line.
 3. **GitHub CLI**: `gh` is authenticated for issues, PRs, releases.
 4. **UI & Animation**: App QSS/themes; **ZERO system emojis** (SVG/Qt icons only); dim disabled controls (`200-250ms`, `1.0 <-> 0.35`, `Qt.WA_TransparentForMouseEvents`).
-5. **State & Releases**: Read `docs/DEV_STATE.md` at start; update it after changes (active focus, roadmap status, completed work, test count, next steps). Update `src/config/release_notes.json` on releases.
+5. **State & Releases**: Read `docs/DEV_STATE.md` at start; update it after changes (focus, roadmap, completed work, tests, next steps). Update `src/config/release_notes.json` on releases.
 6. **Empirical, Resolve & Git**: Test live mechanisms end-to-end (not mocks alone). Check current **DaVinci Resolve 21.1+** docs & Free limits (`davinci-resolve-current` skill). Never commit `.dev_workspace/`, `settings.json`, `user.json`, `*.log`, `saves/`, `temp/`, `models/`, `venv/`, `__pycache__/`, `raport/`.
 7. **Checks**: Run `python3 run_tests.py`, `python3 -m compileall src`, `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`, and in `installer/`: `cargo check && cargo test`.
-8. **Proactive UX & Visuals**: Never ship bare defaults or wait for screenshot requests; render PNGs (`tests/artifacts/` or `raport/screenshots/`), inspect every PNG, and polish UI/modals/errors first.
-9. **VM Verification**: For Win11 or clean-Linux changes, run auto-verifiable checks inside KVM VMs (`badwords-win11`, `badwords-linux-kde`) first, then give the PO a short step-by-step Polish checklist for manual clicks, visual checks, or external-app tests.
+8. **Proactive UX & Visuals**: Never ship bare defaults or wait for screenshot requests; render PNGs (`tests/artifacts/`), inspect every PNG, and polish UI/modals/errors first.
+9. **VM Verification**: For Win11/clean-Linux changes, auto-verify inside KVM VMs (`badwords-win11`, `badwords-linux-kde`) first, then give the PO a short Polish manual checklist.
 10. **Sync & Push**: Sync `src/`, `installer/`, `setupfiles/` to `/mnt/dump/BadWords FILES/`, conventional commit, `git push all <branch>`.

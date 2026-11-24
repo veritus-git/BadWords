@@ -1,87 +1,25 @@
----
-trigger: always_on
-description: Continuous self-learning feedback capture, live mechanism testing, visual proof, Resolve 21.1+ standards, PO scenario communication, and state/roadmap hygiene.
----
-
 # BadWords Continuous Learning & Verification Standards
 
-## 1. Continuous Self-Learning Protocol (Mandatory in Every Conversation)
-Whenever the Product Owner (PO) corrects an output, highlights a missing check, requests evidence you did not provide proactively, or states a preference for how BadWords should behave or be explained:
-1. **Notice & Fix Immediately**: Address the exact issue in the current session first.
-2. **Distill & Persist the Lesson**: Generalize the correction into a concise, actionable rule and add or merge it into **Section 4 (Learned PO Preferences & Corrections)** of this file (or update the relevant skill/doc) **without waiting to be asked**.
-3. **Keep Rules Clean**: Deduplicate and merge overlapping bullets instead of appending clutter; keep this file concise and scannable.
-4. **Confirm in Polish**: Tell the PO briefly in plain Polish what permanent lesson was recorded for future sessions.
+Core always-active PO expectations and workflow gates. Detailed historical notes and UI/OS invariants live in `docs/PO_STANDARDS.md`.
 
----
+## 1. Continuous Self-Learning Protocol (Mandatory)
+Whenever the Product Owner (PO) corrects an output, requests missing proof, or states a product preference:
+1. Fix the issue immediately in the active task.
+2. Distill a concise generalized rule and update `docs/PO_STANDARDS.md` (and a brief bullet here if always-active) without waiting to be asked.
+3. Keep rules deduplicated and concise (keep THIS file **under 4,000 chars**); state briefly in plain Polish what was learned.
 
-## 2. Mandatory Quality Gates Before Reporting Any Change
+## 2. Mandatory Quality Gates Before Reporting
+1. **No Long Dashes (`-` Only)**: Never use `\u2014` or `\u2013` anywhere in replies, UI strings, translations, code, comments, or docs; use ASCII `-` only.
+2. **Real User-Side Polish Explanations**: Explain findings, bugs, workarounds, and numbered decisions `(C)` to the PO in plain Polish via concrete user scenarios (OS/edition, what user clicks, what breaks or changes on screen) - never dry slogans or raw code unless asked.
+3. **Empirical & Live Verification**: Mocks alone are never enough for UI, IPC, Resolve, audio, or updates. Run real Qt widgets (`QT_QPA_PLATFORM=offscreen`), real file/subprocess roundtrips, and verify current Resolve 21.1+ limits (`.agents/skills/davinci-resolve-current/SKILL.md`).
+4. **Proactive Visual PNG Inspection**: For any GUI/dialog/progress/scaling change, render PNGs into `tests/artifacts/` and inspect **every PNG** with `read_file` before replying.
+5. **Local KVM VMs (`badwords-win11`, `badwords-linux-kde`)**: When changes touch Win11, installers, or clean Linux behavior, verify automatable steps inside VMs first and give the PO a short Polish click-through checklist for manual checks.
+6. **State, Roadmap & Release Notes Discipline**:
+   - Read `docs/DEV_STATE.md` at start and update it after changes (focus, milestones, exact test counts, next steps).
+   - When closing a roadmap point: document in `docs/CEMENTED.md`, check `[x]` + mark `ZAKONCZONO YYYY-MM-DD` with summary and collapsed `<details>` prompt in `ROADMAP_CEMENTING.md`, and add a 3-4 word bullet in `.agents/rules/architecture.md` Sec. 3 (`< 4,000` chars).
+   - Update `src/config/release_notes.json` before release tags.
 
-### A. Live Mechanism & End-to-End Verification (Never Rely on Mocks Alone)
-- `python3 run_tests.py` (unit tests with mocks) is the baseline, **not** sufficient proof when a mechanism interacts with external processes, files, OS APIs, network relays, installers, Qt event loops, or DaVinci Resolve.
-- Whenever you touch or audit a real mechanism, run a **live/empirical verification** of the actual path (safely isolated from real user data in DEV mode):
-  - **UI / Dialogs / Animations**: Instantiate real `QApplication` + real widgets (`QT_QPA_PLATFORM=offscreen`), drive clicks/search/toggles/scaling (75%-150%), verify opacity/geometry/text states, and render PNGs.
-  - **IPC / Bridge / Subprocesses / Launchers**: Execute real subprocess invocations, real atomic file roundtrips (`request.lua` -> Lua/Python parser or real `Fusion.prefs` parsing), real `launcher.c` / Rust binary checks.
-  - **Audio / FFmpeg / Export / XML / DRT**: Run real FFmpeg commands on sample media, validate generated XML/FCPXML/OTIO/EDL files structurally, verify frame math across drop-frame rates.
-  - **Network / Relay / Crash Reports**: Test real payload serialization/validation against the actual endpoint or local test server as permitted and safe.
-- Report the exact verification scope honestly (what ran live vs what was mocked).
-
-### B. Proactive Visual Proof & Inspection
-- **Never wait to be asked for screenshots.**
-- Any change affecting GUI appearance, dialogs, error popups, tooltips, layout, icons, progress bars, dimming, or scaling MUST:
-  1. Render PNG screenshots to `tests/artifacts/` (or `raport/screenshots/`) covering all relevant states, tabs, and error states.
-  2. Open and visually inspect **every generated PNG** with `read_file` to catch clipped corners, unreadable contrast, raw/default styling, overlapping labels, or system emojis before reporting.
-
-### C. Current DaVinci Resolve State & Documentation Check
-- **Never trust stale memory of DaVinci Resolve.** Before analyzing, designing, or modifying any Resolve integration (`src/api/`, `src/osdoc.py`, `src/assembler.py`, `setupfiles/`, `installer/`, or Resolve-related UI):
-  1. Load the `davinci-resolve-current` skill (`.agents/skills/davinci-resolve-current/SKILL.md`).
-  2. Check local Resolve SDK documentation if present (`/opt/resolve/Developer/Scripting/README.txt` and `/opt/resolve/docs/`) AND search official Blackmagic Design release notes / docs via `search_web` for recent updates (21.1+, 21.2+, 22+).
-  3. Explicitly verify Free vs Studio differences (especially Free 21.1+ Python/external-scripting/DRT blocks, Lua 5.1 sandbox constraints, and macOS bundle/App Store quirks).
-
-### D. Real-World User Scenarios Instead of Dry Summaries
-- When explaining findings, workarounds, bugs, or numbered decision questions to the PO:
-  - **Ban dry, abstract bullet points** (e.g., *"może wystąpić problem z uprawnieniami"* or *"obejście ścieżek"*).
-  - Write **concrete, step-by-step user-side scenarios** in plain Polish:
-    1. **Who & Where**: Which user, OS, or Resolve edition (e.g., *"Użytkownik na Windowsie z darmowym DaVinci Resolve 21.1+"*).
-    2. **Action & Symptom**: What the user clicks and what actually goes wrong on screen (*"Klika Analizuj → pasek postępu stoi na 0% przez minutę i okno się zamyka bez komunikatu"*).
-    3. **Why Workaround Exists**: What real failure occurs if a workaround is removed.
-    4. **Decision Outcome**: In numbered questions `(C)`, describe the tangible screen behavior difference between Option 1 and Option 2.
-
-### E. Verification Inside Local KVM Virtual Machines (`badwords-win11`, `badwords-linux-kde`)
-- When a change affects Windows 11 behavior, clean Linux/Wayland behavior, installers, launchers, or cross-OS paths:
-  1. **Automated First**: Boot or check everything automatically verifiable inside the local KVM VMs (`badwords-win11`, `badwords-linux-kde`) before finishing.
-  2. **Short Polish Checklist for Manual Checks**: For anything that cannot be automated (interactive GUI clicks, live visual smoothness/DPI checks on Windows 11 or KDE Wayland, external DaVinci Resolve UI tests), always provide a short, concrete step-by-step Polish checklist telling the PO which VM to open and what exact clicks and visual details to verify.
-
----
-
-## 3. State Tracking & Roadmap Hygiene
-- **`docs/DEV_STATE.md` (Live Session Memory)**:
-  - **Start of Task**: Read `docs/DEV_STATE.md` to see current focus, recent fixes, architectural status, and test baseline.
-  - **End of Task**: Update `docs/DEV_STATE.md` whenever code, tests, rules, or roadmap progress change - keep `Last Updated`, `Current Active Focus & Roadmap Position`, `Automated Test Suite` (exact test count), `Completed Milestone Record`, and `Next Steps` accurate.
-- **`ROADMAP_CEMENTING.md` (Progress Ledger)**:
-  - When a roadmap item is **fully completed and closed** (verified, tests added, documented in `docs/CEMENTED.md`, Sec. 3 bullet added to `architecture.md`):
-    1. Check off `[x]` in the top **Postęp cementowania** checklist in `ROADMAP_CEMENTING.md`.
-    2. Mark that item's heading with `✅ [ZAKOŃCZONO YYYY-MM-DD]`, add a brief summary of what was completed and where it is documented, and collapse its prompt into `<details>` so it is never re-executed accidentally.
-
----
-
-## 4. Learned PO Preferences & Corrections (Auto-Updated Ledger)
-- **2026-11-23 - Styled Startup & Error Dialogs**: Never ship bare/unstyled OS or Qt dialogs; match BadWords dark theme, localized 11-language fallback, and verify visually via PNGs.
-- **2026-11-23 - Unify & Test Real Pipelines**: Shared features (e.g., crash report + Support contact upload) must use one contract/helper and be verified end-to-end, not via mocks alone.
-- **2026-11-23 - Current Resolve 21.1+ Reality**: Always verify against up-to-date DaVinci Resolve docs (21.1+ Free removes Python scripting, external socket, and DRT export; relies on sandboxed Lua bridge; keep `BadWords.py` harmlessly).
-- **2026-11-23 - Vivid User Cases Over Dry Prompts**: PO needs concrete real-world user stories ("what happens on screen, step by step"), never dry abstract summaries.
-- **2026-11-23 - Mark Closed Roadmap Items**: Always check off finished points in `ROADMAP_CEMENTING.md` so the PO never repeats already-completed points.
-- **2026-11-23 - Explicit `DEV_STATE.md` Lifecycle**: Always read `docs/DEV_STATE.md` at start and update active focus, milestones, test counts, and next steps at completion.
-- **2026-11-23 - KVM VM Test Verification & Polish Checklists**: For Win11 or clean Linux/Wayland changes, verify everything automatable inside `badwords-win11` / `badwords-linux-kde` first, and provide a short Polish click-through checklist for manual/visual/Resolve steps.
-- **2026-11-23 - Separate Crash Reporting From Telemetry**: Automatic error reporting (`auto_crash_report`) is completely independent from analytics (`telemetry_opt_in`), defaults ON for new users, prompts existing users once regardless of telemetry choice, scrubs paths/usernames/media names, permanently deduplicates each unique error fingerprint (never re-sending the same error), and sends via Discord relay.
-- **2026-11-23 - No Long Dashes (`-` Only)**: NEVER use em-dashes (`\u2014`) or en-dashes (`\u2013`) anywhere in PO replies, UI texts, translations, docs, or comments; ALWAYS use plain ASCII `-`.
-- **2026-11-23 - Live Endpoint Verification & Local SSD VMs**: For external relay/Discord features, always run a real sanitized live delivery test against the real endpoint during verification (while keeping `run_tests.py` offline-safe). Store VM disks and ISOs on the internal SSD (`startupPolicy='optional'`) so VMs work after external USB drives are unplugged.
-- **2026-11-23 - Verify Unprivileged Desktop Session Access**: Always test user-facing desktop tools and system services (such as `virt-manager`/libvirt) directly under the active unprivileged desktop session without `sudo`, grant immediate socket ACLs alongside group changes so tools connect without forcing re-login, and remove stale external-drive storage pools.
-- **2026-11-23 - Verify UI Exposure Before Describing Settings Scenarios**: Before describing a key in `DEFAULT_SETTINGS` as user-editable in the UI, check whether `SettingsDialog` or main panels actually expose a control for it; internal calibration constants (`offset = 0.133`, `pad = 0.0`, `snap_max = 0.25`) are intentionally not exposed in the UI (`ui_spin_pad` / `silence_keep` are used in the Silence panel).
-- **2026-11-23 - Clean-OS Installer Zero-Dependency Invariants**: Windows binaries (`badwords-setup-windows.exe`, `BadWords.exe`) must statically link the CRT (`+crt-static` / `/MT`) so they never fail with `VCRUNTIME140.dll was not found` on fresh Windows 11; the Windows installer must ensure VC++ 2015-2022 Redistributable for PySide6/ctranslate2, and Linux/macOS installers must acquire Python 3.12 via relocatable `python-build-standalone` (zero `sudo`, distro-independent for Fedora 44+/Arch/immutable OSes).
-- **2026-11-23 - Zero Nested `QGraphicsOpacityEffect` Inside Shadowed Frameless Dialogs**: Never animate a child `QGraphicsOpacityEffect` inside a dialog whose root frame already uses `QGraphicsDropShadowEffect` (causes severe Qt6 flicker/glitches on Windows), and never rely on `QPalette` alone to fade `QLabel`s because `MainWindow`'s global QSS (`QLabel { color: ... }`) overrides `QPalette` in live sessions. Always fade child text, checkboxes, and SVG icons via explicit per-widget `setStyleSheet("color: #rrggbb; ...")` (cached per hex change) + `QPainter.setOpacity()` in `paintEvent` (`QVariantAnimation`), and explicitly set `background: transparent; border: none;` on SVG icon `QLabel`s.
-- **2026-11-23 - Mandatory Release Notes & BOM-Free PowerShell Scripts**: Before every tagged release (and when preparing release candidates), update `src/config/release_notes.json` with ALL actual user-facing changes since the previous release so the Update dialog never shows stale notes. Keep `setupfiles/*.ps1` strictly pure ASCII **without** a UTF-8 BOM (`\xef\xbb\xbf`), because Windows PowerShell 5.1 `irm ... | iex` misparses BOM-prefixed `# Copyright (c)` comments on line 1 as executable commands.
-- **2026-11-23 - Neutral Titlebar `X` Hover & Native-First Window Scaling**: Never change the custom titlebar close button (`X`) hover background to red; keep the existing neutral gray hover matching minimize/maximize. Prioritize native OS multi-monitor/DPI window behavior; the Settings UI scaling slider is currently broken and targeted for Point 4/15 so its default matches native OS display scaling.
-- **2026-11-24 - Frameless Root Windows (Win32 + Linux 1:1 Parity & Fitts's Law)**: Never pair a custom `WM_GETMINMAXINFO` (`ptMaxSize = rcWork`) with a `WM_NCCALCSIZE` border inset (causes 8px black borders on Windows), always query live Win32 `IsZoomed(hwnd)` in `WM_NCCALCSIZE` (never stale `self.isMaximized()`, which exposes native Win11 caption chrome and clips right/bottom on un-maximize), handle `WM_NCPAINT=0` + `WM_NCACTIVATE=1` (no 32-bit `c_long(-1)` to `DefWindowProcW`), and use `ScreenToClient` + `GetClientRect` in `WM_NCHITTEST` (never `GetWindowRect`). Give `SettingsDialog` 1:1 `QMainWindow` parity with `BadWordsGUI` (no `QDialog` X11 shadow, no CSS border inset; use a `1px #101010` mouse-transparent overlay border hidden when maximized), disable all resize grips/edges when maximized so corner `(w-1, 0)` hits `X` and `y=0` rips, always un-maximize to 70% x 70% *before* `startSystemMove()` on Linux ripping, and restore exact pre-maximize size+position ONLY on clicking `btn_max`. Keep Windows Rust installer opaque (no transparent shadow margin under `wgpu` DX12/WARP) with zero blocking PowerShell startup calls.
-- **2026-11-24 - Apply-Triggered UI Scale, Cross-OS List Row Height & Icon Restart**: Never hot-swap `setWindowIcon()` on visible Win32 frameless windows (`WM_SETICON` repaints classic Windows 7 Basic caption chrome); keep `app_icon` in `RESTART_REQUIRED_KEYS`. Apply UI scaling changes cleanly when clicking `Apply` (`Zastosuj`) rather than on slider release (and state this in `tt_ui_scaling`), verify startup initialization loads persisted preferences identically for both `BootSplash` and `BadWordsGUI`, and always lock explicit `height` + delegate `row_height` on `QListWidget` menus so native Windows QStyle metrics never inflate row spacing relative to Linux.
-- **2026-11-24 - Scoped Qt Container QSS & Wrapped Label Sizing**: Always scope container `setStyleSheet(...)` rules by `#ObjectName` (e.g., `scope_transparent(...)`) instead of bare `"background: transparent; border: none;"`, because Qt cascades un-scoped properties onto every child `QPushButton`, `QLineEdit`, and `QTextEdit`. Never put `QVBoxLayout.setAlignment(Qt.AlignCenter)` on containers holding word-wrapped `QLabel`s (`wordWrap=True`), or Qt collapses wrapped labels to 1-line height and clips top/bottom text.
-- **2026-11-24 - Settings Design & Search Preferences**: Keep Settings outer viewport in native BadWords graphite (`#1c1c1c` `BG_COLOR`, never overly black `#161616`/`#191919`) paired with softly elevated `#242424` cards (`1px #323232`, `8px` radius, `#262626` sidebar, `#202020` footer), keep `Custom Markers` as its own clean minimalist tab separate from `DaVinci Resolve` (used in File Mode too, concise header, flush rows inside one `SettingsCard` with auto-sized scroll height, smooth vector circular color swatch + soft hue-tinted color text instead of chunky gray box badges, borderless hover Edit/Trash actions, compact 1-line File vs DaVinci footer strip + `"Marker shortcuts"` link, and optional shortcut inside `MarkerDialog` Add/Edit), equal standard input widths (`220px`), fixed-width `{pct}%` beside `JumpSlider` with deep emerald (`#169c56`) `System` indicator placed inline on the left next to the UI Scaling label (so slider width never shifts between Auto and Manual), debounced search (`180ms`) with green (`#1f7a44`) highlights + active-language + English-only fallback + custom vector clear button + centered vertical scroll on result jump, App Folder + direct Log File opener inside General Advanced, clean About hero + separate standalone Donation card (no redundant MIT badge), and Support forms with mandatory sanitized logs, categories (`[Bug]`/`[Feature]`/`[Question]`), and clickable image thumbnails/lightbox.
+## 3. Active Core Engineering Rules
+- **11-Lang i18n & Zero Emojis**: Keep all 11 `src/i18n/*.json` key-identical, fallback to English on missing/empty strings, use vector SVG icons (never emojis like `🛈`, `🔍`, `⏳`, `✔`, `✕`).
+- **OS Theme Immunity**: Enforce `Fusion` style + full dark `QPalette` globally so OS Light themes (Windows/KDE/GTK/macOS) never paint black text on dark UI.
+- **Windows / Clean-OS Safety**: Static CRT (`+crt-static`) on Rust/C launchers, BOM-free ASCII `setupfiles/*.ps1`, zero `QGraphicsOpacityEffect` inside frameless dialogs, `user.json` privacy keys isolated from `settings.json`, manualSettings `Apply`-deferred scaling.

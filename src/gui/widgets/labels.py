@@ -41,16 +41,21 @@ class QLabel(_QLabel):
 
     def _get_text_color(self):
         if hasattr(self, '_custom_color') and self._custom_color:
-            return QColor(self._custom_color)
-        ss = self.styleSheet()
+            c = QColor(self._custom_color)
+            if c.isValid() and c.lightness() >= 45:
+                return c
+        ss = self.styleSheet() or ""
         if 'color:' in ss:
             import re
-            m = re.search(r'color:\s*([^;]+);', ss)
+            m = re.search(r'(?:^|[;{])\s*color:\s*([^;!}]+)', ss)
             if m:
                 c = QColor(m.group(1).strip())
-                if c.isValid() and c != QColor("#000000"):
+                if c.isValid() and c.lightness() >= 45:
                     return c
-        return QColor("#ffffff")
+        pal_c = self.palette().windowText().color()
+        if pal_c.isValid() and pal_c.lightness() >= 60:
+            return pal_c
+        return QColor(getattr(config, "FG_COLOR", "#d9d9d9"))
 
     def _mq_get_text(self):
         t = super().text()
@@ -149,20 +154,19 @@ class QLabel(_QLabel):
             painter.setOpacity(max(0.0, min(1.0, self._mq_alpha)))
 
         raw_text = super().text()
+        text_color = self._get_text_color()
         if "<" in raw_text and ">" in raw_text:
             from PySide6.QtGui import QTextDocument
             doc = QTextDocument()
             doc.setDefaultFont(self.font())
-            color_name = self.palette().windowText().color().name()
-            doc.setHtml(f"<div style='color: {color_name};'>{raw_text}</div>")
+            doc.setHtml(f"<div style='color: {text_color.name()};'>{raw_text}</div>")
             doc.setDocumentMargin(0)
             
             y_pos = cr.top() + (cr.height() - doc.size().height()) / 2
             painter.translate(cr.left() - int(self._mq_pos), y_pos)
             doc.drawContents(painter)
         else:
-            color = self.palette().windowText().color()
-            painter.setPen(color)
+            painter.setPen(text_color)
             painter.setFont(self.font())
             text = self._mq_get_text()
             draw_rect = QRect(cr.left() - int(self._mq_pos), cr.top(), 9999, cr.height())

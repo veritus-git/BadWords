@@ -28,7 +28,9 @@ class LiquidProgressBar(QWidget):
         self._value = 0.0
         self._indet_offset = 0.0
         self._indeterminate = False
-        self.setFixedHeight(config.S(8))
+        h = config.S(getattr(config, "PROGRESS_HEIGHT", 8))
+        self.setFixedHeight(h)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
         self._anim = QPropertyAnimation(self, b"value")
         self._anim.setDuration(300)
@@ -40,12 +42,18 @@ class LiquidProgressBar(QWidget):
         self._loop_anim.setEndValue(1.0)
         self._loop_anim.setLoopCount(-1)
 
+    def sizeHint(self):
+        return QSize(config.S(400), max(self.height(), config.S(getattr(config, "PROGRESS_HEIGHT", 8))))
+
+    def minimumSizeHint(self):
+        return QSize(config.S(160), max(self.height(), config.S(getattr(config, "PROGRESS_HEIGHT", 8))))
+
     @Property(float)
     def value(self): return self._value
 
     @value.setter
     def value(self, val):
-        self._value = val
+        self._value = max(0.0, min(100.0, float(val)))
         self.update()
         
     @Property(float)
@@ -66,9 +74,9 @@ class LiquidProgressBar(QWidget):
             if self._indeterminate:
                 self._indeterminate = False
                 self._loop_anim.stop()
-            target_val = float(val)
+            target_val = max(0.0, min(100.0, float(val)))
             diff = abs(target_val - self._value)
-            if diff < 0.1:
+            if diff < 0.05:
                 return
             # Dynamic duration: rapid small updates finish quickly without stalling the easing curve
             duration = int(max(60, min(250, diff * 12)))
@@ -81,40 +89,49 @@ class LiquidProgressBar(QWidget):
     def paintEvent(self, event):
         from PySide6.QtGui import QPainter, QColor, QLinearGradient, QPainterPath
         from PySide6.QtCore import QRectF
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-
         rect = self.rect()
         w = float(rect.width())
         h = float(rect.height())
-        r = h / 2.0
+        if w <= 2.0 or h <= 2.0:
+            return
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        # INVARIANT: Inset track & clip path by 0.5px so rounded caps never clip or pinch at 1%-3% across DPI scales
+        inset = 0.5
+        tw = max(1.0, w - inset * 2.0)
+        th = max(1.0, h - inset * 2.0)
+        r = th / 2.0
 
         track_path = QPainterPath()
-        track_path.addRoundedRect(QRectF(0, 0, w, h), r, r)
+        track_path.addRoundedRect(QRectF(inset, inset, tw, th), r, r)
 
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor("#2b2b2b"))
+        p.setBrush(QColor(getattr(config, "PROGRESS_TRACK_COLOR", "#2b2b2b")))
         p.drawPath(track_path)
 
-        # Clip all inner fills to the rounded track path so ends are always smoothly rounded
+        # Clip all inner fills to the inset rounded track path so ends are always smoothly rounded
         p.setClipPath(track_path)
 
         if self._indeterminate:
-            pill_width = w * 0.25
-            x_pos = self._indet_offset * (w + pill_width) - pill_width
+            pill_width = max(th, tw * 0.25)
+            x_pos = inset + self._indet_offset * (tw + pill_width) - pill_width
 
-            grad = QLinearGradient(x_pos, 0, x_pos + pill_width, 0)
+            grad = QLinearGradient(x_pos, 0.0, x_pos + pill_width, 0.0)
             grad.setColorAt(0.0, QColor("#1a7a3e"))
             grad.setColorAt(1.0, QColor("#b8d035"))
 
             p.setBrush(grad)
-            p.drawRoundedRect(QRectF(x_pos, 0, pill_width, h), r, r)
+            p.drawRoundedRect(QRectF(x_pos, inset, pill_width, th), r, r)
         elif self._value > 0:
-            fill_width = (self._value / 100.0) * w
-            if fill_width > 0:
-                fill_rect = QRectF(0, 0, fill_width, h)
+            fill_width = (self._value / 100.0) * tw
+            if fill_width > 0.0:
+                draw_x = inset + min(0.0, fill_width - th)
+                draw_w = max(fill_width, th)
+                fill_rect = QRectF(draw_x, inset, draw_w, th)
 
-                grad = QLinearGradient(0, 0, fill_width, 0)
+                grad = QLinearGradient(inset, 0.0, inset + max(fill_width, 1.0), 0.0)
                 grad.setColorAt(0.0, QColor("#1a7a3e"))
                 grad.setColorAt(1.0, QColor("#b8d035"))
 

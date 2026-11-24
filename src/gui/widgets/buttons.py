@@ -1432,7 +1432,7 @@ class CustomDropdown(QPushButton):
         list_widget = QListWidget()
         list_widget.setFrameShape(QFrame.Shape.NoFrame)
         from gui.widgets.delegates import MarqueeItemDelegate
-        list_widget.setItemDelegate(MarqueeItemDelegate(list_widget, padding=config.S(8)))
+        list_widget.setItemDelegate(MarqueeItemDelegate(list_widget, padding=config.S(8), row_height=config.S(26)))
         items = self.options_getter() if (hasattr(self, 'options_getter') and callable(self.options_getter)) else self.options_list
         list_widget.addItems(items)
         rtl_names = [config.SUPPORTED_LANGUAGES.get(code, code) for code in getattr(config, 'RTL_LANGUAGES', set())]
@@ -1497,27 +1497,40 @@ class TitleDropdown(CustomDropdown):
             QPushButton {{
                 background: transparent;
                 color: #aaaaaa;
-                text-align: center;
+                text-align: left;
                 border: none;
                 font-family: "{config.UI_FONT_NAME}";
                 font-size: {config.FS_PX(9)}px;
-                padding: {config.S(2)}px {config.S(6)}px;
+                padding: {config.S(2)}px {config.S(20)}px {config.S(2)}px {config.S(8)}px;
             }}
             QPushButton:hover {{ color: #ffffff; }}
             QPushButton:pressed {{ background: transparent; color: #ffffff; }}
         """)
 
     def setText(self, text):
-        # Always append the down arrow for the title drop down
         if text is None:
             text = ""
-        clean_text = str(text).replace("  ▾", "")
-        super().setText(f"{clean_text}  ▾")
+        clean_text = str(text).replace("  ▾", "").strip()
+        super().setText(clean_text)
         if getattr(self.window(), '_update_mac_chapter_menu', None):
             self.window()._update_mac_chapter_menu()
 
     def currentText(self):
-        return super().currentText().replace("  ▾", "")
+        return super().currentText().replace("  ▾", "").strip()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        from ..utils import get_vector_pixmap
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        sz = config.S(10)
+        col = "#ffffff" if self.underMouse() else "#aaaaaa"
+        dpr = self.devicePixelRatioF() if hasattr(self, "devicePixelRatioF") else 2.0
+        pix = get_vector_pixmap("chevron_down", size=sz, color=col, dpr=dpr)
+        if not pix.isNull():
+            x = self.width() - sz - config.S(6)
+            y = (self.height() - sz) // 2 + config.S(1)
+            p.drawPixmap(x, y, pix)
 
     def mousePressEvent(self, event):
         popup = QFrame(self, Qt.Popup | Qt.FramelessWindowHint)
@@ -1541,7 +1554,7 @@ class TitleDropdown(CustomDropdown):
         list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         from gui.widgets.delegates import MarqueeItemDelegate
-        list_widget.setItemDelegate(MarqueeItemDelegate(list_widget, padding=config.S(8)))
+        list_widget.setItemDelegate(MarqueeItemDelegate(list_widget, padding=config.S(8), row_height=config.S(26)))
         list_widget.addItems(self.options_list)
         list_widget.setStyleSheet(f"""
             QListWidget {{
@@ -1762,10 +1775,15 @@ class CustomCheckBox(QWidget):
         self.update_ui()
 
     def update_ui(self):
+        from ..utils import get_vector_pixmap
         if self.is_checked:
-            self.tick_box.setText("✔")
-            self.tick_box.setStyleSheet(f"background: #111; border: 1px solid #1a7a3e; color: #1a7a3e; font-weight: bold; font-size: {config.S(10)}px; border-radius: {config.S(2)}px;")
+            self.tick_box.setText("")
+            sz = max(8, config.S(10))
+            dpr = self.devicePixelRatioF() if hasattr(self, "devicePixelRatioF") else 2.0
+            self.tick_box.setPixmap(get_vector_pixmap("check", size=sz, color="#1a7a3e", dpr=dpr))
+            self.tick_box.setStyleSheet(f"background: #111; border: 1px solid #1a7a3e; border-radius: {config.S(2)}px;")
         else:
+            self.tick_box.clear()
             self.tick_box.setText("")
             self.tick_box.setStyleSheet(f"background: #111; border: 1px solid #333; border-radius: {config.S(2)}px;")
 
@@ -2034,7 +2052,7 @@ class SearchableDropdown(QPushButton):
         self.list_widget = QListWidget()
         self.list_widget.setFrameShape(QFrame.Shape.NoFrame)
         from gui.widgets.delegates import MarqueeItemDelegate
-        self.list_widget.setItemDelegate(MarqueeItemDelegate(self.list_widget, padding=config.S(8)))
+        self.list_widget.setItemDelegate(MarqueeItemDelegate(self.list_widget, padding=config.S(8), row_height=config.S(26)))
         self.list_widget.addItems(self.options_list)
         
         rtl_names = [config.SUPPORTED_LANGUAGES.get(code, code) for code in getattr(config, 'RTL_LANGUAGES', set())]
@@ -2056,6 +2074,7 @@ class SearchableDropdown(QPushButton):
             QListWidget::item {{
                 padding: 0px {config.S(8)}px;
                 min-height: {config.S(26)}px;
+                height: {config.S(26)}px;
                 border: none;
             }}
             QListWidget::item:selected {{ background-color: #333333; color: #ffffff; }}
@@ -2611,19 +2630,21 @@ class TrackSquareCheckbox(QWidget):
             f"font-family: '{config.UI_FONT_NAME}', sans-serif; background: transparent; border: none;"
         )
         box_bg = self._blend_hex("#111111", bg, t)
+        from ..utils import get_vector_pixmap
         if self.is_checked:
             accent = self._blend_hex("#1a7a3e", bg, t)
-            self.box.setText("✔")
+            self.box.setText("")
+            sz = max(8, config.S(10))
+            dpr = self.devicePixelRatioF() if hasattr(self, "devicePixelRatioF") else 2.0
+            self.box.setPixmap(get_vector_pixmap("check", size=sz, color=accent, dpr=dpr))
             self.box.setStyleSheet(f"""
                 background-color: {box_bg};
                 border: 1px solid {accent};
-                color: {accent};
-                font-weight: bold;
-                font-size: {config.S(10)}px;
                 border-radius: {config.S(2)}px;
             """)
         else:
             border = self._blend_hex("#3a3a3a", bg, t)
+            self.box.clear()
             self.box.setText("")
             self.box.setStyleSheet(f"""
                 background-color: {box_bg};

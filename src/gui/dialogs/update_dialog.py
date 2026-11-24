@@ -18,13 +18,13 @@ import subprocess
 import tempfile
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QWidget, QScrollArea
 )
 
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
 from gui.components.titlebar import CustomTitleBar
-from gui.utils import _txt, _center_on_screen
+from gui.utils import _txt, _center_on_screen, fit_dialog_to_screen, get_vector_pixmap
 
 
 def load_curated_release_notes(raw_fallback: str = "") -> str:
@@ -267,10 +267,24 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         self._tb.btn_max.hide()
         root.addWidget(self._tb)
 
-        body = QVBoxLayout()
+        body_wrap = QWidget(self.inner_frame)
+        body_wrap.setObjectName("UpdateBodyWrap")
+        body = QVBoxLayout(body_wrap)
         body.setContentsMargins(config.S(28), config.S(20), config.S(28), config.S(24))
         body.setSpacing(config.S(12))
-        root.addLayout(body)
+
+        scroll = QScrollArea(self.inner_frame)
+        scroll.setObjectName("UpdateScroll")
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # INVARIANT: Scope scroll/wrapper rules by #ObjectName so child button QSS is never wiped transparent.
+        scroll.setStyleSheet(
+            "QScrollArea#UpdateScroll, QWidget#UpdateBodyWrap {"
+            " background: transparent; border: none; }"
+        )
+        scroll.setWidget(body_wrap)
+        root.addWidget(scroll, 1)
 
         lbl_title = QLabel(_txt(lang, 'update_notify_title'))
         lbl_title.setObjectName("lbl_title")
@@ -308,8 +322,10 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
             _txt(lang, 'update_notify_lbl_current'), current_ver, "#777"
         ))
 
-        lbl_arrow = QLabel("→")
-        lbl_arrow.setStyleSheet(f"color: #444; font-size: {config.FS_PX(26)}px; padding: 0 {config.S(36)}px 0 {config.S(36)}px;")
+        lbl_arrow = QLabel()
+        lbl_arrow.setPixmap(get_vector_pixmap("arrow_right", size=config.S(22), color="#666666"))
+        lbl_arrow.setFixedWidth(config.S(84))
+        lbl_arrow.setStyleSheet("background: transparent; border: none;")
         lbl_arrow.setAlignment(Qt.AlignCenter)
         ver_layout.addWidget(lbl_arrow)
 
@@ -339,8 +355,8 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
             te_notes = QTextEdit()
             te_notes.setReadOnly(True)
             te_notes.setPlainText(release_notes)
-            te_notes.setMinimumHeight(config.S(160))
-            te_notes.setMaximumHeight(config.S(230))
+            te_notes.setMinimumHeight(config.S(56))
+            te_notes.setMaximumHeight(config.S(220))
             te_notes.setStyleSheet(f"""
                 QTextEdit {{
                     background-color: transparent;
@@ -386,8 +402,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         btn_row.addWidget(self._btn_primary)
         body.addLayout(btn_row)
 
-        self.setFixedSize(config.S(640), config.S(530))
-        _center_on_screen(self, config.S(640), config.S(530), reference_window=self.parentWidget())
+        fit_dialog_to_screen(self, config.S(640), config.S(460), reference_window=self.parentWidget())
 
     def _on_update_now(self):
         self._btn_primary.setEnabled(False)
@@ -396,7 +411,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         self._lbl_status.setText(_txt(self._lang, 'update_notify_wait'))
         self._lbl_status.setStyleSheet(f"color: #888; font-style: italic; font-size: {config.FS_PX(10)}px;")
         self._lbl_status.show()
-        self.adjustSize()
+        fit_dialog_to_screen(self, config.S(640), config.S(460), reference_window=self.parentWidget())
 
         url_primary  = self._UPDATE_SCRIPT
         url_fallback = self._UPDATE_SCRIPT_GL
@@ -494,7 +509,7 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
             self._btn_primary.clicked.connect(lambda: self._open_url(self._gh_url))
             self._btn_primary.setEnabled(True)
             self._btn_dismiss.setEnabled(True)
-        self.adjustSize()
+        fit_dialog_to_screen(self, config.S(640), config.S(460), reference_window=self.parentWidget())
 
     def _on_dismiss(self):
         self.reject()

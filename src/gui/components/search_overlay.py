@@ -88,7 +88,7 @@ class SearchOverlayWidget(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        from gui.utils import get_layout_icon_path
+        from gui.utils import get_layout_icon_path, get_vector_icon
         _icon_path = get_layout_icon_path("search.png")
         self.btn_open_search = QPushButton()
         self.btn_open_search.setObjectName("BtnOpenSearch")
@@ -97,9 +97,9 @@ class SearchOverlayWidget(QFrame):
         pix = QPixmap(_icon_path)
         if not pix.isNull():
             self.btn_open_search.setIcon(QIcon(pix))
-            self.btn_open_search.setIconSize(QSize(config.S(18), config.S(18)))
         else:
-            self.btn_open_search.setText("🔍")
+            self.btn_open_search.setIcon(get_vector_icon("search", size=18, color="#cccccc"))
+        self.btn_open_search.setIconSize(QSize(config.S(18), config.S(18)))
             
         self.btn_open_search.setToolTip(self.main_window.txt("search_placeholder"))
         self.btn_open_search.clicked.connect(self.toggle_search)
@@ -116,11 +116,15 @@ class SearchOverlayWidget(QFrame):
         
         self.counter_label = QLabel(self.main_window.txt("search_results_counter_empty"))
         
-        self.btn_prev = QPushButton("▲")
+        self.btn_prev = QPushButton()
+        self.btn_prev.setIcon(get_vector_icon("chevron_up", size=12, color="#dddddd"))
+        self.btn_prev.setIconSize(QSize(config.S(12), config.S(12)))
         self.btn_prev.setToolTip(self.main_window.txt("search_tooltip_prev"))
         self.btn_prev.setFixedSize(config.S(24), config.S(24))
         
-        self.btn_next = QPushButton("▼")
+        self.btn_next = QPushButton()
+        self.btn_next.setIcon(get_vector_icon("chevron_down", size=12, color="#dddddd"))
+        self.btn_next.setIconSize(QSize(config.S(12), config.S(12)))
         self.btn_next.setToolTip(self.main_window.txt("search_tooltip_next"))
         self.btn_next.setFixedSize(config.S(24), config.S(24))
         

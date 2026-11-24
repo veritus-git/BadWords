@@ -72,8 +72,8 @@ DARK_PALETTE = {
     "CANCEL_BG": "#b33a3a",
     "CANCEL_ACTIVE": "#8f2e2e",
     "CHECKBOX_BG": "white",
-    "PROGRESS_HEIGHT": 24,
-    "PROGRESS_TRACK_COLOR": "#333333",
+    "PROGRESS_HEIGHT": 8,
+    "PROGRESS_TRACK_COLOR": "#2b2b2b",
     "PROGRESS_FILL_COLOR": "#23a559",
     "STATUS_TEXT_COLOR": "#eeeeee"
 }
@@ -81,6 +81,94 @@ DARK_PALETTE = {
 # Module-level defaults populated right away
 for _k, _v in DARK_PALETTE.items():
     globals()[_k] = _v
+
+
+def build_dark_palette():
+    """
+    Constructs a complete dark QPalette immune to host OS Light Mode themes
+    (Windows 11, Linux KDE/Breeze/GTK, macOS) across Active, Inactive, and Disabled states.
+    """
+    from PySide6.QtGui import QPalette, QColor
+
+    pal = QPalette()
+
+    c_win = QColor(BG_COLOR)          # #1c1c1c
+    c_base = QColor("#181818")
+    c_alt_base = QColor("#222222")
+    c_btn = QColor(SIDEBAR_BG)        # #262626
+    c_text = QColor(FG_COLOR)         # #d9d9d9
+    c_bright = QColor("#ffffff")
+    c_muted = QColor(NOTE_COL)        # #808080
+    c_disabled_fg = QColor("#5c5c5c")
+    c_disabled_bg = QColor("#161616")
+    c_tooltip_bg = QColor("#1e1e1e")
+    c_tooltip_fg = QColor("#d4d4d4")
+    c_highlight = QColor(BTN_BG)      # #23a559
+    c_link = QColor("#39d377")
+    c_placeholder = QColor("#707070")
+
+    for grp in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive):
+        pal.setColor(grp, QPalette.ColorRole.Window, c_win)
+        pal.setColor(grp, QPalette.ColorRole.WindowText, c_text)
+        pal.setColor(grp, QPalette.ColorRole.Base, c_base)
+        pal.setColor(grp, QPalette.ColorRole.AlternateBase, c_alt_base)
+        pal.setColor(grp, QPalette.ColorRole.ToolTipBase, c_tooltip_bg)
+        pal.setColor(grp, QPalette.ColorRole.ToolTipText, c_tooltip_fg)
+        pal.setColor(grp, QPalette.ColorRole.Text, c_text)
+        pal.setColor(grp, QPalette.ColorRole.Button, c_btn)
+        pal.setColor(grp, QPalette.ColorRole.ButtonText, c_text)
+        pal.setColor(grp, QPalette.ColorRole.BrightText, c_bright)
+        pal.setColor(grp, QPalette.ColorRole.Link, c_link)
+        pal.setColor(grp, QPalette.ColorRole.LinkVisited, c_link)
+        pal.setColor(grp, QPalette.ColorRole.Highlight, c_highlight)
+        pal.setColor(grp, QPalette.ColorRole.HighlightedText, c_bright)
+        if hasattr(QPalette.ColorRole, "PlaceholderText"):
+            pal.setColor(grp, QPalette.ColorRole.PlaceholderText, c_placeholder)
+
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Window, c_win)
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, c_disabled_fg)
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Base, c_disabled_bg)
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.AlternateBase, c_disabled_bg)
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, c_disabled_fg)
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Button, c_disabled_bg)
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, c_disabled_fg)
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Highlight, QColor("#2a2a2a"))
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.HighlightedText, c_muted)
+
+    # Borders/bevels for Fusion widgets (menus, separators, inputs)
+    pal.setColor(QPalette.ColorRole.Light, QColor("#3a3a3a"))
+    pal.setColor(QPalette.ColorRole.Midlight, QColor("#2c2c2c"))
+    pal.setColor(QPalette.ColorRole.Dark, QColor("#121212"))
+    pal.setColor(QPalette.ColorRole.Mid, QColor("#242424"))
+    pal.setColor(QPalette.ColorRole.Shadow, QColor("#0c0c0c"))
+    return pal
+
+
+def apply_dark_app_theme(app) -> None:
+    """
+    Enforces cross-platform Fusion widget style, complete dark QPalette, and Qt Dark colorScheme
+    on Windows, Linux (KDE/GTK), and macOS so host Light Mode themes never bleed into BadWords.
+    # INVARIANT: Fusion + build_dark_palette() protects standard menus, popups, and custom painters
+    # from OS Light Mode black-on-dark or white-menu leaks across Windows, Linux, and macOS.
+    """
+    if app is None:
+        return
+    try:
+        app.setStyle("Fusion")
+    except Exception:
+        pass
+    try:
+        app.setPalette(build_dark_palette())
+    except Exception:
+        pass
+    try:
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        hints = QGuiApplication.styleHints()
+        if hasattr(hints, "setColorScheme") and hasattr(Qt, "ColorScheme"):
+            hints.setColorScheme(Qt.ColorScheme.Dark)
+    except Exception:
+        pass
 
 # ── Title Bar (CSD) ────────────────────────────────────────────────────────
 COLOR_TITLEBAR_BG    = "#191919"   # default title-bar background

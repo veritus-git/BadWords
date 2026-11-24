@@ -29,6 +29,7 @@ from PySide6.QtGui import (
     QPainterPath,
     QPixmap,
     QFont,
+    QFontMetrics,
     QLinearGradient,
     QPolygonF,
 )
@@ -133,7 +134,11 @@ class WaveformTimelineWidget(QWidget):
         # State
         self._peaks: Optional[WaveformPeaks] = None
         self._audio_path: Optional[str] = None
-        self._clip_name: str = "A1: Timeline Audio"
+        self._clip_name: str = (
+            main_window.txt("lbl_a1_timeline_audio", "A1: Timeline Audio")
+            if (main_window and hasattr(main_window, "txt"))
+            else "A1: Timeline Audio"
+        )
         self._duration: float = 0.0
         self._playhead_time: float = 0.0
         self._is_scrubbing: bool = False
@@ -223,19 +228,28 @@ class WaveformTimelineWidget(QWidget):
                 background-color: rgba(46, 204, 113, 0.25);
             }}
         """
-        self.btn_zoom_out = QPushButton("−", self.zoom_ctrl_widget)
+        from gui.utils import get_vector_icon
+        from PySide6.QtCore import QSize
+        self.btn_zoom_out = QPushButton("", self.zoom_ctrl_widget)
+        self.btn_zoom_out.setIcon(get_vector_icon("minus", size=10, color="#b0b0b0"))
+        self.btn_zoom_out.setIconSize(QSize(config.S(10), config.S(10)))
         self.btn_zoom_out.setToolTip(self.main_window.txt("tt_zoom_out", "Zoom Out") if self.main_window else "Zoom Out")
         self.btn_zoom_out.setStyleSheet(btn_style)
         self.btn_zoom_out.clicked.connect(self.zoom_out)
         self.btn_zoom_out.setFixedSize(config.S(22), config.S(18))
 
-        self.btn_zoom_fit = QPushButton("Fit", self.zoom_ctrl_widget)
+        fit_txt = self.main_window.txt("btn_zoom_fit", "Fit") if (self.main_window and hasattr(self.main_window, "txt")) else "Fit"
+        self.btn_zoom_fit = QPushButton(fit_txt, self.zoom_ctrl_widget)
         self.btn_zoom_fit.setToolTip(self.main_window.txt("tt_zoom_fit", "Fit Timeline") if self.main_window else "Fit Timeline")
         self.btn_zoom_fit.setStyleSheet(btn_style)
         self.btn_zoom_fit.clicked.connect(self.zoom_fit)
-        self.btn_zoom_fit.setFixedSize(config.S(28), config.S(18))
+        fit_font = config.make_font(config.UI_FONT_NAME, 8, bold=True)
+        fit_w = max(config.S(28), QFontMetrics(fit_font).horizontalAdvance(fit_txt) + config.S(12))
+        self.btn_zoom_fit.setFixedSize(fit_w, config.S(18))
 
-        self.btn_zoom_in = QPushButton("+", self.zoom_ctrl_widget)
+        self.btn_zoom_in = QPushButton("", self.zoom_ctrl_widget)
+        self.btn_zoom_in.setIcon(get_vector_icon("plus", size=10, color="#b0b0b0"))
+        self.btn_zoom_in.setIconSize(QSize(config.S(10), config.S(10)))
         self.btn_zoom_in.setToolTip(self.main_window.txt("tt_zoom_in", "Zoom In (or Ctrl + Wheel)") if self.main_window else "Zoom In")
         self.btn_zoom_in.setStyleSheet(btn_style)
         self.btn_zoom_in.clicked.connect(self.zoom_in)
