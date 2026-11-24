@@ -201,7 +201,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 - **Invariants (DO NOT BREAK):**
   - `# INVARIANT:` Never multiply OS DPR twice (`SCALE_FACTOR * QT_BASE_SCALE_PERCENT` in Auto mode must match `OS_SCALE_PERCENT`).
   - `# INVARIANT:` All QSS font rules must use `FS_PX()` (never raw OS-multiplied `pt`) so X11 `Xft.dpi`, Wayland DPR, Windows DPI, and macOS Retina render identically.
-  - `# INVARIANT:` `rebuild_ui_for_scale()` must never disconnect or reinitialize `resolve_handler` or discard loaded `words_data` / waveform peaks.
+  - `# INVARIANT:` `rebuild_ui_for_scale()` must never disconnect or reinitialize `resolve_handler` or discard loaded `words_data` / waveform peaks, and `_init_workspace_ui()` / `rebuild_ui_for_scale()` must reset `_panel_headers` and tear down unattached `activities` widgets so consecutive Apply clicks never hit deleted Qt C++ panel references.
   - `# INVARIANT:` Never call `apply_app_icon_everywhere()` / runtime `setWindowIcon()` on visible Win32 frameless root windows (`app_icon` stays in `RESTART_REQUIRED_KEYS`).
 - **Regression Tests:** `tests/test_ui_scaling.py` (10 tests), `tests/test_settings_and_version.py`, `tests/test_window_titlebar_vsync.py`, plus offscreen PNG renders verified across `75%`, `100%`, `125%`, `150%`, `200%`, and `16:10` aspect ratio in `tests/artifacts/`.
 - **Do Not Change Without Product Owner Approval:** Auto OS default mode, `75%-200%` slider range, right-aligned `(i)` placement, Apply-triggered rebuild (`tt_ui_scaling` notice), `app_icon` restart requirement, `S(35)` uniform Settings category row height, Resolve-preserving live rebuild, and aspect-ratio sidebar adaptation.

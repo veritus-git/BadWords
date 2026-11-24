@@ -1139,24 +1139,27 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
         def _on_update_known_for_card(latest_ver, gh_url, gl_url, release_notes=""):
             # If auto-update already ran silently this session, just show restart notice
-            main_win = self._get_main_window()
-            pending = getattr(main_win, '_pending_update_ver', None)
-            if pending and pending == latest_ver:
-                self._lbl_ver_status.setText(self.txt('lbl_ver_pending_restart'))
-                self._lbl_ver_status.setStyleSheet(
-                    f"color: #f4a641; font-size: {config.FS_PX(9)}px; font-weight: bold; background: transparent; border: none;"
-                )
-                self._btn_ver_update.hide()
-                return
+            try:
+                main_win = self._get_main_window()
+                pending = getattr(main_win, '_pending_update_ver', None)
+                if pending and pending == latest_ver:
+                    self._lbl_ver_status.setText(self.txt('lbl_ver_pending_restart'))
+                    self._lbl_ver_status.setStyleSheet(
+                        f"color: #f4a641; font-size: {config.FS_PX(9)}px; font-weight: bold; background: transparent; border: none;"
+                    )
+                    self._btn_ver_update.hide()
+                    return
 
-            # Normal: update available, show Update Now button
-            self._lbl_ver_status.setText(
-                f"{self.txt('lbl_ver_update_avail')} {latest_ver}"
-            )
-            self._lbl_ver_status.setStyleSheet(
-                f"color: #f4a641; font-size: {config.FS_PX(9)}px; background: transparent; border: none;"
-            )
-            self._btn_ver_update.show()
+                # Normal: update available, show Update Now button
+                self._lbl_ver_status.setText(
+                    f"{self.txt('lbl_ver_update_avail')} {latest_ver}"
+                )
+                self._lbl_ver_status.setStyleSheet(
+                    f"color: #f4a641; font-size: {config.FS_PX(9)}px; background: transparent; border: none;"
+                )
+                self._btn_ver_update.show()
+            except RuntimeError:
+                return
 
             def _do_inline_update():
                 import threading, subprocess, tempfile, urllib.request, ssl
@@ -1292,11 +1295,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             self._btn_ver_update.clicked.connect(_do_inline_update)
 
         def _on_check_done_for_card():
-            if self._lbl_ver_status.text() == "…":
-                self._lbl_ver_status.setText(self.txt("lbl_ver_up_to_date"))
-                self._lbl_ver_status.setStyleSheet(
-                    f"color: #39ff7a; font-size: {config.FS_PX(9)}px; background: transparent; border: none;"
-                )
+            try:
+                if self._lbl_ver_status.text() == "…":
+                    self._lbl_ver_status.setText(self.txt("lbl_ver_up_to_date"))
+                    self._lbl_ver_status.setStyleSheet(
+                        f"color: #39ff7a; font-size: {config.FS_PX(9)}px; background: transparent; border: none;"
+                    )
+            except RuntimeError:
+                pass
 
         _thr = UpdateCheckThread(config.VERSION, parent=None)
         _thr.update_available.connect(_on_update_known_for_card)

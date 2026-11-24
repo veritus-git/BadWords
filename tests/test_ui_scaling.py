@@ -351,7 +351,30 @@ class TestUIScalingUnified(unittest.TestCase):
 
             rh_calls_before = orig_rh.get_all_timelines.call_count
 
-            # Live switch to 150%
+            # Live switch via SettingsDialog Apply 3 consecutive times without restarting
+            # (tests deleted _panel_headers / deleted activities C++ object safety!)
+            dlg = SettingsDialog(engine, parent=win)
+            try:
+                dlg.show()
+                dlg._ensure_page_built(1)
+                dlg.category_list.setCurrentRow(1)
+                app.processEvents()
+
+                for target_pct in (150, 125, 200, 100):
+                    dlg.slider_ui_scale.setValue(target_pct)
+                    app.processEvents()
+                    dlg._apply_settings()
+                    app.processEvents()
+                    self.assertEqual(config.UI_SCALE_PERCENT, target_pct)
+                    self.assertEqual(win._sidebar_left.width(), config.S(50))
+                    win.set_panel_headers_visible(True)
+                    win.set_panel_headers_visible(False)
+                    win.set_panel_headers_visible(True)
+            finally:
+                dlg.close()
+                dlg.deleteLater()
+
+            # Switch back to 150% cleanly to verify preserved Resolve & waveform state
             config.apply_ui_scaling(mode="manual", pct=150)
             win.rebuild_ui_for_scale()
             app.processEvents()

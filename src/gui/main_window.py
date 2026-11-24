@@ -386,6 +386,13 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _init_workspace_ui(self, prefs: dict, is_rebuild: bool = False):
         """Constructs or cleanly reconstructs visual chrome/panels/pages without touching engine or Resolve."""
+        # Reset cached widget lists before building sidebars/panels so rebuilds leave zero stale C++ pointers
+        self._panel_headers = []
+        self.header_legend = None
+        self.lbl_legend_title = None
+        self.lbl_legend_hint = None
+        self.div_legend = None
+        self._legend_signature = None
         self.setMinimumSize(config.S(330), config.S(400))
         if hasattr(self, 'shared_tooltip') and self.shared_tooltip:
             self.shared_tooltip.refresh_scale()
@@ -788,11 +795,34 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     getattr(self.top_island, '_percent_text', ''),
                 )
 
-            # 2. Tear down old central visual hierarchy cleanly (keep resolve_handler/engine untouched!)
+            # 2. Tear down old unattached activity panels & central visual hierarchy cleanly (keep resolve_handler/engine untouched!)
+            old_activities = dict(getattr(self, 'activities', {}) or {})
+            self.activities = {}
+            self.active_activity = None
+            from PySide6.QtCore import QAbstractAnimation
+            for act_w in old_activities.values():
+                if act_w is None:
+                    continue
+                try:
+                    for anim in act_w.findChildren(QAbstractAnimation):
+                        try:
+                            anim.stop()
+                        except Exception:
+                            pass
+                    for tmr in act_w.findChildren(QTimer):
+                        try:
+                            tmr.stop()
+                        except Exception:
+                            pass
+                    act_w.hide()
+                    act_w.setParent(None)
+                    act_w.deleteLater()
+                except RuntimeError:
+                    pass
+
             old_central = self.takeCentralWidget()
             if old_central is not None:
                 try:
-                    from PySide6.QtCore import QAbstractAnimation
                     for anim in old_central.findChildren(QAbstractAnimation):
                         try:
                             anim.stop()
@@ -1058,18 +1088,29 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if not hasattr(self, 'prefs') or not isinstance(self.prefs, dict):
             self.prefs = {}
         self.prefs['show_panel_headers'] = bool(visible)
+        alive_headers = []
         for h in getattr(self, '_panel_headers', []):
-            if h:
+            if not h:
+                continue
+            try:
                 h.setVisible(bool(visible))
-        if hasattr(self, 'header_legend') and self.header_legend:
-            self.header_legend.setVisible(bool(visible))
-        if hasattr(self, 'lbl_legend_title') and self.lbl_legend_title:
-            self.lbl_legend_title.setVisible(bool(visible))
+                alive_headers.append(h)
+            except RuntimeError:
+                pass
+        self._panel_headers = alive_headers
         has_items = getattr(self, '_legend_has_items', False)
-        if hasattr(self, 'lbl_legend_hint') and self.lbl_legend_hint:
-            self.lbl_legend_hint.setVisible(bool(visible) and has_items)
-        if hasattr(self, 'div_legend') and self.div_legend:
-            self.div_legend.setVisible(bool(visible) and has_items)
+        for w_name, cond in (
+            ('header_legend', bool(visible)),
+            ('lbl_legend_title', bool(visible)),
+            ('lbl_legend_hint', bool(visible) and has_items),
+            ('div_legend', bool(visible) and has_items),
+        ):
+            w = getattr(self, w_name, None)
+            if w is not None:
+                try:
+                    w.setVisible(cond)
+                except RuntimeError:
+                    setattr(self, w_name, None)
 
 
     # ------------------------------------------------------------------
