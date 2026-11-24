@@ -549,8 +549,9 @@ class CustomTitleBar(QWidget):
         win = self.window()
         if getattr(win, '_is_win', False):
             try:
-                import ctypes
-                ctypes.windll.user32.PostMessageW(int(win.winId()), 0x0112, 0xF020, 0)  # SC_MINIMIZE
+                from .mixins import _get_win32_apis
+                user32, _, _ = _get_win32_apis()
+                user32.PostMessageW(int(win.winId()), 0x0112, 0xF020, 0)  # SC_MINIMIZE
                 return
             except Exception:
                 pass
@@ -560,8 +561,9 @@ class CustomTitleBar(QWidget):
         win = self.window()
         if getattr(win, '_is_win', False) and getattr(win, '_is_root', False):
             try:
-                import ctypes
-                ctypes.windll.user32.PostMessageW(int(win.winId()), 0x0112, 0xF060, 0)  # SC_CLOSE
+                from .mixins import _get_win32_apis
+                user32, _, _ = _get_win32_apis()
+                user32.PostMessageW(int(win.winId()), 0x0112, 0xF060, 0)  # SC_CLOSE
                 return
             except Exception:
                 pass
@@ -574,18 +576,19 @@ class CustomTitleBar(QWidget):
 
         if getattr(win, '_is_win', False):
             try:
-                import ctypes
+                from .mixins import _get_win32_apis
+                user32, _, _ = _get_win32_apis()
                 hwnd = int(win.winId())
                 is_max = bool(win._is_effectively_maximized()) if hasattr(win, '_is_effectively_maximized') else win.isMaximized()
                 if is_max:
                     win._restore_via_button = bool(via_button)
                     if hasattr(win, '_sync_win_normal_placement'):
                         win._sync_win_normal_placement(use_button_restore=bool(via_button))
-                    ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF120, 0)  # SC_RESTORE
+                    user32.PostMessageW(hwnd, 0x0112, 0xF120, 0)  # SC_RESTORE
                 else:
                     if hasattr(win, '_snapshot_pre_maximize_geometry'):
                         win._snapshot_pre_maximize_geometry()
-                    ctypes.windll.user32.PostMessageW(hwnd, 0x0112, 0xF030, 0)  # SC_MAXIMIZE
+                    user32.PostMessageW(hwnd, 0x0112, 0xF030, 0)  # SC_MAXIMIZE
                 return
             except Exception:
                 pass

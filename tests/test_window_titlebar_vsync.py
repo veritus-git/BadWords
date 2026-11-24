@@ -658,6 +658,180 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
         for w in (splash, msg_box, unsaved, marker, export_dlg, telem, consent, upd, mig, parent):
             w.close()
 
+    def test_win11_sharp_corners_and_half_screen_getwindowrect_restore_contract(self):
+        # 1. Verify DWMWCP_DONOTROUND (33 = 1) is enforced across showEvent, _dwm_uncloak, WinIdChange & nativeEvent
+        from gui.components.mixins import FramelessWindowMixin, _WindowBorderOverlay
+        import inspect
+
+        mixins_src = inspect.getsource(FramelessWindowMixin)
+        self.assertIn("_enforce_win_dwm_attributes", mixins_src)
+        self.assertIn("WinIdChange", mixins_src)
+        self.assertIn("0x007D", mixins_src)  # WM_STYLECHANGED
+        self.assertIn("0x031E", mixins_src)  # WM_DWMCOMPOSITIONCHANGED
+        self.assertIn("GetWindowRect", mixins_src)  # Half-screen Aero Snap capture (not frozen rcNormalPosition)
+        self.assertIn("_verify_win_button_restore", mixins_src)
+
+        # 2. Simulate _record_normal_geometry + _sync_win_normal_placement on Windows 11 half-screen Snap
+        import ctypes
+        from ctypes import wintypes
+
+        class RECT_MATCH:
+            def __init__(self, l, t, r, b):
+                self.left, self.top, self.right, self.bottom = l, t, r, b
+
+        recorded_wp = []
+
+        class _FakeUser32:
+            def IsIconic(self, hwnd):
+                return 0
+
+            def IsZoomed(self, hwnd):
+                return int(self._zoomed)
+
+            def GetWindowRect(self, hwnd, ptr):
+                r = getattr(ptr, "_obj", None)
+                if r is None:
+                    r = ctypes.cast(ptr, ctypes.POINTER(wintypes.RECT))[0]
+                r.left, r.top, r.right, r.bottom = 960, 0, 1920, 1032
+                return 1
+
+            def MonitorFromPoint(self, pt, flags):
+                return 101
+
+            def MonitorFromWindow(self, hwnd, flags):
+                return 101
+
+            def GetMonitorInfoW(self, hmon, ptr):
+                mi = getattr(ptr, "_obj", None)
+                if mi is None:
+                    class _MI(ctypes.Structure):
+                        _fields_ = [
+                            ("cbSize", wintypes.DWORD),
+                            ("rcMonitor", wintypes.RECT),
+                            ("rcWork", wintypes.RECT),
+                            ("dwFlags", wintypes.DWORD),
+                        ]
+                    mi = ctypes.cast(ptr, ctypes.POINTER(_MI))[0]
+                mi.rcMonitor = wintypes.RECT(0, 0, 1920, 1080)
+                mi.rcWork = wintypes.RECT(0, 0, 1920, 1032)
+                return 1
+
+            def GetWindowPlacement(self, hwnd, ptr):
+                wp = getattr(ptr, "_obj", None)
+                if wp is None:
+                    class _WP(ctypes.Structure):
+                        _fields_ = [
+                            ("length", wintypes.UINT),
+                            ("flags", wintypes.UINT),
+                            ("showCmd", wintypes.UINT),
+                            ("ptMinPosition", wintypes.POINT),
+                            ("ptMaxPosition", wintypes.POINT),
+                            ("rcNormalPosition", wintypes.RECT),
+                        ]
+                    wp = ctypes.cast(ptr, ctypes.POINTER(_WP))[0]
+                # Windows leaves rcNormalPosition frozen at old 70% centered rect on Aero Snap
+                wp.rcNormalPosition = wintypes.RECT(288, 154, 1632, 876)
+                wp.showCmd = 3 if self._zoomed else 1
+                return 1
+
+            def SetWindowPlacement(self, hwnd, ptr):
+                wp = getattr(ptr, "_obj", None)
+                if wp is None:
+                    class _WP(ctypes.Structure):
+                        _fields_ = [
+                            ("length", wintypes.UINT),
+                            ("flags", wintypes.UINT),
+                            ("showCmd", wintypes.UINT),
+                            ("ptMinPosition", wintypes.POINT),
+                            ("ptMaxPosition", wintypes.POINT),
+                            ("rcNormalPosition", wintypes.RECT),
+                        ]
+                    wp = ctypes.cast(ptr, ctypes.POINTER(_WP))[0]
+                r = wp.rcNormalPosition
+                recorded_wp.append((r.left, r.top, r.right, r.bottom))
+                return 1
+
+        fake_u32 = _FakeUser32()
+        fake_u32._zoomed = False
+        fake_dwm_calls = []
+
+        class _FakeDwm:
+            def DwmSetWindowAttribute(self, hwnd, attr, ptr, sz):
+                obj = getattr(ptr, "_obj", None)
+                val = obj.value if obj is not None else ctypes.cast(ptr, ctypes.POINTER(ctypes.c_uint))[0]
+                fake_dwm_calls.append((int(attr), int(val)))
+                return 0
+
+            def DwmExtendFrameIntoClientArea(self, hwnd, ptr):
+                return 0
+
+        from unittest.mock import patch
+
+        class _FakeScreen:
+            def availableGeometry(self):
+                return QRect(0, 0, 1920, 1032)
+
+        class _FakeWin(FramelessWindowMixin):
+            def __init__(self):
+                self._is_win = True
+                self._is_root = True
+                self._is_popup = False
+                self._always_restore_default_size = False
+                self._normal_ratio = 0.70
+                self._last_normal_geo = None
+                self._pre_maximize_geometry = None
+                self._last_normal_win_rect = None
+                self._pre_maximize_win_rect = None
+                self._restoring_from_max = False
+
+            def isVisible(self):
+                return True
+
+            def isMinimized(self):
+                return False
+
+            def _is_effectively_maximized(self):
+                return bool(fake_u32._zoomed)
+
+            def geometry(self):
+                return QRect(960, 0, 960, 1032)
+
+            def screen(self):
+                return _FakeScreen()
+
+            def testAttribute(self, attr):
+                return True
+
+            def winId(self):
+                return 9999
+
+            def devicePixelRatioF(self):
+                return 1.0
+
+        fw = _FakeWin()
+        with (
+            patch("gui.components.mixins._get_win32_apis", return_value=(fake_u32, None, _FakeDwm())),
+            patch("gui.components.mixins.QGuiApplication.screenAt", return_value=_FakeScreen()),
+        ):
+            # Step 1: Window snapped to right half -> GetWindowRect must capture (960, 0, 1920, 1032)
+            fw._record_normal_geometry()
+            self.assertEqual(fw._last_normal_win_rect, (960, 0, 1920, 1032))
+
+            # Step 2: Window maximizes -> snapshot right half, set rcNormalPosition to 70% for Aero rip
+            fw._snapshot_pre_maximize_geometry()
+            fake_u32._zoomed = True
+            fw._sync_win_normal_placement(use_button_restore=False)
+            self.assertEqual(recorded_wp[-1], (288, 155, 1632, 877))
+
+            # Step 3: User clicks btn_max -> MUST restore exact right half (960, 0, 1920, 1032)!
+            fw._sync_win_normal_placement(use_button_restore=True)
+            self.assertEqual(recorded_wp[-1], (960, 0, 1920, 1032))
+
+            # Step 4: DWM corner preference MUST enforce DWMWCP_DONOTROUND (33 -> 1)
+            fw._enforce_win_dwm_attributes(9999, include_extend=True)
+            self.assertIn((33, 1), fake_dwm_calls)
+            self.assertIn((34, 0xFFFFFFFE), fake_dwm_calls)
+
 
 if __name__ == "__main__":
     unittest.main()

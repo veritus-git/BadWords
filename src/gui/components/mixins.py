@@ -75,6 +75,8 @@ def _get_win32_apis():
     user32.GetMonitorInfoW.restype = wintypes.BOOL
     user32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
     user32.GetClientRect.restype = wintypes.BOOL
+    user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    user32.GetWindowRect.restype = wintypes.BOOL
     user32.ScreenToClient.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
     user32.ScreenToClient.restype = wintypes.BOOL
     user32.FillRect.argtypes = [wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintypes.HBRUSH]
@@ -581,8 +583,32 @@ class FramelessWindowMixin:
         if getattr(self, '_is_win', False) and getattr(self, '_last_normal_win_rect', None) is not None:
             self._pre_maximize_win_rect = tuple(self._last_normal_win_rect)
 
+    def _get_win32_primary_work_offset(self, user32) -> tuple[int, int]:
+        """Returns primary monitor work-area origin (rcWork.left, rcWork.top) for WINDOWPLACEMENT workspace conversion."""
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ('cbSize', wintypes.DWORD),
+                    ('rcMonitor', wintypes.RECT),
+                    ('rcWork', wintypes.RECT),
+                    ('dwFlags', wintypes.DWORD),
+                ]
+
+            hprim = user32.MonitorFromPoint(wintypes.POINT(0, 0), 1)  # MONITOR_DEFAULTTOPRIMARY
+            if hprim:
+                pmi = MONITORINFO()
+                pmi.cbSize = ctypes.sizeof(MONITORINFO)
+                if user32.GetMonitorInfoW(hprim, ctypes.byref(pmi)):
+                    return (int(pmi.rcWork.left), int(pmi.rcWork.top))
+        except Exception:
+            pass
+        return (0, 0)
+
     def _record_normal_geometry(self):
-        """Tracks the window's latest non-maximized geometry so Maximize can snapshot it cleanly."""
+        """Tracks the window's latest non-maximized geometry (including Aero-snapped half-screen) for btn_max restore."""
         if (
             not getattr(self, '_is_root', False)
             or not self.isVisible()
@@ -602,27 +628,22 @@ class FramelessWindowMixin:
 
         if getattr(self, '_is_win', False) and self.testAttribute(Qt.WA_WState_Created):
             try:
+                import ctypes
                 from ctypes import wintypes
                 user32, _, _ = _get_win32_apis()
-
-                class WINDOWPLACEMENT(ctypes.Structure):
-                    _fields_ = [
-                        ('length', wintypes.UINT),
-                        ('flags', wintypes.UINT),
-                        ('showCmd', wintypes.UINT),
-                        ('ptMinPosition', wintypes.POINT),
-                        ('ptMaxPosition', wintypes.POINT),
-                        ('rcNormalPosition', wintypes.RECT),
-                    ]
-
                 hwnd = int(self.winId())
-                if hwnd and not user32.IsZoomed(hwnd):
-                    wp = WINDOWPLACEMENT()
-                    wp.length = ctypes.sizeof(WINDOWPLACEMENT)
-                    if user32.GetWindowPlacement(hwnd, ctypes.byref(wp)):
-                        r = wp.rcNormalPosition
-                        if r.right > r.left and r.bottom > r.top:
-                            self._last_normal_win_rect = (r.left, r.top, r.right, r.bottom)
+                if hwnd and not user32.IsIconic(hwnd) and not user32.IsZoomed(hwnd):
+                    # Always read GetWindowRect (NOT rcNormalPosition, which Windows leaves frozen
+                    # at the old pre-snap rect when Aero-snapping to left/right half of the screen).
+                    rc = wintypes.RECT()
+                    if user32.GetWindowRect(hwnd, ctypes.byref(rc)) and rc.right > rc.left and rc.bottom > rc.top:
+                        prim_off_x, prim_off_y = self._get_win32_primary_work_offset(user32)
+                        self._last_normal_win_rect = (
+                            int(rc.left) - prim_off_x,
+                            int(rc.top) - prim_off_y,
+                            int(rc.right) - prim_off_x,
+                            int(rc.bottom) - prim_off_y,
+                        )
             except Exception:
                 pass
 
@@ -693,16 +714,7 @@ class FramelessWindowMixin:
             if not user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
                 return
 
-            # Primary monitor work-area offset (rcNormalPosition is in workspace coords)
-            pt_zero = wintypes.POINT(0, 0)
-            hprim = user32.MonitorFromPoint(pt_zero, 1)  # MONITOR_DEFAULTTOPRIMARY
-            prim_off_x, prim_off_y = 0, 0
-            if hprim:
-                pmi = MONITORINFO()
-                pmi.cbSize = ctypes.sizeof(MONITORINFO)
-                if user32.GetMonitorInfoW(hprim, ctypes.byref(pmi)):
-                    prim_off_x = pmi.rcWork.left
-                    prim_off_y = pmi.rcWork.top
+            prim_off_x, prim_off_y = self._get_win32_primary_work_offset(user32)
 
             work = mi.rcWork
             avail_w = max(1, work.right - work.left)
@@ -785,6 +797,84 @@ class FramelessWindowMixin:
             overlay.show()
         overlay.raise_()
 
+    def _enforce_win_dwm_attributes(self, hwnd: int, include_extend: bool = True):
+        """
+        Enforces sharp 90-degree corners (DWMWCP_DONOTROUND), dark DWM theme, and
+        native OS drop shadow without light Win11 border across state/style changes.
+        """
+        if not hwnd or not getattr(self, '_is_win', False):
+            return
+        try:
+            import ctypes
+            _, _, dwmapi = _get_win32_apis()
+
+            dark_val = ctypes.c_int(1)
+            if dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(dark_val), 4) != 0:
+                dwmapi.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(dark_val), 4)
+
+            if include_extend:
+                nc_policy = ctypes.c_int(2)
+                dwmapi.DwmSetWindowAttribute(hwnd, 2, ctypes.byref(nc_policy), 4)
+
+                class MARGINS(ctypes.Structure):
+                    _fields_ = [
+                        ('left', ctypes.c_int),
+                        ('right', ctypes.c_int),
+                        ('top', ctypes.c_int),
+                        ('bottom', ctypes.c_int),
+                    ]
+                margins = MARGINS(0, 0, 0, 1)
+                dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
+
+            # INVARIANT: Sharp 90-degree corners ALWAYS on Windows 11 (DWMWCP_DONOTROUND = 1)
+            # and suppress Win11 default light/gray DWM outline (DWMWA_COLOR_NONE = 0xFFFFFFFE).
+            corner_pref = ctypes.c_uint(1)
+            dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(corner_pref), 4)
+            border_color = ctypes.c_uint(0xFFFFFFFE)
+            dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(border_color), 4)
+        except Exception:
+            pass
+
+    def _verify_win_button_restore(self):
+        """Ensures btn_max unmaximize on Windows lands on exact _pre_maximize_win_rect (e.g. half-screen)."""
+        if not getattr(self, '_is_win', False) or not getattr(self, '_is_root', False):
+            return
+        if getattr(self, '_always_restore_default_size', False):
+            return
+        if self.isMinimized() or self.isFullScreen() or self._is_effectively_maximized():
+            return
+        pre = getattr(self, '_pre_maximize_win_rect', None)
+        if not pre or not self.testAttribute(Qt.WA_WState_Created):
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+            user32, _, _ = _get_win32_apis()
+            hwnd = int(self.winId())
+            if not hwnd or user32.IsZoomed(hwnd) or user32.IsIconic(hwnd):
+                return
+            prim_off_x, prim_off_y = self._get_win32_primary_work_offset(user32)
+            l, t, r, b = pre
+            tl = int(l) + prim_off_x
+            tt = int(t) + prim_off_y
+            tw = max(1, int(r) - int(l))
+            th = max(1, int(b) - int(t))
+
+            rc = wintypes.RECT()
+            if user32.GetWindowRect(hwnd, ctypes.byref(rc)):
+                cw = int(rc.right) - int(rc.left)
+                ch = int(rc.bottom) - int(rc.top)
+                if (
+                    abs(int(rc.left) - tl) <= 2
+                    and abs(int(rc.top) - tt) <= 2
+                    and abs(cw - tw) <= 2
+                    and abs(ch - th) <= 2
+                ):
+                    return
+            user32.SetWindowPos(hwnd, None, tl, tt, tw, th, 0x0004 | 0x0010)  # SWP_NOZORDER | SWP_NOACTIVATE
+        except Exception:
+            pass
+
     def changeEvent(self, event):
         if event.type() == QEvent.Type.WindowStateChange:
             if self.isMinimized():
@@ -809,6 +899,7 @@ class FramelessWindowMixin:
                         if wanted != style:
                             user32.SetWindowLongW(hwnd, GWL_STYLE, wanted)
                             user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0037)  # NOSIZE|NOMOVE|NOZORDER|NOACTIVATE|FRAMECHANGED
+                        self._enforce_win_dwm_attributes(hwnd, include_extend=True)
                 except Exception:
                     pass
 
@@ -824,9 +915,20 @@ class FramelessWindowMixin:
             if was_max and not now_max and not self.isFullScreen():
                 via_btn = bool(getattr(self, '_restore_via_button', False))
                 self._restore_via_button = False
-                if not getattr(self, '_is_win', False) and not getattr(self, '_restoring_from_max', False):
-                    # Windows uses WINDOWPLACEMENT.rcNormalPosition natively; Unix enforces exact geometry
+                if getattr(self, '_is_win', False):
+                    if via_btn and not getattr(self, '_always_restore_default_size', False):
+                        QTimer.singleShot(0, self._verify_win_button_restore)
+                elif not getattr(self, '_restoring_from_max', False):
+                    # Unix enforces exact geometry after WM async settle
                     QTimer.singleShot(0, lambda vb=via_btn: self._restore_after_unmaximize(via_button=vb))
+        elif event.type() == QEvent.Type.WinIdChange:
+            if not _HAS_QFRAMELESS and getattr(self, '_is_win', False) and self.testAttribute(Qt.WA_WState_Created):
+                try:
+                    hwnd = int(self.winId())
+                    if hwnd:
+                        self._enforce_win_dwm_attributes(hwnd, include_extend=True)
+                except Exception:
+                    pass
         elif event.type() == QEvent.Type.ActivationChange:
             if hasattr(self, '_update_shortcut_enabled_states'):
                 self._update_shortcut_enabled_states()
@@ -846,8 +948,10 @@ class FramelessWindowMixin:
                 _, _, dwmapi = _get_win32_apis()
                 hwnd = int(self.winId())
                 if hwnd:
+                    self._enforce_win_dwm_attributes(hwnd, include_extend=True)
                     val = ctypes.c_int(0)
                     dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)
+                    self._enforce_win_dwm_attributes(hwnd, include_extend=False)
         except Exception:
             pass
 
@@ -865,6 +969,7 @@ class FramelessWindowMixin:
                     self._shown_once = True
                     val = ctypes.c_int(1)
                     dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)
+                    self._enforce_win_dwm_attributes(hwnd, include_extend=False)
             except Exception:
                 pass
 
@@ -872,8 +977,7 @@ class FramelessWindowMixin:
 
         if not _HAS_QFRAMELESS and getattr(self, '_is_win', False):
             try:
-                import ctypes
-                user32, _, dwmapi = _get_win32_apis()
+                user32, _, _ = _get_win32_apis()
                 hwnd = int(self.winId())
                 if hwnd and getattr(self, '_is_root', False):
                     GWL_STYLE = -16
@@ -885,32 +989,16 @@ class FramelessWindowMixin:
                     style |= 0x00010000  # WS_MAXIMIZEBOX
                     user32.SetWindowLongW(hwnd, GWL_STYLE, style)
 
-                    # Force dark DWM attribute for Windows 10/11 (20 -> 19 fallback, value=1)
-                    dark_val = ctypes.c_int(1)
-                    if dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(dark_val), 4) != 0:
-                        dwmapi.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(dark_val), 4)
-
-                    # Force DWM NC rendering enabled (native drop shadow)
-                    nc_policy = ctypes.c_int(2)
-                    dwmapi.DwmSetWindowAttribute(hwnd, 2, ctypes.byref(nc_policy), 4)
-
-                    # 1px bottom DWM margin anchors native drop shadow without touching top titlebar
-                    class MARGINS(ctypes.Structure):
-                        _fields_ = [
-                            ('left', ctypes.c_int),
-                            ('right', ctypes.c_int),
-                            ('top', ctypes.c_int),
-                            ('bottom', ctypes.c_int),
-                        ]
-                    margins = MARGINS(0, 0, 0, 1)
-                    dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
-
                     self._apply_dark_class_brush(hwnd)
+                    self._enforce_win_dwm_attributes(hwnd, include_extend=True)
 
                     user32.SetWindowPos(
                         hwnd, None, 0, 0, 0, 0,
                         0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020
                     )
+
+                    # Re-apply sharp corners & border color AFTER SWP_FRAMECHANGED
+                    self._enforce_win_dwm_attributes(hwnd, include_extend=True)
 
                     if user32.IsZoomed(hwnd):
                         self._was_maximized = True
@@ -919,29 +1007,7 @@ class FramelessWindowMixin:
                     QTimer.singleShot(35, self._dwm_uncloak)
                     QTimer.singleShot(150, self._dwm_uncloak)
                 elif hwnd:
-                    dark_val = ctypes.c_int(1)
-                    if dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(dark_val), 4) != 0:
-                        dwmapi.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(dark_val), 4)
-                    # Native Windows 11 DWM drop shadow on opaque frameless popups (zero margins)
-                    nc_policy = ctypes.c_int(2)
-                    dwmapi.DwmSetWindowAttribute(hwnd, 2, ctypes.byref(nc_policy), 4)
-
-                    class MARGINS(ctypes.Structure):
-                        _fields_ = [
-                            ('left', ctypes.c_int),
-                            ('right', ctypes.c_int),
-                            ('top', ctypes.c_int),
-                            ('bottom', ctypes.c_int),
-                        ]
-                    margins = MARGINS(0, 0, 0, 1)
-                    dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
-
-                if hwnd:
-                    # All windows: DWMWCP_DONOTROUND (33) & remove Win11 1px light border (34)
-                    corner_pref = ctypes.c_int(1)
-                    dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(corner_pref), 4)
-                    border_color = ctypes.c_uint(0xFFFFFFFE)
-                    dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(border_color), 4)
+                    self._enforce_win_dwm_attributes(hwnd, include_extend=True)
             except Exception:
                 self._dwm_uncloak()
 
@@ -1273,5 +1339,10 @@ class FramelessWindowMixin:
             if _tb and hasattr(_tb, '_toggle_maximize') and msg.wParam == HTCAPTION:
                 _tb._toggle_maximize(via_button=False)
             return True, 0
+
+        # ── WM_STYLECHANGED (0x007D) / WM_DWMCOMPOSITIONCHANGED (0x031E) ─────
+        # Keep sharp 90-degree corners & dark DWM framing if Qt/Windows resets styles.
+        if msg.message in (0x007D, 0x031E):
+            self._enforce_win_dwm_attributes(hwnd, include_extend=(msg.message == 0x031E))
 
         return super().nativeEvent(eventType, message)

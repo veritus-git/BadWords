@@ -173,6 +173,38 @@ pub fn has_system_python() -> bool {
     find_compatible_system_python().is_some()
 }
 
+#[cfg(target_os = "windows")]
+/// Broadcasts WM_SETTINGCHANGE ("Environment") directly via user32.dll (<1ms, zero PowerShell).
+fn broadcast_environment_change() {
+    extern "system" {
+        fn SendMessageTimeoutW(
+            hwnd: isize,
+            msg: u32,
+            wparam: usize,
+            lparam: *const u16,
+            flags: u32,
+            timeout: u32,
+            result: *mut usize,
+        ) -> isize;
+    }
+    const HWND_BROADCAST: isize = 0xFFFF;
+    const WM_SETTINGCHANGE: u32 = 0x001A;
+    const SMTO_ABORTIFHUNG: u32 = 0x0002;
+    let env_w: Vec<u16> = "Environment\0".encode_utf16().collect();
+    let mut res: usize = 0;
+    unsafe {
+        let _ = SendMessageTimeoutW(
+            HWND_BROADCAST,
+            WM_SETTINGCHANGE,
+            0,
+            env_w.as_ptr(),
+            SMTO_ABORTIFHUNG,
+            250,
+            &mut res,
+        );
+    }
+}
+
 /// Adds specified directories to user-scope PATH in Windows Registry (HKCU\Environment) permanently
 #[allow(dead_code, unused_variables)]
 pub fn add_to_user_path(paths: &[&Path]) -> std::io::Result<()> {
@@ -204,18 +236,7 @@ pub fn add_to_user_path(paths: &[&Path]) -> std::io::Result<()> {
                 vtype: winreg::enums::REG_EXPAND_SZ,
             };
             env_key.set_raw_value("Path", &reg_val)?;
-
-            // Broadcast environment variable changes to system without restarting
-            let _ = crate::os::create_hidden_command("powershell")
-                .args([
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-WindowStyle",
-                    "Hidden",
-                    "-Command",
-                    "[Environment]::SetEnvironmentVariable('PATH', [Environment]::GetEnvironmentVariable('PATH', 'User'), 'User')",
-                ])
-                .status();
+            broadcast_environment_change();
         }
 
         // Update current process PATH immediately
@@ -262,17 +283,7 @@ pub fn remove_from_user_path(paths: &[&Path]) -> std::io::Result<()> {
                     vtype: winreg::enums::REG_EXPAND_SZ,
                 };
                 let _ = env_key.set_raw_value("Path", &reg_val);
-
-                let _ = crate::os::create_hidden_command("powershell")
-                    .args([
-                        "-NoProfile",
-                        "-NonInteractive",
-                        "-WindowStyle",
-                        "Hidden",
-                        "-Command",
-                        "[Environment]::SetEnvironmentVariable('PATH', [Environment]::GetEnvironmentVariable('PATH', 'User'), 'User')",
-                    ])
-                    .status();
+                broadcast_environment_change();
             }
         }
     }
@@ -554,8 +565,193 @@ pub fn detect_installed_location() -> Option<PathBuf> {
     None
 }
 
+#[cfg(target_os = "windows")]
+mod win_shortcut_com {
+    use std::ffi::c_void;
+    use std::path::{Path, PathBuf};
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct Guid {
+        data1: u32,
+        data2: u16,
+        data3: u16,
+        data4: [u8; 8],
+    }
+
+    const CLSID_SHELL_LINK: Guid = Guid {
+        data1: 0x0002_1401,
+        data2: 0x0000,
+        data3: 0x0000,
+        data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+    };
+    const IID_ISHELL_LINK_W: Guid = Guid {
+        data1: 0x0002_14F9,
+        data2: 0x0000,
+        data3: 0x0000,
+        data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+    };
+    const IID_IPERSIST_FILE: Guid = Guid {
+        data1: 0x0000_010B,
+        data2: 0x0000,
+        data3: 0x0000,
+        data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
+    };
+
+    #[repr(C)]
+    struct IShellLinkW {
+        lp_vtbl: *const IShellLinkWVtbl,
+    }
+
+    #[repr(C)]
+    struct IShellLinkWVtbl {
+        query_interface: unsafe extern "system" fn(*mut IShellLinkW, *const Guid, *mut *mut c_void) -> i32,
+        add_ref: unsafe extern "system" fn(*mut IShellLinkW) -> u32,
+        release: unsafe extern "system" fn(*mut IShellLinkW) -> u32,
+        get_path: *const c_void,
+        get_id_list: *const c_void,
+        set_id_list: *const c_void,
+        get_description: *const c_void,
+        set_description: unsafe extern "system" fn(*mut IShellLinkW, *const u16) -> i32,
+        get_working_directory: *const c_void,
+        set_working_directory: unsafe extern "system" fn(*mut IShellLinkW, *const u16) -> i32,
+        get_arguments: *const c_void,
+        set_arguments: unsafe extern "system" fn(*mut IShellLinkW, *const u16) -> i32,
+        get_hotkey: *const c_void,
+        set_hotkey: *const c_void,
+        get_show_cmd: *const c_void,
+        set_show_cmd: *const c_void,
+        get_icon_location: *const c_void,
+        set_icon_location: unsafe extern "system" fn(*mut IShellLinkW, *const u16, i32) -> i32,
+        set_relative_path: *const c_void,
+        resolve: *const c_void,
+        set_path: unsafe extern "system" fn(*mut IShellLinkW, *const u16) -> i32,
+    }
+
+    #[repr(C)]
+    struct IPersistFile {
+        lp_vtbl: *const IPersistFileVtbl,
+    }
+
+    #[repr(C)]
+    struct IPersistFileVtbl {
+        query_interface: *const c_void,
+        add_ref: *const c_void,
+        release: unsafe extern "system" fn(*mut IPersistFile) -> u32,
+        get_class_id: *const c_void,
+        is_dirty: *const c_void,
+        load: *const c_void,
+        save: unsafe extern "system" fn(*mut IPersistFile, *const u16, i32) -> i32,
+    }
+
+    #[link(name = "ole32")]
+    extern "system" {
+        fn CoInitializeEx(pv_reserved: *mut c_void, dw_co_init: u32) -> i32;
+        fn CoCreateInstance(
+            rclsid: *const Guid,
+            p_unk_outer: *mut c_void,
+            dw_cls_context: u32,
+            riid: *const Guid,
+            ppv: *mut *mut c_void,
+        ) -> i32;
+        fn CoUninitialize();
+    }
+
+    #[link(name = "shell32")]
+    extern "system" {
+        fn SHGetFolderPathW(hwnd: isize, csidl: i32, h_token: isize, dw_flags: u32, psz_path: *mut u16) -> i32;
+    }
+
+    fn to_wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    pub fn known_folder_path(csidl: i32) -> Option<PathBuf> {
+        let mut buf = [0u16; 260];
+        let hr = unsafe { SHGetFolderPathW(0, csidl, 0, 0, buf.as_mut_ptr()) };
+        if hr == 0 {
+            let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+            if len > 0 {
+                return Some(PathBuf::from(String::from_utf16_lossy(&buf[..len])));
+            }
+        }
+        None
+    }
+
+    /// Creates a Windows .lnk shortcut in pure Win32 COM (<1ms, zero PowerShell spawn).
+    pub fn create_lnk(
+        lnk_path: &Path,
+        target: &str,
+        arguments: &str,
+        working_dir: &str,
+        icon_path: &str,
+        description: &str,
+    ) -> bool {
+        const COINIT_APARTMENTTHREADED: u32 = 0x2;
+        const CLSCTX_INPROC_SERVER: u32 = 0x1;
+        const RPC_E_CHANGED_MODE: i32 = 0x8001_0106u32 as i32;
+
+        if let Some(parent) = lnk_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
+        let target_w = to_wide(target);
+        let args_w = to_wide(arguments);
+        let dir_w = to_wide(working_dir);
+        let icon_w = to_wide(icon_path);
+        let desc_w = to_wide(description);
+        let lnk_w = to_wide(&lnk_path.to_string_lossy());
+
+        unsafe {
+            let hr_init = CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED);
+            if hr_init < 0 && hr_init != RPC_E_CHANGED_MODE {
+                return false;
+            }
+            let should_uninit = hr_init == 0 || hr_init == 1;
+
+            let mut psl_raw: *mut c_void = std::ptr::null_mut();
+            let hr_create = CoCreateInstance(
+                &CLSID_SHELL_LINK,
+                std::ptr::null_mut(),
+                CLSCTX_INPROC_SERVER,
+                &IID_ISHELL_LINK_W,
+                &mut psl_raw,
+            );
+            let mut ok = false;
+            if hr_create >= 0 && !psl_raw.is_null() {
+                let psl = psl_raw as *mut IShellLinkW;
+                let vtbl = &*(*psl).lp_vtbl;
+                let _ = (vtbl.set_path)(psl, target_w.as_ptr());
+                if !arguments.is_empty() {
+                    let _ = (vtbl.set_arguments)(psl, args_w.as_ptr());
+                }
+                let _ = (vtbl.set_working_directory)(psl, dir_w.as_ptr());
+                let _ = (vtbl.set_icon_location)(psl, icon_w.as_ptr(), 0);
+                let _ = (vtbl.set_description)(psl, desc_w.as_ptr());
+
+                let mut ppf_raw: *mut c_void = std::ptr::null_mut();
+                let hr_qi = (vtbl.query_interface)(psl, &IID_IPERSIST_FILE, &mut ppf_raw);
+                if hr_qi >= 0 && !ppf_raw.is_null() {
+                    let ppf = ppf_raw as *mut IPersistFile;
+                    let p_vtbl = &*(*ppf).lp_vtbl;
+                    if (p_vtbl.save)(ppf, lnk_w.as_ptr(), 1) >= 0 {
+                        ok = true;
+                    }
+                    (p_vtbl.release)(ppf);
+                }
+                (vtbl.release)(psl);
+            }
+
+            if should_uninit {
+                CoUninitialize();
+            }
+            ok
+        }
+    }
+}
+
 #[allow(dead_code)]
-/// Creates Desktop and Start Menu shortcuts on Windows launching BadWords.exe without console
+/// Creates Desktop and Start Menu shortcuts on Windows cleanly via pure Win32 COM (<2ms, zero PowerShell).
 pub fn create_windows_shortcuts(
     install_dir: &Path,
     create_desktop: bool,
@@ -605,16 +801,21 @@ pub fn create_windows_shortcuts(
             }
         }
         if !launcher_exe.is_file() {
-            // Attempt to download pre-built BadWords.exe launcher from GitHub releases
+            // Single fast download attempt for pre-built BadWords.exe launcher
             let mut candidate_urls = vec![
                 "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe".to_string(),
             ];
             if let Some(ver) = version {
-                candidate_urls.push(format!("https://github.com/veritus-git/BadWords/releases/download/v{}/BadWords.exe", ver));
-                candidate_urls.push(format!("https://github.com/veritus-git/BadWords/releases/download/{}/BadWords.exe", ver));
+                if ver.starts_with('v') || ver.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                    let clean = ver.trim_start_matches('v');
+                    candidate_urls.insert(
+                        0,
+                        format!("https://github.com/veritus-git/BadWords/releases/download/v{}/BadWords.exe", clean),
+                    );
+                }
             }
             let agent = ureq::builder()
-                .timeout(std::time::Duration::from_secs(6))
+                .timeout(std::time::Duration::from_secs(4))
                 .redirects(10)
                 .build();
             for dl_url in candidate_urls {
@@ -655,66 +856,50 @@ pub fn create_windows_shortcuts(
                 icon_path.to_string_lossy().to_string(),
             )
         };
+        let work_dir = install_dir.to_string_lossy().to_string();
 
-        let mut script_parts = vec![
-            "$ws = New-Object -ComObject WScript.Shell;".to_string(),
-        ];
+        const CSIDL_PROGRAMS: i32 = 0x0002;
+        const CSIDL_DESKTOPDIRECTORY: i32 = 0x0010;
 
         if create_desktop {
-            script_parts.push(format!(
-                "$desktop = [Environment]::GetFolderPath('Desktop'); \
-                 $s1 = $ws.CreateShortcut(\"$desktop\\BadWords.lnk\"); \
-                 $s1.TargetPath = '{target}'; \
-                 $s1.Arguments = '{args}'; \
-                 $s1.WorkingDirectory = '{dir}'; \
-                 $s1.IconLocation = '{ico},0'; \
-                 $s1.Description = 'BadWords'; \
-                 $s1.Save();",
-                target = target_path,
-                args = arguments,
-                dir = install_dir.to_string_lossy(),
-                ico = shortcut_icon
-            ));
-        }
-
-        if create_menu {
-            script_parts.push(format!(
-                "$programs = [Environment]::GetFolderPath('Programs'); \
-                 $s2 = $ws.CreateShortcut(\"$programs\\BadWords.lnk\"); \
-                 $s2.TargetPath = '{target}'; \
-                 $s2.Arguments = '{args}'; \
-                 $s2.WorkingDirectory = '{dir}'; \
-                 $s2.IconLocation = '{ico},0'; \
-                 $s2.Description = 'BadWords'; \
-                 $s2.Save();",
-                target = target_path,
-                args = arguments,
-                dir = install_dir.to_string_lossy(),
-                ico = shortcut_icon
-            ));
-        }
-
-        let full_script = script_parts.join(" ");
-        let _ = crate::os::create_hidden_command("powershell")
-            .args(&["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &full_script])
-            .output();
-
-        // Proactively unblock shortcuts and installation directory
-        if create_desktop {
-            if let Some(user_home) = dirs::home_dir() {
-                unblock_file(&user_home.join("Desktop").join("BadWords.lnk"));
+            let desktop_dir = win_shortcut_com::known_folder_path(CSIDL_DESKTOPDIRECTORY)
+                .or_else(|| dirs::home_dir().map(|h| h.join("Desktop")));
+            if let Some(d) = desktop_dir {
+                let lnk = d.join("BadWords.lnk");
+                if win_shortcut_com::create_lnk(
+                    &lnk,
+                    &target_path,
+                    &arguments,
+                    &work_dir,
+                    &shortcut_icon,
+                    "BadWords",
+                ) {
+                    unblock_file(&lnk);
+                }
             }
         }
         if create_menu {
-            if let Ok(appdata) = std::env::var("APPDATA") {
-                unblock_file(
-                    &Path::new(&appdata)
+            let programs_dir = win_shortcut_com::known_folder_path(CSIDL_PROGRAMS).or_else(|| {
+                std::env::var("APPDATA").ok().map(|a| {
+                    PathBuf::from(a)
                         .join("Microsoft")
                         .join("Windows")
                         .join("Start Menu")
                         .join("Programs")
-                        .join("BadWords.lnk"),
-                );
+                })
+            });
+            if let Some(p) = programs_dir {
+                let lnk = p.join("BadWords.lnk");
+                if win_shortcut_com::create_lnk(
+                    &lnk,
+                    &target_path,
+                    &arguments,
+                    &work_dir,
+                    &shortcut_icon,
+                    "BadWords",
+                ) {
+                    unblock_file(&lnk);
+                }
             }
         }
         unblock_dir(install_dir);
