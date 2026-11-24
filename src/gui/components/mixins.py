@@ -93,6 +93,9 @@ def _get_win32_apis():
         wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT
     ]
     user32.SetWindowPos.restype = wintypes.BOOL
+    HRGN = getattr(wintypes, "HRGN", ctypes.c_void_p)
+    user32.SetWindowRgn.argtypes = [wintypes.HWND, HRGN, wintypes.BOOL]
+    user32.SetWindowRgn.restype = ctypes.c_int
     if hasattr(user32, "GetDpiForWindow"):
         user32.GetDpiForWindow.argtypes = [wintypes.HWND]
         user32.GetDpiForWindow.restype = wintypes.UINT
@@ -806,7 +809,11 @@ class FramelessWindowMixin:
             return
         try:
             import ctypes
-            _, _, dwmapi = _get_win32_apis()
+            user32, _, dwmapi = _get_win32_apis()
+
+            # Clear any Win32 uxtheme top-corner rounding GDI region (4,2,1,0 on WS_CAPTION)
+            if hasattr(user32, "SetWindowRgn"):
+                user32.SetWindowRgn(hwnd, None, True)
 
             dark_val = ctypes.c_int(1)
             if dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(dark_val), 4) != 0:
@@ -895,7 +902,8 @@ class FramelessWindowMixin:
                     if hwnd:
                         GWL_STYLE = -16
                         style = user32.GetWindowLongW(hwnd, GWL_STYLE)
-                        wanted = style | 0x00040000 | 0x00C00000 | 0x00080000 | 0x00020000 | 0x00010000
+                        # Strip WS_POPUP (0x80000000) so Windows uxtheme never attaches a rounded-top region
+                        wanted = (style & ~0x80000000) | 0x00040000 | 0x00C00000 | 0x00080000 | 0x00020000 | 0x00010000
                         if wanted != style:
                             user32.SetWindowLongW(hwnd, GWL_STYLE, wanted)
                             user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0037)  # NOSIZE|NOMOVE|NOZORDER|NOACTIVATE|FRAMECHANGED
@@ -982,6 +990,9 @@ class FramelessWindowMixin:
                 if hwnd and getattr(self, '_is_root', False):
                     GWL_STYLE = -16
                     style = user32.GetWindowLongW(hwnd, GWL_STYLE)
+                    # Strip WS_POPUP (0x80000000) from FramelessWindowHint so WS_OVERLAPPEDWINDOW
+                    # never gets uxtheme's 4-rect top-corner rounding GDI region.
+                    style &= ~0x80000000
                     style |= 0x00040000  # WS_THICKFRAME
                     style |= 0x00C00000  # WS_CAPTION
                     style |= 0x00080000  # WS_SYSMENU

@@ -665,6 +665,8 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
 
         mixins_src = inspect.getsource(FramelessWindowMixin)
         self.assertIn("_enforce_win_dwm_attributes", mixins_src)
+        self.assertIn("SetWindowRgn", mixins_src)  # Clears Win11 uxtheme WS_POPUP|WS_CAPTION top-corner region
+        self.assertIn("~0x80000000", mixins_src)  # Strips WS_POPUP so WS_OVERLAPPEDWINDOW has zero clipping region
         self.assertIn("WinIdChange", mixins_src)
         self.assertIn("0x007D", mixins_src)  # WM_STYLECHANGED
         self.assertIn("0x031E", mixins_src)  # WM_DWMCOMPOSITIONCHANGED
