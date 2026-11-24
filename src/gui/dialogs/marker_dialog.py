@@ -19,24 +19,25 @@ from PySide6.QtWidgets import (
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
 from gui.components.titlebar import CustomTitleBar
-from gui.widgets.buttons import CustomDropdown
+from gui.widgets.buttons import CustomDropdown, ShortcutCaptureButton, CloseIconButton
 from gui.utils import _txt, _center_on_screen
 
 
 class MarkerDialog(FramelessWindowMixin, _BaseDialog):
     """
-    Custom frameless dialog for adding or editing a custom marker.
+    Custom frameless dialog for adding or editing a custom marker (including optional shortcut).
     Usage:
-        dlg = MarkerDialog(parent, lang, title_key, prefill_name='', prefill_color='Blue')
+        dlg = MarkerDialog(parent, lang, title_key, prefill_name='', prefill_color='Blue', prefill_shortcut='')
         if dlg.exec() == QDialog.Accepted:
-            name, color = dlg.result_name, dlg.result_color
+            name, color, shortcut = dlg.result_name, dlg.result_color, dlg.result_shortcut
     """
     def __init__(self, parent, lang: str, title_key: str,
-                 prefill_name: str = '', prefill_color: str = ''):
+                 prefill_name: str = '', prefill_color: str = '', prefill_shortcut: str = ''):
         super().__init__(parent)
         self._lang = lang
         self.result_name = ''
         self.result_color = ''
+        self.result_shortcut = str(prefill_shortcut or '')
 
         self.frameless_init(is_popup=True)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
@@ -57,7 +58,7 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
                 font-size: {config.FS_PX(10)}px;
             }}
             QLineEdit:focus {{ border-color: {config.BTN_BG}; }}
-            QPushButton {{
+            QPushButton#btn_marker_cancel, QPushButton#btn_ok {{
                 background-color: {config.BTN_GHOST_BG};
                 color: {config.BTN_FG};
                 padding: {config.S(6)}px {config.S(16)}px;
@@ -67,7 +68,7 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
                 font-family: "{config.UI_FONT_NAME}";
                 font-size: {config.FS_PX(10)}px;
             }}
-            QPushButton:hover {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
+            QPushButton#btn_marker_cancel:hover {{ background-color: {config.BTN_GHOST_ACTIVE}; }}
             QPushButton#btn_ok {{ background-color: {config.BTN_BG}; }}
             QPushButton#btn_ok:hover {{ background-color: {config.BTN_ACTIVE}; }}
         """)
@@ -139,10 +140,42 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         color_row.addWidget(self._color_combo)
         content_layout.addLayout(color_row)
 
+        # Shortcut row (optional direct assignment)
+        sc_row = QHBoxLayout()
+        sc_lbl = QLabel(_txt(lang, "lbl_marker_shortcut_optional"), content)
+        sc_lbl.setFixedWidth(config.S(115))
+        sc_lbl.setWordWrap(True)
+        name_lbl.setFixedWidth(config.S(115))
+        color_lbl.setFixedWidth(config.S(115))
+
+        none_lbl = _txt(lang, "shortcut_none")
+        self._shortcut_btn = ShortcutCaptureButton(
+            self.result_shortcut,
+            display_only=False,
+            parent=content,
+            none_label=none_lbl if none_lbl != "shortcut_none" else None,
+        )
+        self._shortcut_btn.setFixedHeight(config.S(30))
+        btn_clr_sc = CloseIconButton(size=30, parent=content)
+        btn_clr_sc.setFixedSize(config.S(30), config.S(30))
+        btn_clr_sc.setToolTip(_txt(lang, "tt_clear_shortcut"))
+        btn_clr_sc.clicked.connect(lambda _c=False: self._shortcut_btn.set_sequence(""))
+
+        sc_ctrl_lay = QHBoxLayout()
+        sc_ctrl_lay.setContentsMargins(0, 0, 0, 0)
+        sc_ctrl_lay.setSpacing(config.S(6))
+        sc_ctrl_lay.addWidget(self._shortcut_btn, 1)
+        sc_ctrl_lay.addWidget(btn_clr_sc, 0)
+
+        sc_row.addWidget(sc_lbl)
+        sc_row.addLayout(sc_ctrl_lay, 1)
+        content_layout.addLayout(sc_row)
+
         # Buttons
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         btn_cancel = QPushButton(_txt(lang, "btn_close"), content)
+        btn_cancel.setObjectName("btn_marker_cancel")
         btn_cancel.clicked.connect(self.reject)
         btn_ok = QPushButton(_txt(lang, "btn_apply"), content)
         btn_ok.setObjectName("btn_ok")
@@ -153,7 +186,7 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         content_layout.addLayout(btn_row)
 
         self.adjustSize()
-        self.setFixedWidth(config.S(380))
+        self.setFixedWidth(config.S(420))
         self.adjustSize()
         _center_on_screen(self, self.width(), self.height(), reference_window=self.parentWidget())
 
@@ -164,9 +197,12 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         if name and color_key:
             self.result_name = name
             self.result_color = color_key
+            self.result_shortcut = self._shortcut_btn.get_sequence()
             self.accept()
 
     def keyPressEvent(self, event):
+        if getattr(self, "_shortcut_btn", None) and getattr(self._shortcut_btn, "capturing", False):
+            return
         if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
             self._on_ok()
         elif event.key() == Qt.Key_Escape:

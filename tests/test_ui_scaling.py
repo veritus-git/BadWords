@@ -206,8 +206,10 @@ class TestUIScalingUnified(unittest.TestCase):
 
             self.assertEqual(dlg.slider_ui_scale.minimum(), 75)
             self.assertEqual(dlg.slider_ui_scale.maximum(), 200)
-            self.assertIn(str(config.OS_SCALE_PERCENT), dlg.lbl_ui_scale_val.text())
-            self.assertIn("System", dlg.lbl_ui_scale_val.text())
+            self.assertEqual(dlg.lbl_ui_scale_val.text(), f"{config.OS_SCALE_PERCENT}%")
+            self.assertIn("System", dlg._lbl_ui_scale_title.text())
+            self.assertIn("#169c56", dlg._lbl_ui_scale_title.text())
+            auto_slider_w = dlg.slider_ui_scale.width()
 
             # Locate info icon on UI Scaling row and ensure it is right-aligned beside slider (not far left with label)
             scale_row_container = dlg.slider_ui_scale.parentWidget().parentWidget()
@@ -226,10 +228,12 @@ class TestUIScalingUnified(unittest.TestCase):
             )
             self.assertEqual(row_hint.height(), config.S(35))
 
-            # Moving slider does NOT apply live rebuild immediately; only Apply does
+            # Moving slider hides left System badge without shifting or stretching slider width; only Apply rebuilds UI
             dlg.slider_ui_scale.setValue(150)
             app.processEvents()
             self.assertEqual(dlg.lbl_ui_scale_val.text(), "150%")
+            self.assertNotIn("System", dlg._lbl_ui_scale_title.text())
+            self.assertEqual(dlg.slider_ui_scale.width(), auto_slider_w)
             self.assertNotEqual(config.UI_SCALE_PERCENT, 150)
             self.assertIn("ui_scale_pct", dlg._compute_unsaved_diff()[0])
 

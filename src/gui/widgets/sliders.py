@@ -31,7 +31,7 @@ class JumpSlider(QSlider):
         super().__init__(orientation, parent)
         import config
         self.config = config
-        self.setFixedHeight(config.S(16))
+        self.setFixedHeight(config.S(20))
         self.setCursor(Qt.PointingHandCursor)
         self.setAttribute(Qt.WA_Hover, True)
         self.setStyleSheet("background: transparent; border: none; margin: 0px; padding: 0px;")
@@ -39,6 +39,12 @@ class JumpSlider(QSlider):
         self._dragging = False
         self._transcription_ratio = None
         self._snap_step = max(1, int(snap_step))
+
+    def sizeHint(self):
+        return QSize(self.config.S(150), self.config.S(20))
+
+    def minimumSizeHint(self):
+        return QSize(self.config.S(90), self.config.S(18))
 
     def _value_from_x(self, pos_x: float) -> int:
         w = max(1, self.width())
@@ -113,8 +119,9 @@ class JumpSlider(QSlider):
         w = float(self.width())
         h = float(self.height())
         cy = h / 2.0
-        line_h = float(self.config.S(4.0))
-        radius = float(self.config.S(2.0))
+        scale = float(getattr(self.config, "SCALE_FACTOR", 1.0))
+        line_h = max(3.0, 4.0 * scale)
+        radius = line_h / 2.0
 
         # Progress ratio
         rng = self.maximum() - self.minimum()
@@ -135,12 +142,13 @@ class JumpSlider(QSlider):
         # 2.5. Transcription boundary tick mark (kreseczka showing transcription extent)
         if self._transcription_ratio is not None:
             tick_x = max(0.0, min(w, w * self._transcription_ratio))
-            tick_h = line_h + float(self.config.S(6.0))
-            painter.setPen(QPen(QColor("#dddddd"), float(self.config.S(2.0)), Qt.SolidLine, Qt.RoundCap))
+            tick_h = line_h + max(4.0, 6.0 * scale)
+            painter.setPen(QPen(QColor("#dddddd"), max(1.5, 2.0 * scale), Qt.SolidLine, Qt.RoundCap))
             painter.drawLine(QPointF(tick_x, cy - tick_h / 2.0), QPointF(tick_x, cy + tick_h / 2.0))
 
-        # 3. Smooth white circle dot (kropka: 5px radius idle, 6.5px hover/drag)
-        r = float(self.config.S(6.5 if (self._hovered or self._dragging) else 5.0))
+        # 3. Smooth white circle dot scaled cleanly without clipping
+        base_r = (6.8 if (self._hovered or self._dragging) else 5.2) * scale
+        r = min(base_r, max(2.5, (h - 1.5) / 2.0))
         dot_x = max(r, min(w - r, played_w))
         painter.setBrush(QColor("#ffffff"))
         painter.setPen(Qt.NoPen)

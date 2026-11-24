@@ -5009,12 +5009,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _on_add_custom_marker(self):
         dlg = self._get_settings_dialog()
-        custom_markers_label = dlg.txt("tab_custom_markers")
-        for i in range(dlg.category_list.count()):
-            if dlg.category_list.item(i).text() == custom_markers_label:
-                dlg.stack.setCurrentIndex(i)
-                dlg.category_list.setCurrentRow(i)
-                break
+        if hasattr(dlg, "open_section"):
+            dlg.open_section("custom_markers")
+        else:
+            markers_label = dlg.txt("tab_custom_markers")
+            for i in range(dlg.category_list.count()):
+                if dlg.category_list.item(i).text() == markers_label:
+                    dlg.stack.setCurrentIndex(i)
+                    dlg.category_list.setCurrentRow(i)
+                    break
         dlg.show()
         if dlg.isMinimized():
             dlg.showNormal()

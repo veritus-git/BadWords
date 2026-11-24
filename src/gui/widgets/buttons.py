@@ -782,27 +782,42 @@ class ShortcutCaptureButton(QPushButton):
         }}
     """
 
-    def __init__(self, current_sequence, display_only=False, parent=None):
+    def __init__(self, current_sequence, display_only=False, parent=None, none_label=None, compact=False):
         super().__init__(parent)
         self.current_seq = current_sequence or ""
         self.capturing = False
         self.display_only = display_only
         self._conflict = False
+        self._none_label = none_label
+        self._compact = bool(compact)
 
         self.setCursor(Qt.PointingHandCursor if not display_only else Qt.ArrowCursor)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setMaximumWidth(config.S(220))
-        self.setMinimumWidth(config.S(60))
-        self.setFixedHeight(config.INPUT_HEIGHT)
+        self.setSizePolicy(QSizePolicy.Expanding if not self._compact else QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self._custom_fixed_w = None
+        if self._compact:
+            self.setFixedWidth(config.S(92))
+        else:
+            self.setMaximumWidth(config.S(260))
+            self.setMinimumWidth(config.S(60))
+        self.setFixedHeight(config.S(26) if self._compact else config.INPUT_HEIGHT)
         self._apply_style()
         self._update_label()
 
         if not display_only:
             self.clicked.connect(self.start_capture)
 
+    def set_uniform_width(self, w: int):
+        self._custom_fixed_w = int(w)
+        self.setMinimumWidth(self._custom_fixed_w)
+        self.setMaximumWidth(self._custom_fixed_w)
+
     def sizeHint(self):
         from PySide6.QtCore import QSize
-        return QSize(config.S(220), config.INPUT_HEIGHT)
+        if self._compact:
+            return QSize(config.S(92), config.S(26))
+        if getattr(self, '_custom_fixed_w', None):
+            return QSize(self._custom_fixed_w, config.INPUT_HEIGHT)
+        return QSize(config.S(260), config.INPUT_HEIGHT)
 
     def _apply_style(self):
         if self._conflict:
@@ -811,26 +826,44 @@ class ShortcutCaptureButton(QPushButton):
             border = "#23a559"
         else:
             border = "#3a3a3a"
-        pad_x = config.S(8)
+        pad_x = config.S(6) if self._compact else config.S(8)
+        h = config.S(26) if self._compact else config.INPUT_HEIGHT
         self.setStyleSheet(self._BASE_SS.format(
             border=border,
             radius=config.S(3),
             pad_x=pad_x,
-            h=config.INPUT_HEIGHT - 2,
-            font_size=config.FS_PX(9.5)
+            h=h - 2,
+            font_size=config.FS_PX(8.8 if self._compact else 9.5)
         ))
-        self.setMaximumWidth(config.S(220))
-        self.setMinimumWidth(config.S(60))
-        self.setFixedHeight(config.INPUT_HEIGHT)
+        if self._compact:
+            self.setFixedWidth(config.S(92))
+        elif getattr(self, '_custom_fixed_w', None):
+            self.setMinimumWidth(self._custom_fixed_w)
+            self.setMaximumWidth(self._custom_fixed_w)
+        else:
+            self.setMaximumWidth(config.S(260))
+            self.setMinimumWidth(config.S(60))
+        self.setFixedHeight(h)
+
+    def _resolved_none_label(self) -> str:
+        if self._none_label:
+            return self._none_label
+        try:
+            t = self.txt("shortcut_none")
+            if t and t != "shortcut_none":
+                return t
+        except Exception:
+            pass
+        return "(none)"
 
     def _update_label(self):
         if self.display_only:
-            self.setText(self.current_seq if self.current_seq else "—")
+            self.setText(self.current_seq if self.current_seq else "-")
         else:
             if self.capturing:
                 self.setText("...")
             else:
-                self.setText(self.current_seq if self.current_seq else "(none)")
+                self.setText(self.current_seq if self.current_seq else self._resolved_none_label())
 
     def start_capture(self):
         if self.display_only:
@@ -885,18 +918,18 @@ class ShortcutCaptureButton(QPushButton):
                 self._apply_style()
 
 class MouseShortcutCaptureButton(ShortcutCaptureButton):
-    def __init__(self, current_sequence, key_map, display_only=False, parent=None):
+    def __init__(self, current_sequence, key_map, display_only=False, parent=None, none_label=None, compact=False):
         self.key_map = key_map
-        super().__init__(current_sequence, display_only, parent)
+        super().__init__(current_sequence, display_only, parent, none_label=none_label, compact=compact)
 
     def _update_label(self):
         if self.display_only:
-            self.setText(self.key_map.get(self.current_seq, self.current_seq) if self.current_seq else "—")
+            self.setText(self.key_map.get(self.current_seq, self.current_seq) if self.current_seq else "-")
         else:
             if self.capturing:
                 self.setText("...")
             else:
-                self.setText(self.key_map.get(self.current_seq, self.current_seq) if self.current_seq else "(none)")
+                self.setText(self.key_map.get(self.current_seq, self.current_seq) if self.current_seq else self._resolved_none_label())
 
     def mousePressEvent(self, event):
         from PySide6.QtCore import Qt
