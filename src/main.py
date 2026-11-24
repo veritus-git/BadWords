@@ -158,22 +158,26 @@ class AppController:
         self._finish_startup(resolve, audio_engine)
 
     def _finish_startup(self, resolve, audio_engine):
-        import gui
+        try:
+            import gui
 
-        osdoc.log_info("Loading complete. Building main window.")
-        self.main_win = gui.BadWordsGUI(audio_engine, resolve)
-        self.main_win.closeEvent_callback = self._on_close
+            osdoc.log_info("Loading complete. Building main window.")
+            self.main_win = gui.BadWordsGUI(audio_engine, resolve)
+            self.main_win.closeEvent_callback = self._on_close
+            osdoc.log_info("Main window constructed. Showing window.")
 
-        self.main_win.showMaximized()
-        self.main_win.raise_()
-        self.main_win.activateWindow()
+            self.main_win.showMaximized()
+            self.main_win.raise_()
+            self.main_win.activateWindow()
 
-        gui.track_window_screen(self.main_win)
+            gui.track_window_screen(self.main_win)
 
-        if self.splash:
-            self.splash.close()
-            self.splash = None
-        osdoc.log_info("Main window displayed.")
+            if self.splash:
+                self.splash.close()
+                self.splash = None
+            osdoc.log_info("Main window displayed.")
+        except Exception as e:
+            self.on_error(f"{e}\n\n{traceback.format_exc()}")
 
     def on_error(self, message: str):
         """Called on the main thread when InitThread or startup fails."""
@@ -219,6 +223,14 @@ def main():
     global _controller
 
     try:
+        try:
+            import faulthandler
+            if sys.stderr is not None and hasattr(sys.stderr, "fileno"):
+                sys.stderr.fileno()
+                faulthandler.enable(file=sys.stderr, all_threads=False)
+        except Exception:
+            pass
+
         if sys.platform == "win32":
             try:
                 import ctypes

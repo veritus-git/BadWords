@@ -344,9 +344,9 @@ class TestSettingsAndVersion(unittest.TestCase):
             engine = self._create_mock_engine()
             popup = TelemetryPopup(engine)
 
-            shadow = popup.inner_frame.graphicsEffect()
-            self.assertIsInstance(shadow, QGraphicsDropShadowEffect)
-            self.assertGreaterEqual(shadow.blurRadius(), 20)
+            self.assertIsNone(popup.inner_frame.graphicsEffect())
+            self.assertFalse(popup.testAttribute(Qt.WA_TranslucentBackground))
+            self.assertIn("1px solid #2e2e2e", popup.styleSheet())
 
             # Default state for new users: auto_crash_report MUST be ON, no default badge, no nested QGraphicsOpacityEffect
             self.assertTrue(popup._tgl_crash_report.isChecked())
@@ -423,8 +423,8 @@ class TestSettingsAndVersion(unittest.TestCase):
                 lambda k, pt=prior_telem: pt if k == "telemetry_opt_in" else None
             )
             dlg = CrashReportConsentDialog(engine)
-            shadow = dlg.inner_frame.graphicsEffect()
-            self.assertIsInstance(shadow, QGraphicsDropShadowEffect)
+            self.assertIsNone(dlg.inner_frame.graphicsEffect())
+            self.assertFalse(dlg.testAttribute(Qt.WA_TranslucentBackground))
 
             if prior_telem is False:
                 art_dir = os.path.join(os.path.dirname(__file__), "artifacts")

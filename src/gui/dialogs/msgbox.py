@@ -12,8 +12,7 @@ Custom frameless message box dialog for alerts and confirmations.
 """
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QGraphicsDropShadowEffect
-from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
@@ -28,8 +27,8 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
         self.frameless_init(is_popup=True)
         
         self.setStyleSheet(f"""
-            QDialog {{ background-color: transparent; }}
-            #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #111; }}
+            QDialog {{ background-color: {config.BG_COLOR}; }}
+            #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #2e2e2e; border-radius: 0px; }}
             QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; }}
             QLabel#lbl_title {{ font-size: {config.FS(14)}pt; font-weight: bold; }}
             QLabel#lbl_msg {{ font-size: {config.FS(10.5)}pt; }}
@@ -48,16 +47,10 @@ class CustomMsgBox(FramelessWindowMixin, _BaseDialog):
         """)
         
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
+        main_layout.setContentsMargins(0, 0, 0, 0)
         
         self.inner_frame = QFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
-        
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(config.S(30))
-        shadow.setColor(QColor(0, 0, 0, 150))
-        shadow.setOffset(0, 0)
-        self.inner_frame.setGraphicsEffect(shadow)
         
         main_layout.addWidget(self.inner_frame)
         

@@ -49,54 +49,45 @@ pub fn show_fatal_error_box(title: &str, message: &str) {
 }
 
 /// Strips the Windows Mark-of-the-Web (Zone.Identifier NTFS stream) from a file or binary
+/// directly via NTFS ADS removal in <1ms without spawning slow PowerShell processes.
 pub fn unblock_file(path: &Path) {
-    #[cfg(target_os = "windows")]
-    {
-        if !path.exists() {
-            return;
-        }
-        // 1. Direct deletion of NTFS Alternate Data Stream Zone.Identifier
-        let ads_path = format!("{}:Zone.Identifier", path.to_string_lossy());
-        let _ = std::fs::remove_file(&ads_path);
-
-        // 2. PowerShell Unblock-File invocation
-        let path_str = path.to_string_lossy();
-        let _ = crate::os::create_hidden_command("powershell")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-WindowStyle",
-                "Hidden",
-                "-Command",
-                &format!("Unblock-File -LiteralPath '{}' -ErrorAction SilentlyContinue; Remove-Item -LiteralPath '{}:Zone.Identifier' -Force -ErrorAction SilentlyContinue", path_str, path_str),
-            ])
-            .status();
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = path;
-    }
+    unblock_file_fast(path);
 }
 
 #[allow(dead_code)]
-/// Strips Mark-of-the-Web (Zone.Identifier) recursively from an entire directory tree
+/// Strips Mark-of-the-Web (Zone.Identifier) directly from top-level app binaries and scripts
+/// in pure Rust (<5ms), deliberately skipping venv/models/temp trees with tens of thousands of files.
 pub fn unblock_dir(dir: &Path) {
     #[cfg(target_os = "windows")]
     {
-        if !dir.exists() {
+        if !dir.is_dir() {
             return;
         }
-        let dir_str = dir.to_string_lossy();
-        let _ = crate::os::create_hidden_command("powershell")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-WindowStyle",
-                "Hidden",
-                "-Command",
-                &format!("Get-ChildItem -LiteralPath '{}' -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {{ Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue; Remove-Item -LiteralPath \"$($_.FullName):Zone.Identifier\" -Force -ErrorAction SilentlyContinue }}", dir_str),
-            ])
-            .status();
+        fn walk_app_tree(root: &Path, depth: usize) {
+            if depth > 4 {
+                return;
+            }
+            if let Ok(entries) = std::fs::read_dir(root) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                            let lower = name.to_ascii_lowercase();
+                            if matches!(
+                                lower.as_str(),
+                                "venv" | "models" | "temp" | "saves" | "__pycache__" | ".git" | "libs"
+                            ) {
+                                continue;
+                            }
+                        }
+                        walk_app_tree(&path, depth + 1);
+                    } else if path.is_file() {
+                        unblock_file_fast(&path);
+                    }
+                }
+            }
+        }
+        walk_app_tree(dir, 0);
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -623,7 +614,7 @@ pub fn create_windows_shortcuts(
                 candidate_urls.push(format!("https://github.com/veritus-git/BadWords/releases/download/{}/BadWords.exe", ver));
             }
             let agent = ureq::builder()
-                .timeout(std::time::Duration::from_secs(15))
+                .timeout(std::time::Duration::from_secs(6))
                 .redirects(10)
                 .build();
             for dl_url in candidate_urls {

@@ -312,8 +312,8 @@ class CustomTitleBar(QWidget):
         popup.setStyleSheet(f"""
             QFrame {{
                 background-color: #1a1a1a;
-                border: 1px solid #333333;
-                border-radius: {config.S(6)}px;
+                border: 1px solid #2e2e2e;
+                border-radius: 0px;
                 padding: {config.S(4)}px 0;
             }}
         """)
@@ -370,8 +370,8 @@ class CustomTitleBar(QWidget):
         popup.setStyleSheet(f"""
             QFrame {{
                 background-color: #1a1a1a;
-                border: 1px solid #333333;
-                border-radius: {config.S(6)}px;
+                border: 1px solid #2e2e2e;
+                border-radius: 0px;
                 padding: 0px;
                 margin: 0px;
             }}
@@ -607,21 +607,77 @@ class CustomTitleBar(QWidget):
             return
         if event.button() == Qt.LeftButton:
             self._is_dragging = True
+            self._rip_pending_system_move = False
+            self._rip_drag_offset = None
+            self._rip_target_size = None
             self._click_pos = event.position().toPoint()
             self._press_global_pos = event.globalPosition().toPoint()
             event.accept()
             return
         super().mousePressEvent(event)
 
+    def _begin_rip_system_move(self, win, tw: int, th: int):
+        if not getattr(self, '_rip_pending_system_move', False):
+            return
+        self._rip_pending_system_move = False
+        offset = getattr(self, '_rip_drag_offset', None)
+        from PySide6.QtWidgets import QApplication
+        if not (QApplication.mouseButtons() & Qt.LeftButton):
+            return
+        try:
+            if offset is not None:
+                cur = QGuiApplication.primaryScreen()
+                cur_pos = win.mapToGlobal(self.mapTo(win, QPoint(0, 0)))
+                from PySide6.QtGui import QCursor
+                gpos = QCursor.pos()
+                scr = QGuiApplication.screenAt(gpos) or win.screen() or cur
+                sg = scr.availableGeometry() if scr else None
+                nx = gpos.x() - offset.x()
+                ny = gpos.y() - offset.y()
+                if sg and sg.isValid():
+                    nx = max(sg.left(), min(nx, sg.left() + sg.width() - tw))
+                    ny = max(sg.top(), min(ny, sg.top() + sg.height() - th))
+                win.setGeometry(nx, ny, tw, th)
+                if hasattr(win, 'windowHandle') and win.windowHandle():
+                    win.windowHandle().setGeometry(nx, ny, tw, th)
+            QGuiApplication.sync()
+            if hasattr(win, 'windowHandle') and win.windowHandle():
+                win.windowHandle().startSystemMove()
+        except Exception as e:
+            from osdoc import log_info
+            log_info(f"startSystemMove error: {e}")
+
     def mouseMoveEvent(self, event):
         if not getattr(self, 'movable', True):
             event.ignore()
             return
+
+        cur_global = event.globalPosition().toPoint()
+
+        # While X11 WM settles un-maximize before startSystemMove, keep window locked under cursor
+        if getattr(self, '_rip_pending_system_move', False):
+            win = self.window()
+            offset = getattr(self, '_rip_drag_offset', None)
+            tsize = getattr(self, '_rip_target_size', None)
+            if offset is not None and tsize is not None:
+                scr = QGuiApplication.screenAt(cur_global) or win.screen() or QGuiApplication.primaryScreen()
+                sg = scr.availableGeometry() if scr else None
+                tw, th = tsize
+                nx = cur_global.x() - offset.x()
+                ny = cur_global.y() - offset.y()
+                if sg and sg.isValid():
+                    nx = max(sg.left(), min(nx, sg.left() + sg.width() - tw))
+                    ny = max(sg.top(), min(ny, sg.top() + sg.height() - th))
+                win.setGeometry(nx, ny, tw, th)
+                if hasattr(win, 'windowHandle') and win.windowHandle():
+                    win.windowHandle().setGeometry(nx, ny, tw, th)
+            event.accept()
+            return
+
         if not getattr(self, '_is_dragging', False):
             super().mouseMoveEvent(event)
             return
 
-        cur_global = event.globalPosition().toPoint()
         press_global = getattr(self, '_press_global_pos', cur_global)
         if (cur_global - press_global).manhattanLength() < 4:
             event.accept()
@@ -630,32 +686,60 @@ class CustomTitleBar(QWidget):
         win = self.window()
         self._is_dragging = False
 
-        # INVARIANT: On Linux/macOS, ripping out of maximized MUST un-maximize & resize to exact
-        # 70% x 70% BEFORE startSystemMove() so Cinnamon/KWin/Mutter drag the 70% window and never
-        # revert it to a stale WM-cached size.
+        # INVARIANT: On Linux/macOS, ripping out of maximized MUST un-maximize & resize to target
+        # size (70% x 70% MainWindow; small default Settings) with exact proportional horizontal
+        # cursor placement BEFORE startSystemMove() so WMs never jump left or revert size.
         is_max = bool(win._is_effectively_maximized()) if hasattr(win, '_is_effectively_maximized') else win.isMaximized()
         if is_max and not getattr(win, '_is_win', False):
             win._restore_via_button = False
             win._restoring_from_max = True
+            from PySide6.QtCore import QTimer
             try:
+                from .mixins import compute_proportional_rip_rect
                 scr = QGuiApplication.screenAt(cur_global) or win.screen() or QGuiApplication.primaryScreen()
                 sg = scr.availableGeometry() if scr else None
                 rip_geo = win._compute_rip_geometry(screen=scr) if hasattr(win, '_compute_rip_geometry') else None
                 if rip_geo and rip_geo.isValid():
                     tw, th = rip_geo.width(), rip_geo.height()
-                    click_x = getattr(self, '_click_pos', QPoint(win.width() // 2, 16)).x()
-                    click_y = getattr(self, '_click_pos', QPoint(win.width() // 2, 16)).y()
-                    ratio_x = max(0.08, min(0.82, float(click_x) / max(1, win.width())))
-                    nx = int(round(cur_global.x() - tw * ratio_x))
-                    ny = int(round(cur_global.y() - click_y))
-                    if sg and sg.isValid():
-                        ny = max(sg.top(), min(ny, sg.bottom() - th + 1))
-                    win.showNormal()
-                    win.setGeometry(nx, ny, tw, th)
-                    if hasattr(win, 'windowHandle') and win.windowHandle():
-                        win.windowHandle().setGeometry(nx, ny, tw, th)
-            finally:
-                from PySide6.QtCore import QTimer
+                    click_pt = getattr(self, '_click_pos', QPoint(win.width() // 2, 16))
+                    max_w = max(1, win.width())
+                    target_rect = compute_proportional_rip_rect(
+                        cursor_x=cur_global.x(),
+                        cursor_y=cur_global.y(),
+                        click_x=click_pt.x(),
+                        click_y=click_pt.y(),
+                        maximized_w=max_w,
+                        target_w=tw,
+                        target_h=th,
+                        screen_geo=sg,
+                    )
+                    if getattr(win, '_is_wayland', False):
+                        win.showNormal()
+                        win.resize(target_rect.width(), target_rect.height())
+                        if hasattr(win, 'windowHandle') and win.windowHandle():
+                            win.windowHandle().startSystemMove()
+                    else:
+                        self._rip_drag_offset = QPoint(
+                            cur_global.x() - target_rect.x(),
+                            cur_global.y() - target_rect.y(),
+                        )
+                        self._rip_target_size = (target_rect.width(), target_rect.height())
+                        self._rip_pending_system_move = True
+                        win.showNormal()
+                        win.setGeometry(target_rect)
+                        if hasattr(win, 'windowHandle') and win.windowHandle():
+                            win.windowHandle().setGeometry(target_rect)
+                        QGuiApplication.sync()
+                        # Wait ~25ms for X11 WM (Muffin/KWin/Mutter) to process _NET_WM_STATE
+                        # unmaximize & ConfigureNotify at target_rect BEFORE starting system move grab.
+                        QTimer.singleShot(
+                            25,
+                            lambda w=win, rw=target_rect.width(), rh=target_rect.height(): self._begin_rip_system_move(w, rw, rh),
+                        )
+                    QTimer.singleShot(160, lambda w=win: setattr(w, '_restoring_from_max', False))
+                    event.accept()
+                    return
+            except Exception:
                 QTimer.singleShot(120, lambda w=win: setattr(w, '_restoring_from_max', False))
 
         if hasattr(win, 'windowHandle') and win.windowHandle():
@@ -669,6 +753,7 @@ class CustomTitleBar(QWidget):
 
     def mouseReleaseEvent(self, event):
         self._is_dragging = False
+        self._rip_pending_system_move = False
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):

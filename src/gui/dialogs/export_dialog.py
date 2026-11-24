@@ -19,9 +19,9 @@ import time
 from PySide6.QtCore import Qt, QUrl, QSize
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget,
-    QFrame, QLineEdit, QFileDialog, QSizePolicy, QGraphicsDropShadowEffect
+    QFrame, QLineEdit, QFileDialog, QSizePolicy
 )
-from PySide6.QtGui import QDesktopServices, QCursor, QPixmap, QPainter, QColor
+from PySide6.QtGui import QDesktopServices, QCursor, QPixmap, QPainter
 
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
@@ -200,10 +200,10 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
     def _build_ui(self):
         self.setStyleSheet(f"""
-            QDialog, ExportDialog {{ background-color: transparent; }}
+            QDialog, ExportDialog {{ background-color: {config.BG_COLOR}; }}
             #MainInnerFrame {{
                 background-color: {config.BG_COLOR};
-                border: 1px solid #1a1a1a;
+                border: 1px solid #2e2e2e;
                 border-radius: 0px;
             }}
             QLabel {{
@@ -236,26 +236,10 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
         """)
 
         outer_l = QVBoxLayout(self)
-        outer_l.setContentsMargins(15, 15, 15, 15)
+        outer_l.setContentsMargins(0, 0, 0, 0)
 
-        class SolidFrame(QFrame):
-            def paintEvent(self, e):
-                from PySide6.QtGui import QPainter, QColor
-                p = QPainter(self)
-                p.fillRect(self.rect(), QColor(config.BG_COLOR))
-                super().paintEvent(e)
-
-        self.inner_frame = SolidFrame(self)
+        self.inner_frame = QFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
-
-        from PySide6.QtWidgets import QGraphicsDropShadowEffect
-        from PySide6.QtGui import QColor
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(30)
-        shadow.setColor(QColor(0, 0, 0, 150))
-        shadow.setOffset(0, 0)
-        self.inner_frame.setGraphicsEffect(shadow)
-
         outer_l.addWidget(self.inner_frame)
 
         root_l = QVBoxLayout(self.inner_frame)

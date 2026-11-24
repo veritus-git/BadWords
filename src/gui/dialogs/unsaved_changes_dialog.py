@@ -13,9 +13,8 @@ Confirmation dialog for review and save/discard of modified settings.
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QScrollArea, QWidget, QGraphicsDropShadowEffect
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QScrollArea, QWidget
 )
-from PySide6.QtGui import QColor
 
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
@@ -30,8 +29,8 @@ class UnsavedChangesDialog(FramelessWindowMixin, _BaseDialog):
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         
         self.setStyleSheet(parent.styleSheet() + f"""
-            QDialog {{ background-color: transparent; }}
-            #MainInnerFrame {{ background-color: {config.BG_COLOR}; }}
+            QDialog {{ background-color: {config.BG_COLOR}; }}
+            #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #2e2e2e; border-radius: 0px; }}
             QScrollArea {{ border: 1px solid #333; background-color: #1c1c1c; border-radius: 4px; }}
             QFrame#item_row {{ border-bottom: 1px solid #333; padding-bottom: 5px; }}
         """)
@@ -41,16 +40,10 @@ class UnsavedChangesDialog(FramelessWindowMixin, _BaseDialog):
         self.rows = {}
         
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
+        main_layout.setContentsMargins(0, 0, 0, 0)
         
         self.inner_frame = QFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
-        
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(config.S(30))
-        shadow.setColor(QColor(0, 0, 0, 150))
-        shadow.setOffset(0, 0)
-        self.inner_frame.setGraphicsEffect(shadow)
         
         main_layout.addWidget(self.inner_frame)
         

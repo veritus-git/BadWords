@@ -18,9 +18,8 @@ import subprocess
 import tempfile
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QGraphicsDropShadowEffect
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 )
-from PySide6.QtGui import QColor
 
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
@@ -218,11 +217,11 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         self.setAttribute(Qt.WA_DeleteOnClose, True)
 
         self.setStyleSheet(f"""
-            QDialog {{ background-color: transparent; }}
+            QDialog {{ background-color: {config.BG_COLOR}; }}
             #MainInnerFrame {{
                 background-color: {config.BG_COLOR};
-                border: 1px solid #111;
-                border-radius: {config.S(8)}px;
+                border: 1px solid #2e2e2e;
+                border-radius: 0px;
             }}
             QLabel {{ color: {config.FG_COLOR}; background: transparent; font-family: "{config.UI_FONT_NAME}"; }}
             QLabel#lbl_title  {{ font-size: {config.FS(15)}pt; font-weight: bold; }}
@@ -251,16 +250,10 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         """)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(config.S(14), config.S(14), config.S(14), config.S(14))
+        outer.setContentsMargins(0, 0, 0, 0)
 
         self.inner_frame = QFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(config.S(32))
-        shadow.setColor(QColor(0, 0, 0, 160))
-        shadow.setOffset(0, 0)
-        self.inner_frame.setGraphicsEffect(shadow)
         outer.addWidget(self.inner_frame)
 
         root = QVBoxLayout(self.inner_frame)

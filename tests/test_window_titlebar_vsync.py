@@ -45,16 +45,24 @@ from gui.components.mixins import (
     HTTOPRIGHT,
     FramelessWindowMixin,
     compute_default_normal_geometry,
+    compute_proportional_rip_rect,
     compute_win_nccalcsize_rect,
     compute_win_nchittest,
 )
 from gui.components.titlebar import AnimatedTitleButton, CustomTitleBar
+from gui.dialogs.export_dialog import ExportDialog
+from gui.dialogs.marker_dialog import MarkerDialog
 from gui.dialogs.msgbox import CustomMsgBox
 from gui.dialogs.settings_dialog import SettingsDialog
+from gui.dialogs.telemetry_popup import TelemetryPopup
+from gui.dialogs.crash_report_dialog import CrashReportConsentDialog
+from gui.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
+from gui.dialogs.update_dialog import UpdateNotifyDialog
 from gui.dialogs.v4_migration_dialog import V4MigrationDialog
 from gui.utils import clamp_rect_to_screen, apply_app_icon_everywhere
 from gui.widgets.labels import IDETooltip
 import gui.vsync as vsync
+from startup.boot_splash import BootSplash
 
 
 class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
@@ -521,6 +529,134 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
         vsync._on_screen_rate_changed(fake_60)
         self.assertEqual(vsync.get_refresh_interval_ms(), 7)
         vsync.apply_screen_refresh_rate(fake_60)
+
+    def test_settings_always_restores_default_size_and_proportional_rip_math(self):
+        # 1. Exact proportional rip positioning (PO example: 1920px bar, click at 1500px -> 78.125%,
+        # new width 1344px -> cursor stays at 1050px from left edge of restored window)
+        sg = QRect(0, 0, 1920, 1080)
+        r = compute_proportional_rip_rect(
+            cursor_x=1500, cursor_y=20, click_x=1500, click_y=16,
+            maximized_w=1920, target_w=1344, target_h=756, screen_geo=sg,
+        )
+        self.assertEqual(r.width(), 1344)
+        self.assertEqual(r.height(), 756)
+        self.assertEqual(r.x(), 450)  # 1500 - 450 == 1050 (78.125% of 1344)
+        self.assertEqual(1500 - r.x(), 1050)
+        self.assertEqual(r.y(), 4)
+
+        # Extreme right-side grab (e.g. 92% of bar) must NOT be capped at 82%, and stays within screen
+        r_right = compute_proportional_rip_rect(
+            cursor_x=1766, cursor_y=18, click_x=1766, click_y=16,
+            maximized_w=1920, target_w=750, target_h=580, screen_geo=sg,
+        )
+        self.assertGreater(r_right.x(), 1000)
+        self.assertLessEqual(r_right.right(), sg.right())
+        self.assertGreaterEqual(1766, r_right.left())
+        self.assertLessEqual(1766, r_right.right())
+
+        # Negative secondary monitor clamping
+        neg_sg = QRect(-1920, 0, 1920, 1080)
+        r_neg = compute_proportional_rip_rect(
+            cursor_x=-200, cursor_y=16, click_x=1720, click_y=16,
+            maximized_w=1920, target_w=750, target_h=580, screen_geo=neg_sg,
+        )
+        self.assertGreaterEqual(r_neg.left(), neg_sg.left())
+        self.assertLessEqual(r_neg.right(), neg_sg.right())
+
+        # 2. SettingsDialog ALWAYS restores to its small default size (both btn_max AND rip),
+        # even after manual edge resize before maximizing!
+        engine = self._create_mock_engine()
+        from PySide6.QtWidgets import QMainWindow
+        main_win = QMainWindow()
+        main_win._always_on_top_active = False
+        fake_screen = MagicMock()
+        fake_screen.availableGeometry.return_value = sg
+
+        dlg = SettingsDialog(engine, main_win)
+        expected_w = min(config.SETTINGS_WINDOW_W, sg.width())
+        expected_h = min(config.SETTINGS_WINDOW_H, sg.height())
+        with patch.object(dlg, "screen", return_value=fake_screen), \
+             patch("gui.components.mixins.QGuiApplication.screenAt", return_value=fake_screen):
+            # Simulate user manually resizing Settings larger, then maximizing
+            dlg._last_normal_geo = QRect(100, 80, 1200, 850)
+            dlg._snapshot_pre_maximize_geometry()
+            dlg.resize(1920, 1080)
+            # Exiting via btn_max -> MUST return to original small default size (not 1200x850, not 70%)
+            dlg._restore_after_unmaximize(via_button=True)
+            self.assertEqual(dlg.size(), QSize(expected_w, expected_h))
+
+            # Exiting via rip -> MUST also use small default size
+            dlg._restoring_from_max = False
+            dlg.resize(1920, 1080)
+            dlg._restore_after_unmaximize(via_button=False)
+            self.assertEqual(dlg.size(), QSize(expected_w, expected_h))
+        dlg.close()
+        main_win.close()
+
+    def test_zero_custom_shadows_opaque_solid_borders_and_win11_native_event_safety(self):
+        # 1. Verify nativeEvent never calls self.winId() (prevents Win11 CreateWindowEx stack overflow)
+        import ast
+        with open(os.path.join(os.path.dirname(__file__), "..", "src", "gui", "components", "mixins.py"), "r", encoding="utf-8") as f:
+            mixins_src = f.read()
+        tree = ast.parse(mixins_src)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "nativeEvent":
+                src_seg = ast.get_source_segment(mixins_src, node) or ""
+                has_winid_call = any(
+                    isinstance(c, ast.Call)
+                    and isinstance(c.func, ast.Attribute)
+                    and c.func.attr == "winId"
+                    for c in ast.walk(node)
+                )
+                self.assertFalse(has_winid_call, "nativeEvent must never call self.winId()")
+                self.assertIn("msg.hWnd", src_seg)
+
+        # 2. Verify zero QGraphicsDropShadowEffect & zero WA_TranslucentBackground across all windows/dialogs/splash
+        engine = self._create_mock_engine()
+        from PySide6.QtWidgets import QMainWindow
+        parent = QMainWindow()
+        parent._always_on_top_active = False
+        parent.lang = "en"
+        parent.engine = engine
+
+        splash = BootSplash()
+        msg_box = CustomMsgBox(parent, "Notice", "Clean solid border test.", "OK", "Cancel")
+        unsaved = UnsavedChangesDialog(parent, {"theme": ("dark", "light")}, {"theme": "Theme"})
+        marker = MarkerDialog(parent, "en", "tool_custom_markers")
+        export_dlg = ExportDialog(parent, engine, [], [])
+        telem = TelemetryPopup(engine, parent=parent)
+        consent = CrashReportConsentDialog(engine, parent=parent)
+        upd = UpdateNotifyDialog(parent, "en", "4.0.1", "4.0.2", "https://github.com", "https://gitlab.com", False, False, ".", "- Fix")
+        mig = V4MigrationDialog(lang="en", parent=parent)
+
+        art_dir = os.path.join(os.path.dirname(__file__), "artifacts")
+        os.makedirs(art_dir, exist_ok=True)
+        for name, w in (
+            ("boot_splash_solid", splash),
+            ("msgbox_solid", msg_box),
+            ("unsaved_solid", unsaved),
+            ("marker_solid", marker),
+            ("export_solid", export_dlg),
+            ("telemetry_solid", telem),
+            ("consent_solid", consent),
+            ("update_solid", upd),
+            ("migration_solid", mig),
+        ):
+            self.assertFalse(w.testAttribute(Qt.WA_TranslucentBackground), f"{name} must be opaque")
+            self.assertFalse(bool(w.windowFlags() & Qt.NoDropShadowWindowHint), f"{name} should allow native OS shadow")
+            self.assertEqual(w.findChildren(QGraphicsDropShadowEffect), [], f"{name} must not have QGraphicsDropShadowEffect")
+            inner = getattr(w, "inner_frame", None)
+            if inner is not None:
+                self.assertIsNone(inner.graphicsEffect())
+
+        splash.show()
+        msg_box.show()
+        app.processEvents()
+        self.assertTrue(splash.grab().save(os.path.join(art_dir, "point3_boot_splash_solid.png")))
+        self.assertTrue(msg_box.grab().save(os.path.join(art_dir, "point3_msgbox_solid.png")))
+
+        for w in (splash, msg_box, unsaved, marker, export_dlg, telem, consent, upd, mig, parent):
+            w.close()
 
 
 if __name__ == "__main__":

@@ -170,7 +170,12 @@ class V4MigrationDialog(FramelessWindowMixin, _BaseDialog):
         self.setFixedWidth(680)
 
         self.setStyleSheet("""
-            QDialog, QFrame, QWidget {
+            QDialog {
+                background-color: #181818;
+                color: #e6e6e6;
+                font-family: 'Segoe UI', 'Ubuntu', 'Helvetica Neue', sans-serif;
+            }
+            QFrame, QWidget {
                 background: transparent;
                 background-color: transparent;
                 color: #e6e6e6;
@@ -178,8 +183,8 @@ class V4MigrationDialog(FramelessWindowMixin, _BaseDialog):
             }
             #MainCard {
                 background-color: #181818;
-                border: 1px solid #282828;
-                border-radius: 12px;
+                border: 1px solid #2e2e2e;
+                border-radius: 0px;
             }
             QLabel {
                 background: transparent;
@@ -245,7 +250,7 @@ class V4MigrationDialog(FramelessWindowMixin, _BaseDialog):
 
         outer = QVBoxLayout(self)
         outer.setSizeConstraint(QVBoxLayout.SetFixedSize)
-        outer.setContentsMargins(20, 20, 20, 20)
+        outer.setContentsMargins(0, 0, 0, 0)
 
         card = QFrame(self)
         card.setObjectName("MainCard")

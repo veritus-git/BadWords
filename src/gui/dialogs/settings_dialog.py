@@ -466,13 +466,14 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         init_h = config.SETTINGS_WINDOW_H
         _center_on_screen(self, init_w, init_h, reference_window=self._main_window)
         self.init_normal_geometry(
-            saved_w=None,
-            saved_h=None,
+            saved_w=init_w,
+            saved_h=init_h,
             screen=self.screen() or QGuiApplication.primaryScreen(),
             ratio=0.70,
             min_w=config.S(640),
             min_h=config.S(460),
             apply_geometry=False,
+            always_restore_default=True,
         )
 
     def _compute_ideal_sidebar_width(self) -> int:

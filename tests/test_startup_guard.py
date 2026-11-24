@@ -493,8 +493,11 @@ class TestStartupGuard(unittest.TestCase):
         pix = splash.grab()
         self.assertFalse(pix.isNull())
         self.assertTrue(pix.save(out_path))
-        self.assertEqual(splash.width(), config.S(345) + config.S(24))
-        self.assertEqual(splash.height(), config.S(194) + config.S(24))
+        from PySide6.QtCore import Qt
+        self.assertEqual(splash.width(), config.S(345))
+        self.assertEqual(splash.height(), config.S(194))
+        self.assertFalse(splash.testAttribute(Qt.WA_TranslucentBackground))
+        self.assertIsNone(splash.inner_frame.graphicsEffect())
         splash.close()
 
     def test_dark_startup_dialogs_visual_render(self):

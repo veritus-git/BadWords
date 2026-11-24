@@ -102,12 +102,9 @@ fn main() -> eframe::Result<()> {
         return run_headless_cli(&args);
     }
 
-    // INVARIANT: Windows/macOS use an opaque window without a painted shadow margin
-    // (wgpu on Windows has no per-pixel alpha, so a transparent shadow margin renders as a black square).
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    // INVARIANT: All platforms use an opaque 650x550 window with zero custom shadow margin
+    // and a crisp solid 1px border (native OS shadow handles depth where supported).
     let (total_w, total_h) = (650.0, 550.0);
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let (total_w, total_h) = (706.0, 606.0);
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([total_w, total_h])
@@ -115,7 +112,7 @@ fn main() -> eframe::Result<()> {
         .with_max_inner_size([total_w, total_h])
         .with_resizable(false)
         .with_decorations(false)
-        .with_transparent(cfg!(not(any(target_os = "macos", target_os = "windows"))))
+        .with_transparent(false)
         .with_icon(
             eframe::icon_data::from_png_bytes(include_bytes!("../../assets/icons/icon_monochrome.png"))
                 .expect("Failed to load icon"),
@@ -1331,48 +1328,15 @@ impl eframe::App for InstallerApp {
             }
         }
 
-        // ── Główny Panel Aplikacji (Ścisłe wymiary) ──
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        // ── Główny Panel Aplikacji (Ścisłe wymiary 650x550, jednolita ramka 1px na wszystkich OS) ──
         let (win_w, win_h, margin) = (650.0, 550.0, 0.0);
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        let (win_w, win_h, margin) = (706.0, 606.0, 28.0);
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(egui::Color32::TRANSPARENT).inner_margin(0.0))
+            .frame(egui::Frame::none().fill(egui::Color32::from_rgb(30, 30, 30)).inner_margin(0.0))
             .show(ctx, |ui| {
                 ui.set_min_size(egui::vec2(win_w, win_h));
                 ui.set_max_size(egui::vec2(win_w, win_h));
-
-                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                {
-                    let window_rect = egui::Rect::from_min_size(
-                        ui.min_rect().min + egui::vec2(margin, margin),
-                        egui::vec2(650.0, 550.0),
-                    );
-
-                    let painter = ui.painter();
-
-                    // 8-warstwowy, ultra-gładki cień Gaussa wokół okna
-                    let shadow_layers = [
-                        egui::epaint::Shadow { offset: egui::vec2(0.0, 1.0), blur: 3.0, spread: 0.0, color: egui::Color32::from_black_alpha(65) },
-                        egui::epaint::Shadow { offset: egui::vec2(0.0, 2.0), blur: 6.0, spread: 0.5, color: egui::Color32::from_black_alpha(55) },
-                        egui::epaint::Shadow { offset: egui::vec2(0.0, 3.0), blur: 10.0, spread: 1.0, color: egui::Color32::from_black_alpha(45) },
-                        egui::epaint::Shadow { offset: egui::vec2(0.0, 4.0), blur: 18.0, spread: 2.0, color: egui::Color32::from_black_alpha(35) },
-                        egui::epaint::Shadow { offset: egui::vec2(0.0, 6.0), blur: 28.0, spread: 3.0, color: egui::Color32::from_black_alpha(25) },
-                    ];
-
-                    for shadow in shadow_layers {
-                        let mesh = shadow.tessellate(window_rect, 0.0);
-                        painter.add(egui::Shape::Mesh(mesh));
-                    }
-                }
-
-                #[cfg(target_os = "windows")]
-                ui.painter().rect_stroke(
-                    egui::Rect::from_min_size(ui.min_rect().min, egui::vec2(650.0, 550.0)),
-                    0.0,
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(12, 12, 12)),
-                );
+                let outer_rect = egui::Rect::from_min_size(ui.min_rect().min, egui::vec2(650.0, 550.0));
 
                 // Ciało Okna (Dokładnie 650x550px)
                 egui::Frame::none()
@@ -2609,6 +2573,11 @@ impl eframe::App for InstallerApp {
                                 }); // Footer
                         }); // ui.vertical
                     }); // inner frame
+                ui.painter().rect_stroke(
+                    outer_rect.shrink(0.5),
+                    0.0,
+                    egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(46, 46, 46)),
+                );
             }); // CentralPanel
     }
 }

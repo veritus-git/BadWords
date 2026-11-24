@@ -180,7 +180,7 @@ class IDETooltip(QLabel):
                 background-color: #1e1e1e;
                 color: #d4d4d4;
                 border: 1px solid #3c3c3c;
-                border-radius: {config.S(4)}px;
+                border-radius: 0px;
                 padding: {self.pad_v}px {self.pad_h}px;
                 font-family: '{config.UI_FONT_NAME}', sans-serif;
                 font-size: 9pt;

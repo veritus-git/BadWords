@@ -13,9 +13,8 @@ Dialog for creating and editing custom timeline markers.
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QWidget, QFrame, QGraphicsDropShadowEffect
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QWidget, QFrame
 )
-from PySide6.QtGui import QColor
 
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
@@ -44,8 +43,8 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         self.setWindowModality(Qt.ApplicationModal)
 
         self.setStyleSheet(f"""
-            QDialog {{ background-color: transparent; }}
-            #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #111; border-radius: {config.S(6)}px; }}
+            QDialog {{ background-color: {config.BG_COLOR}; }}
+            #MainInnerFrame {{ background-color: {config.BG_COLOR}; border: 1px solid #2e2e2e; border-radius: 0px; }}
             QLabel {{ color: {config.FG_COLOR}; font-family: "{config.UI_FONT_NAME}"; }}
             QLabel#lbl_title {{ font-size: {config.FS(13)}pt; font-weight: bold; color: #ffffff; }}
             QLineEdit {{
@@ -74,16 +73,10 @@ class MarkerDialog(FramelessWindowMixin, _BaseDialog):
         """)
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
         self.inner_frame = QFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(config.S(30))
-        shadow.setColor(QColor(0, 0, 0, 150))
-        shadow.setOffset(0, 4)
-        self.inner_frame.setGraphicsEffect(shadow)
         main_layout.addWidget(self.inner_frame)
 
         root_layout = QVBoxLayout(self.inner_frame)

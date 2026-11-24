@@ -15,8 +15,7 @@ new users, covering anonymous telemetry and automatic error reporting.
 from PySide6.QtCore import Qt, QTimer, QVariantAnimation, QEasingCurve
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame,
-    QGraphicsDropShadowEffect
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame
 )
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
@@ -106,11 +105,11 @@ class _PrivacyConsentDialogBase(FramelessWindowMixin, _BaseDialog):
         self.setWindowIcon(_app_icon())
 
         self.setStyleSheet(f"""
-            QDialog, _PrivacyConsentDialogBase {{ background-color: transparent; }}
+            QDialog, _PrivacyConsentDialogBase {{ background-color: {config.BG_COLOR}; }}
             QFrame#MainInnerFrame {{
                 background-color: {config.BG_COLOR};
-                border: none;
-                border-radius: {config.S(8)}px;
+                border: 1px solid #2e2e2e;
+                border-radius: 0px;
             }}
             QFrame#CardTelemetry, QFrame#CardCrashReport, QFrame#CrashInfoCard {{
                 background-color: #151515;
@@ -203,22 +202,10 @@ class _PrivacyConsentDialogBase(FramelessWindowMixin, _BaseDialog):
         """)
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(config.S(15), config.S(15), config.S(15), config.S(15))
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
-        class SolidFrame(QFrame):
-            def paintEvent(self, e):
-                p = QPainter(self)
-                p.fillRect(self.rect(), QColor(config.BG_COLOR))
-                super().paintEvent(e)
-
-        self.inner_frame = SolidFrame(self)
+        self.inner_frame = QFrame(self)
         self.inner_frame.setObjectName("MainInnerFrame")
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(config.S(30))
-        shadow.setColor(QColor(0, 0, 0, 150))
-        shadow.setOffset(0, 0)
-        self.inner_frame.setGraphicsEffect(shadow)
         main_layout.addWidget(self.inner_frame)
 
         root_layout = QVBoxLayout(self.inner_frame)
@@ -284,22 +271,24 @@ class _PrivacyConsentDialogBase(FramelessWindowMixin, _BaseDialog):
             self._tb.set_title(title_txt)
 
         dialog_w = config.S(self._dialog_width)
-        text_max_w = dialog_w - config.S(15 + 15 + 20 + 20 + 28)
+        # Subtract inner_frame (2px) + container margins (40px) + card padding/borders (30px)
+        text_max_w = dialog_w - config.S(20 + 20 + 28 + 6)
         for lbl in wrapped_labels:
+            lbl.ensurePolished()
             lbl.setFixedWidth(text_max_w)
             lbl.setMinimumHeight(0)
             lbl.setMaximumHeight(16777215)
             lbl.updateGeometry()
-            req_h = lbl.heightForWidth(text_max_w)
+            req_h = max(lbl.heightForWidth(text_max_w), lbl.sizeHint().height())
             if req_h > 0:
-                lbl.setFixedHeight(req_h + config.S(2))
+                lbl.setFixedHeight(req_h + config.S(6))
 
         if hasattr(self, '_chk_geo') and hasattr(self, '_geo_container'):
             self._chk_geo.lbl.setWordWrap(False)
             self._chk_geo.setText(self._chk_geo.text())
             self._geo_container.setMinimumHeight(self._chk_geo.minimumHeight() + config.S(4))
 
-        total_w = dialog_w + config.S(30)
+        total_w = dialog_w
         self.setMinimumWidth(total_w)
         self.setMaximumWidth(total_w)
         self.setMinimumHeight(0)

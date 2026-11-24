@@ -1358,8 +1358,8 @@ class CustomDropdown(QPushButton):
         popup.setStyleSheet(f"""
             QFrame {{
                 background-color: #1e1e1e;
-                border: 1px solid #444;
-                border-radius: {config.S(3)}px;
+                border: 1px solid #2e2e2e;
+                border-radius: 0px;
                 padding: 0px;
                 margin: 0px;
             }}
@@ -1492,8 +1492,8 @@ class TitleDropdown(CustomDropdown):
         popup.setStyleSheet(f"""
             QFrame {{
                 background-color: #1a1a1a;
-                border: 1px solid #333333;
-                border-radius: {config.S(6)}px;
+                border: 1px solid #2e2e2e;
+                border-radius: 0px;
                 padding: 0px;
                 margin: 0px;
             }}
@@ -1612,8 +1612,8 @@ class SpeedDropdown(QPushButton):
         popup.setStyleSheet(f"""
             QFrame {{
                 background-color: #1a1a1a;
-                border: 1px solid #333333;
-                border-radius: {config.S(6)}px;
+                border: 1px solid #2e2e2e;
+                border-radius: 0px;
                 padding: 0px;
                 margin: 0px;
             }}
@@ -1838,7 +1838,7 @@ class MultiSelectDropdown(QPushButton):
             if orig_hide:
                 orig_hide(ev)
         self._popup.hideEvent = _popup_hide
-        self._popup.setStyleSheet(f"QFrame {{ background-color: #1e1e1e; border: 1px solid #444; border-radius: {config.S(3)}px; padding: 0px; margin: 0px; }}")
+        self._popup.setStyleSheet("QFrame { background-color: #1e1e1e; border: 1px solid #2e2e2e; border-radius: 0px; padding: 0px; margin: 0px; }")
 
         layout = QVBoxLayout(self._popup)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1987,8 +1987,8 @@ class SearchableDropdown(QPushButton):
         self.popup.setStyleSheet(f"""
             QFrame {{
                 background-color: #1e1e1e;
-                border: 1px solid #444;
-                border-radius: {config.S(3)}px;
+                border: 1px solid #2e2e2e;
+                border-radius: 0px;
                 padding: 0px;
                 margin: 0px;
             }}

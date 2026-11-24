@@ -14,9 +14,10 @@ Must NEVER import gui.main_window, gui.components.*, or gui.dialogs.*.
 """
 
 import os
+import sys
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
-from PySide6.QtWidgets import QApplication, QFrame, QGraphicsDropShadowEffect, QLabel, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout, QWidget
 
 import config
 from gui.utils import _app_icon, _center_on_screen, _txt, get_layout_dir, get_layout_icon_path
@@ -66,12 +67,15 @@ class SplashInnerFrame(QFrame):
 
     def paintEvent(self, event):
         p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.Antialiasing, False)
         p.setRenderHint(QPainter.SmoothPixmapTransform)
         if self._pix and not self._pix.isNull():
             p.drawPixmap(0, 0, self._pix)
         else:
             p.fillRect(self.rect(), QColor("#121212"))
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(QColor("#2e2e2e"), 1))
+        p.drawRect(0, 0, self.width() - 1, self.height() - 1)
 
 
 class BootSplash(QWidget):
@@ -86,26 +90,17 @@ class BootSplash(QWidget):
             Qt.Window
             | Qt.FramelessWindowHint
             | Qt.WindowStaysOnTopHint
-            | Qt.NoDropShadowWindowHint
         )
         self.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
 
         w, h = config.S(345), config.S(194)
-        self.setFixedSize(w + config.S(24), h + config.S(24))
+        self.setFixedSize(w, h)
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(config.S(12), config.S(12), config.S(12), config.S(12))
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
         splash_file = find_splash_path()
         self.inner_frame = SplashInnerFrame(splash_file, w, h, self)
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(config.S(24))
-        shadow.setColor(QColor(0, 0, 0, 190))
-        shadow.setOffset(0, 0)
-        self.inner_frame.setGraphicsEffect(shadow)
-
         main_layout.addWidget(self.inner_frame)
 
         content_layout = QVBoxLayout(self.inner_frame)
@@ -128,16 +123,48 @@ class BootSplash(QWidget):
         )
         content_layout.addWidget(self._lbl_loading)
 
-        self.setStyleSheet("QWidget#BootSplashRoot { background-color: transparent; }")
+        self.setStyleSheet("QWidget#BootSplashRoot { background-color: #121212; }")
         self.setObjectName("BootSplashRoot")
 
         self.setWindowIcon(_app_icon())
-        _center_on_screen(self, w + config.S(24), h + config.S(24))
+        _center_on_screen(self, w, h)
 
         self._dot_count = 0
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._animate)
         self._timer.start(300)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                from ctypes import wintypes
+                hwnd = int(self.winId())
+                if hwnd:
+                    dwmapi = ctypes.windll.dwmapi
+                    dwmapi.DwmSetWindowAttribute.argtypes = [
+                        wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD
+                    ]
+                    dwmapi.DwmExtendFrameIntoClientArea.argtypes = [wintypes.HWND, ctypes.c_void_p]
+                    nc_policy = ctypes.c_int(2)
+                    dwmapi.DwmSetWindowAttribute(hwnd, 2, ctypes.byref(nc_policy), 4)
+                    corner_pref = ctypes.c_int(1)
+                    dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(corner_pref), 4)
+                    border_color = ctypes.c_uint(0xFFFFFFFE)
+                    dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(border_color), 4)
+
+                    class MARGINS(ctypes.Structure):
+                        _fields_ = [
+                            ("left", ctypes.c_int),
+                            ("right", ctypes.c_int),
+                            ("top", ctypes.c_int),
+                            ("bottom", ctypes.c_int),
+                        ]
+                    m = MARGINS(0, 0, 0, 1)
+                    dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(m))
+            except Exception:
+                pass
 
     def _animate(self):
         dots = "." * (self._dot_count % 4)

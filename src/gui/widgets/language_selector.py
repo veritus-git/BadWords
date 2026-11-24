@@ -39,7 +39,8 @@ class _LangPickerDialog(QDialog):
         self.setStyleSheet(f"""
             QDialog {{
                 background-color: {config.MENU_BG};
-                border: 1px solid #1a1a1a;
+                border: 1px solid #2e2e2e;
+                border-radius: 0px;
             }}
             QListWidget {{
                 background-color: {config.MENU_BG};

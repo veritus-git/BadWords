@@ -145,15 +145,16 @@ Po mojej akceptacji i wdrożeniu: napisz testy ochronne (w tests/ i uruchom run_
 
 ---
 
-### 3. ✅ [ZAKOŃCZONO 2026-11-23] Okno bez ramki, własny pasek tytułu, tryb „Zawsze na wierzchu” i płynność animacji między systemami
+### 3. ✅ [ZAKOŃCZONO 2026-11-24] Okno bez ramki, własny pasek tytułu, tryb „Zawsze na wierzchu” i płynność animacji między systemami
 
-> **Status:** ✅ **ZAKOŃCZONO I ZACEMENTOWANO (2026-11-23)**
+> **Status:** ✅ **ZAKOŃCZONO I ZACEMENTOWANO (2026-11-24)**
 > **Co zostało naprawione dla użytkownika:**
-> - Wyeliminowano mignięcia mikro-okienek przy starcie Windows 11 (usunięto przedwczesne pokazywanie nieprzypiętych nagłówków paneli bocznych oraz tworzenie ukrytego uchwytu okna Ustawień podczas uruchamiania).
-> - Dodano pełne rozciąganie ze wszystkich 8 krawędzi i rogów (Windows i Linux), obsługę Windows 11 Snap Layouts i menu systemowego na pasku tytułu, dokładne pozycjonowanie i wyśrodkowywanie na wielu monitorach o różnym skalowaniu (również z ujemnymi współrzędnymi), pamięć rozmiaru użytkownika (domyślnie 70% x 70% monitora) przy wyjściu z maksymalizacji także po „zerwaniu” okna za pasek, poprawiono rozmiar ikony maksymalizacji, ochronę przed nakładaniem napisu źródła na menu oraz zachowano neutralny szary hover przycisku „X”.
-> - Przebudowano okno Ustawień na niezależne okno najwyższego poziomu (osobny Alt+Tab, minimalizacja, maksymalizacja, cień na każdym z 3 systemów, automatyczne poszerzanie lewego menu i wyśrodkowana kolumna treści w stylu czatów AI).
-> - Naprawiono natychmiastowe odświeżanie wybranej ikony aplikacji i przełączanie „Zawsze na wierzchu” bez wymuszania restartu (z komunikatem dla użytkowników Linux Wayland, dziedziczeniem przez okna pomocnicze, ikoną paska zadań na Waylandzie, startem w dużym oknie na macOS i pełną obsługą 120 Hz ProMotion / dynamicznej synchronizacji odświeżania między monitorami).
-> **Gdzie opisano szczegóły i testy:** `docs/CEMENTED.md` (Sekcja 4), `docs/DEV_STATE.md` (Sekcja 4, pkt 13), testy i zrzuty w `tests/test_window_titlebar_vsync.py`.
+> - Naprawiono krytyczne zatrzymanie uruchamiania na Windows 11 przy budowaniu głównego okna (usunięto rekurencyjne wywołanie uchwytu okna w trakcie zdarzeń systemowych Windows, dodano pełne typy 64-bitowe Win32 API oraz czytelne przechwytywanie błędów uruchamiania do dziennika i okna błędu).
+> - Wyeliminowano wielominutowe zacięcie instalatora Windows na 96% (`Creating shortcuts...` / `Registering application in OS`), zastępując powolne skanowanie PowerShella po plikach `venv/` natychmiastowym odblokowaniem w Rustcie.
+> - Całkowicie usunięto własne, rysowane programowo cienie i przezroczyste marginesy ze wszystkich okien, popupów, ekranu startowego oraz instalatora Linuxa - zastępując je czystą, jednolitą ramką `1 px` (`#101010` na oknach głównych, `#2e2e2e` na dialogach i instalatorze) oraz natywnym cieniem systemowym tam, gdzie system obsługuje go czysto bez marginesów (Windows 11, macOS, Linux X11; na Linux Wayland sama ramka `1 px`).
+> - Doprecyzowano wychodzenie z maksymalizacji: główne okno przyciskiem wraca do ostatniego rozmiaru i miejsca, a „zerwaniem” myszką do `70% x 70%` ekranu; okno Ustawień zawsze wraca do swojego małego rozmiaru domyślnego (zarówno przyciskiem, jak i zerwaniem).
+> - Naprawiono proporcjonalne ustawianie okna pod kursorem podczas „zrywania” z maksymalizacji (brak przeskoku na lewą krawędź przy chwytaniu prawej strony paska), zachowując pełne rozciąganie z 8 krawędzi, tryb „Zawsze na wierzchu”, natychmiastowe odświeżanie ikony oraz płynne animacje VSync.
+> **Gdzie opisano szczegóły i testy:** `docs/CEMENTED.md` (Sekcja 4), `docs/DEV_STATE.md` (Sekcja 4, pkt 13-14), testy i zrzuty w `tests/test_window_titlebar_vsync.py`.
 
 <details>
 <summary>Archiwalny prompt zrealizowanego punktu 3 (punkt zamknięty - nie uruchamiaj ponownie)</summary>
