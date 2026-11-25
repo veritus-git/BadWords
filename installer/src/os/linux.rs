@@ -148,6 +148,46 @@ pub fn find_all_linux_desktop_dirs(home: &Path) -> Vec<PathBuf> {
     dirs_list
 }
 
+/// Creates or repairs `<local_bin>/badwords`:
+/// - When `launcher_ready` is true, symlinks to `install_dir/BadWords`.
+/// - When `launcher_ready` is false (e.g. clean Fedora without cc/gcc/clang),
+///   removes any dangling symlink and writes a clean POSIX `#!/bin/sh` wrapper.
+pub fn ensure_linux_local_bin_entry(local_bin: &Path, install_dir: &Path, launcher_ready: bool) {
+    let bin_entry = local_bin.join("badwords");
+    if std::fs::symlink_metadata(&bin_entry).is_ok() {
+        let _ = std::fs::remove_file(&bin_entry);
+    }
+
+    if launcher_ready {
+        let launcher_bin = install_dir.join("BadWords");
+        #[cfg(unix)]
+        let _ = std::os::unix::fs::symlink(&launcher_bin, &bin_entry);
+        return;
+    }
+
+    let python_bin = if install_dir.join("venv").join("bin").join("python3").is_file() {
+        install_dir.join("venv").join("bin").join("python3")
+    } else {
+        install_dir.join("venv").join("bin").join("python")
+    };
+    let main_script = if install_dir.join("src").join("main.py").is_file() {
+        install_dir.join("src").join("main.py")
+    } else {
+        install_dir.join("main.py")
+    };
+
+    let py_escaped = python_bin.to_string_lossy().replace('"', "\\\"");
+    let main_escaped = main_script.to_string_lossy().replace('"', "\\\"");
+    let wrapper = format!("#!/bin/sh\nexec \"{}\" \"{}\" \"$@\"\n", py_escaped, main_escaped);
+    if std::fs::write(&bin_entry, wrapper).is_ok() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&bin_entry, std::fs::Permissions::from_mode(0o755));
+        }
+    }
+}
+
 pub fn create_linux_desktop_entry(install_dir: &Path, create_desktop: bool, create_menu: bool) -> std::io::Result<()> {
     #[cfg(target_os = "linux")]
     {
@@ -206,22 +246,24 @@ pub fn create_linux_desktop_entry(install_dir: &Path, create_desktop: bool, crea
                 let _ = std::fs::remove_file(&temp_c);
             }
 
+            if !launcher_ready && launcher_bin.is_file() {
+                // Keep a valid existing native launcher binary if no C compiler is available
+                if launcher_bin.metadata().map(|m| m.len()).unwrap_or(0) > 0 {
+                    launcher_ready = true;
+                }
+            }
+
             if launcher_ready {
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
                     let _ = std::fs::set_permissions(&launcher_bin, std::fs::Permissions::from_mode(0o755));
                 }
+            }
 
-                let local_bin = home.join(".local").join("bin");
-                if local_bin.is_dir() {
-                    let bin_link = local_bin.join("badwords");
-                    if bin_link.exists() || bin_link.is_symlink() {
-                        let _ = std::fs::remove_file(&bin_link);
-                    }
-                    #[cfg(unix)]
-                    let _ = std::os::unix::fs::symlink(&launcher_bin, &bin_link);
-                }
+            let local_bin = home.join(".local").join("bin");
+            if local_bin.is_dir() {
+                ensure_linux_local_bin_entry(&local_bin, install_dir, launcher_ready);
             }
 
             let exec_cmd = if launcher_ready {

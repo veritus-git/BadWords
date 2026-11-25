@@ -395,6 +395,49 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             try: os.remove(concat_txt)
             except Exception: pass
 
+    def mux_audio_into_proxy(self, proxy_video_path: str, audio_wav_path: str) -> bool:
+        """
+        Muxes an already-extracted timeline WAV into a video-only Resolve proxy MP4
+        using fast FFmpeg video stream-copy (-c:v copy) so preview playback has exact
+        audio matching the user-selected Resolve tracks and timeline duration.
+        """
+        if not proxy_video_path or not os.path.isfile(proxy_video_path):
+            return False
+        if not audio_wav_path or not os.path.isfile(audio_wav_path):
+            return False
+
+        ffmpeg_cmd = getattr(self, "ffmpeg_cmd", None) or "ffmpeg"
+        sp_kwargs = self.os_doc.get_subprocess_kwargs() if hasattr(self.os_doc, "get_subprocess_kwargs") else {}
+        tmp_muxed = f"{proxy_video_path}.muxing.mp4"
+
+        try:
+            cmd = [
+                ffmpeg_cmd, "-y",
+                "-i", proxy_video_path,
+                "-i", audio_wav_path,
+                "-map", "0:v:0", "-map", "1:a:0",
+                "-c:v", "copy",
+                "-c:a", "aac", "-b:a", "128k", "-ar", "48000",
+                "-shortest",
+                "-movflags", "+faststart",
+                tmp_muxed,
+            ]
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, **sp_kwargs)
+            if res.returncode == 0 and os.path.isfile(tmp_muxed) and os.path.getsize(tmp_muxed) > 0:
+                os.replace(tmp_muxed, proxy_video_path)
+                return True
+            log_error(f"mux_audio_into_proxy failed: {res.stderr[-300:] if res.stderr else 'unknown'}")
+            return False
+        except Exception as e:
+            log_error(f"mux_audio_into_proxy exception: {e}")
+            return False
+        finally:
+            if os.path.isfile(tmp_muxed):
+                try:
+                    os.remove(tmp_muxed)
+                except Exception:
+                    pass
+
     # ==========================================
 
     # ==========================================

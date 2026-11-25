@@ -750,6 +750,28 @@ mod win_shortcut_com {
     }
 }
 
+/// Builds ordered candidate download URLs for BadWords.exe:
+/// exact tag (e.g. `4.1.0`), `v`-prefixed tag (`v4.1.0`), and `latest` fallback.
+pub fn build_badwords_exe_candidate_urls(version: Option<&str>) -> Vec<String> {
+    let mut urls = Vec::new();
+    if let Some(ver) = version {
+        let trimmed = ver.trim();
+        let clean = trimmed.trim_start_matches(|c| c == 'v' || c == 'V');
+        if !clean.is_empty() && clean.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            urls.push(format!(
+                "https://github.com/veritus-git/BadWords/releases/download/{}/BadWords.exe",
+                clean
+            ));
+            urls.push(format!(
+                "https://github.com/veritus-git/BadWords/releases/download/v{}/BadWords.exe",
+                clean
+            ));
+        }
+    }
+    urls.push("https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe".to_string());
+    urls
+}
+
 #[allow(dead_code)]
 /// Creates Desktop and Start Menu shortcuts on Windows cleanly via pure Win32 COM (<2ms, zero PowerShell).
 pub fn create_windows_shortcuts(
@@ -782,6 +804,7 @@ pub fn create_windows_shortcuts(
             .into_iter()
             .find(|c| c.is_file());
 
+        let mut copied_local = false;
         if let Some(cand) = local_cand {
             unblock_file(&cand);
             let mut should_copy = !launcher_exe.is_file();
@@ -796,40 +819,31 @@ pub fn create_windows_shortcuts(
                     }
                 }
             }
-            if should_copy {
-                let _ = std::fs::copy(&cand, &launcher_exe);
+            if should_copy && std::fs::copy(&cand, &launcher_exe).is_ok() {
+                copied_local = true;
             }
         }
-        if !launcher_exe.is_file() {
-            // Single fast download attempt for pre-built BadWords.exe launcher
-            let mut candidate_urls = vec![
-                "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe".to_string(),
-            ];
-            if let Some(ver) = version {
-                if ver.starts_with('v') || ver.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-                    let clean = ver.trim_start_matches('v');
-                    candidate_urls.insert(
-                        0,
-                        format!("https://github.com/veritus-git/BadWords/releases/download/v{}/BadWords.exe", clean),
-                    );
-                }
-            }
+        if !copied_local {
+            // Download pre-built BadWords.exe atomically to .tmp; preserve existing BadWords.exe on failure
+            let candidate_urls = build_badwords_exe_candidate_urls(version);
+            let launcher_tmp = install_dir.join("BadWords.exe.tmp");
             let agent = ureq::builder()
-                .timeout(std::time::Duration::from_secs(4))
+                .timeout(std::time::Duration::from_secs(10))
                 .redirects(10)
                 .build();
             for dl_url in candidate_urls {
+                let _ = std::fs::remove_file(&launcher_tmp);
                 if let Ok(resp) = agent.get(&dl_url).call() {
                     let mut reader = resp.into_reader();
-                    if let Ok(mut out) = std::fs::File::create(&launcher_exe) {
-                        if std::io::copy(&mut reader, &mut out).is_ok() {
-                            if launcher_exe.metadata().map(|m| m.len()).unwrap_or(0) > 10000 {
-                                break;
-                            } else {
-                                let _ = std::fs::remove_file(&launcher_exe);
-                            }
+                    let write_ok = std::fs::File::create(&launcher_tmp)
+                        .and_then(|mut out| std::io::copy(&mut reader, &mut out))
+                        .is_ok();
+                    if write_ok && launcher_tmp.metadata().map(|m| m.len()).unwrap_or(0) > 10000 {
+                        if std::fs::rename(&launcher_tmp, &launcher_exe).is_ok() {
+                            break;
                         }
                     }
+                    let _ = std::fs::remove_file(&launcher_tmp);
                 }
             }
         }

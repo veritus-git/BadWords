@@ -3,6 +3,29 @@
 All notable changes to the **BadWords** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [4.1.0] - 2026-11-25
+### Added
+- **Startup Guard & Consent-Based Self-Heal**: Instant startup splash (`BootSplash`), isolated Python 3.10-3.12 runtime guard, foreign `sys.path` pruning, and consent-gated automatic dependency repair.
+- **Automatic Crash Reporting**: Independent opt-in/opt-out error reporting consent (`TelemetryPopup` and `CrashReportConsentDialog`) with automatic privacy scrubbing and rate-limited diagnostics.
+- **Zero-Sudo Portable Python 3.12 (Linux/macOS)**: Automatic relocatable CPython 3.12 setup requiring no root password, plus Wayland clipboard fallback in the installer.
+- **Redesigned 9-Tab Settings Window**: Live debounced search across tabs, streamlined Custom Markers with optional shortcut binding, hardened Export/Import/Reset All Defaults, and an improved Support & Feedback form with screenshot thumbnails and scrubbed log bundles.
+- **Unified Cross-Platform UI Scaling (75%-200%)**: True Auto OS DPI detection without double-scaling across Windows 11, Linux (Wayland/X11), and macOS Retina, with Apply-triggered live UI rebuild.
+
+### Changed
+- **Windows 11 & Cross-OS Frameless Windows**: Sharp 90-degree corners (`DWMWCP_DONOTROUND`), exact half-screen Aero Snap restore, proportional cursor drag-rip from maximize, zero startup flashes, opaque solid borders without custom shadows, and cross-OS VSync refresh rate tracking.
+- **11-Language Parity & Vector UI**: Synced all 11 translations identically to 631 keys per language, replaced remaining emojis with crisp vector SVG icons, enforced global `Fusion` dark palette immunity against OS Light themes, and rounded progress bar ends cleanly.
+- **Static-CRT Windows Binaries & Fast Setup**: Eliminated `VCRUNTIME140.dll` missing errors on clean Windows 11 PCs and replaced slow PowerShell spawns at 96% with pure Win32 COM shortcuts and native NTFS ADS unblocking.
+
+### Fixed
+- **Playback End Boundary & Resolve Proxy Audio**: Stopped preview playback cleanly at trimmed DaVinci Resolve clip/timeline boundaries (including trailing `skip_cuts` and `skip_forward`), prevented raw untrimmed playback on head-trimmed clips, and muxed selected-track WAV audio into rendered 360p Resolve video proxies.
+- **Safe In-Place Updates (Option 1 & Auto-Updater)**: Replaced blacklist folder wipes with a strict BadWords code whitelist preserving user files, launchers, `temp/`, `models/`, `saves/`, and `venv/`; added real ABI import probes (`PySide6.QtCore`, `faster_whisper`, `av<19`, `pypdf`), `.version` stamping, `4.x` Windows DLL-lock protection, bare + `v`-prefixed release URLs, and clean Linux POSIX wrappers when no C compiler is present.
+- **Standalone & Hardware Resilience**: Decoupled standalone mode cleanly when DaVinci Resolve is absent, fixed Kepler/legacy NVIDIA GPU detection (`driver < 525`), and handled missing `cublas64_12.dll` / `requests` / `certifi` gracefully.
+
+## [4.0.1] - 2026-11-11
+### Fixed
+- **NTSC Timeline Sync**: Fixed 23.976 fps timeline XML synchronization and sub-frame ripple cuts.
+- **Text Selection & Installer Polish**: Set continuous Notepad-style text selection as default LMB, added hardware-tier disk space estimation, smart install path detection, keyboard auto-scroll, and legacy v3 cleanup.
+
 ## [4.0.0] - 2026-11-06
 ### Added
 - **Standalone Rough Cut Workstation**: Complete independence from DaVinci Resolve — open video or audio files directly from disk with a multi-file queue and drop zone.

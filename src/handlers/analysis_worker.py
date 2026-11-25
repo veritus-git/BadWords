@@ -125,6 +125,11 @@ class ResolveTimelineProxyWorker(QThread):
                 return
 
             if res_path and os.path.isfile(res_path) and os.path.getsize(res_path) > 0:
+                audio_wav = getattr(self.engine, 'current_analysis_audio_path', None) or getattr(self.engine, 'last_audio_path', None)
+                if audio_wav and os.path.isfile(audio_wav) and hasattr(self.engine, 'mux_audio_into_proxy'):
+                    self.engine.mux_audio_into_proxy(res_path, audio_wav)
+                if self._is_cancelled:
+                    return
                 self.proxy_ready.emit(res_path)
             else:
                 self.proxy_failed.emit("Rendered proxy file not produced")

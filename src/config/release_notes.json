@@ -1,12 +1,10 @@
 {
   "changes": [
-    "Fixed 23.976 fps (NTSC) timeline XML sync and sub-frame ripple cuts.",
-    "Added Notepad-style continuous text selection mode (set as default LMB).",
-    "Installer: dynamic hardware-tier disk space calculation (NVIDIA CUDA / Apple Silicon / CPU).",
-    "Installer: smart installation directory auto-detection and polished reinstall flow.",
-    "Installer: keyboard navigation auto-scrolling with smooth mouse wheel support.",
-    "Installer: hide legacy versions unless currently installed on machine.",
-    "Self-healing updater & legacy v3 migration cleaner."
+    "Instant startup splash, isolated Python runtime guard, consent-based self-heal, and optional automatic crash reporting.",
+    "Zero-sudo portable Python 3.12 installation on Linux/macOS and static-CRT Windows 11 installer/launcher (fixing clean-PC VCRUNTIME140.dll errors, 96% stall, and PowerShell popups).",
+    "Windows 11 and cross-OS frameless window overhaul: sharp 90-degree corners, half-screen Aero Snap restore, zero startup flashes, opaque solid borders, proportional cursor rip, and smooth VSync animation.",
+    "Redesigned 9-tab Settings window with live debounced search, streamlined Custom Markers, hardened Export/Import/Reset, and improved Support/Feedback form with screenshots and scrubbed logs.",
+    "Unified 75%-200% cross-platform UI scaling (auto OS DPI without double-scaling), 11-language translation parity (631 keys/lang), vector SVG icons (zero emojis), OS Light-theme immunity, and cleanly rounded progress bars.",
+    "Fixed playback continuing past trimmed DaVinci Resolve clip boundaries, silent Resolve video proxies, standalone DaVinci decoupling, legacy NVIDIA GPU handling, and non-fresh in-place updates (Option 1 and auto-updater)."
   ]
 }
-

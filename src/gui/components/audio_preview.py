@@ -474,6 +474,7 @@ class AudioPreviewWidget(QFrame):
         self.original_audio_path = None
         self._source_audio_path = None
         self._source_video_path = None
+        self._at_timeline_end = False
         self.clean_ops = None
 
         self.hide()
@@ -623,10 +624,11 @@ class AudioPreviewWidget(QFrame):
         slider.raise_()
 
     def eventFilter(self, watched, event):
+        mw = getattr(self, "main_window", None)
         if watched == self.parentWidget() and event.type() == QEvent.Resize:
             self.update_tab_position()
             self.update_seek_geometry()
-        elif self.main_window and watched == getattr(self.main_window, "scroll_area", None) and event.type() == QEvent.Resize:
+        elif mw and watched == getattr(mw, "scroll_area", None) and event.type() == QEvent.Resize:
             self.update_seek_geometry()
         return super().eventFilter(watched, event)
 
@@ -1073,9 +1075,21 @@ class AudioPreviewWidget(QFrame):
         is_bg_proxy_pending = (num_video_clips > 1 and not (proxy_path and os.path.isfile(proxy_path)))
         is_resolve = (snap.get("source_type") == "resolve")
         clips_count = len(getattr(self.main_window, '_current_clips_layout', []) or [])
+        is_complex_resolve = bool(snap.get("is_complex_video"))
+        if is_resolve and snap.get("is_complex_video") is None:
+            if not (proxy_path and os.path.isfile(proxy_path)):
+                rh = getattr(self.main_window, "resolve_handler", None) or getattr(getattr(self.main_window, "engine", None), "resolve_handler", None)
+                if rh and getattr(rh, "is_connected", False):
+                    try:
+                        is_complex_resolve = bool(rh.has_complex_timeline_video(snap.get("timeline_name")))
+                        snap["is_complex_video"] = is_complex_resolve
+                    except Exception:
+                        pass
         _txt = self.main_window.txt if (self.main_window and hasattr(self.main_window, "txt")) else (lambda k, d="": d or k)
 
-        if (is_resolve and clips_count > 1 and not (proxy_path and os.path.isfile(proxy_path))):
+        if (is_resolve and (clips_count > 1 or is_complex_resolve) and not (proxy_path and os.path.isfile(proxy_path))):
+            # INVARIANT: Never play desynced raw source media when Resolve timeline has trimmed
+            # head (left_offset > 0), multiple clips, or complex tracks before proxy is ready.
             target_source = audio_path
             self.video_preview_widget.show_loading(False)
             self.video_preview_widget.show_placeholder(True, _txt("lbl_davinci_timeline", "DaVinci Resolve Timeline"))
@@ -1113,13 +1127,16 @@ class AudioPreviewWidget(QFrame):
             return
         self.video_preview_widget.show_loading(False)
         pos = self.player.position()
+        dur = self.get_total_duration()
+        if dur > 0 and pos > int(round(dur * 1000)):
+            pos = int(round(dur * 1000))
         was_playing = (self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState)
         self._source_audio_path = proxy_path
         self.original_audio_path = proxy_path
         self.player.setSource(QUrl.fromLocalFile(proxy_path))
         if pos > 0:
             self.player.setPosition(pos)
-        if was_playing:
+        if was_playing and not (dur > 0 and pos >= int(round(dur * 1000))):
             self.player.play()
         self.video_preview_widget.show_placeholder(False)
 
@@ -1159,9 +1176,16 @@ class AudioPreviewWidget(QFrame):
     # -------------------------------------------------------------------------
 
     def set_position_ms(self, ms: int, force_word_idx: Optional[int] = None) -> None:
+        dur = self.get_total_duration()
+        if dur > 0:
+            ms = max(0, min(int(round(dur * 1000)), int(ms)))
+        else:
+            ms = max(0, int(ms))
+
         self.player.setPosition(ms)
         self._start_pos_s = ms / 1000.0
         self._real_start_time = time.time()
+        self._at_timeline_end = bool(dur > 0 and self._start_pos_s >= max(0.0, dur - 0.05))
 
         if force_word_idx is not None and force_word_idx >= 0:
             self._force_highlight_idx = force_word_idx
@@ -1194,9 +1218,28 @@ class AudioPreviewWidget(QFrame):
 
     def toggle_play(self) -> None:
         if self.player.playbackState() == QMediaPlayer.PlayingState:
+            cur_t = self._get_audio_t()
+            dur = self.get_total_duration()
+            if dur > 0:
+                cur_t = min(dur, cur_t)
+            self._start_pos_s = max(0.0, cur_t)
+            self._at_timeline_end = bool(dur > 0 and self._start_pos_s >= max(0.0, dur - 0.05))
             self.player.pause()
         else:
-            self._start_pos_s = self.player.position() / 1000.0
+            dur = self.get_total_duration()
+            pos_s = self.player.position() / 1000.0
+            eff_s = max(pos_s, getattr(self, "_start_pos_s", 0.0))
+            if getattr(self, "_at_timeline_end", False) or (dur > 0 and eff_s >= max(0.0, dur - 0.05)):
+                self._at_timeline_end = False
+                self.player.setPosition(0)
+                self._start_pos_s = 0.0
+                if hasattr(self, "waveform_timeline") and self.waveform_timeline:
+                    self.waveform_timeline.set_playhead_time(0.0)
+                if self.slider_seek:
+                    self.slider_seek.setValue(0)
+                self.lbl_timecode.setText(self._format_timecode(0.0))
+            else:
+                self._start_pos_s = pos_s
             self._real_start_time = time.time()
             self.player.play()
             self.update_timer.start()
@@ -1212,12 +1255,18 @@ class AudioPreviewWidget(QFrame):
             self.btn_play.update_icon("player-play.png")
             self.update_timer.stop()
             if state == QMediaPlayer.StoppedState:
+                self._at_timeline_end = False
+                self._start_pos_s = 0.0
                 self._clear_highlights()
                 self.waveform_timeline.set_playhead_time(0.0)
 
     def skip_forward(self) -> None:
         curr_t = self._get_audio_t()
-        self.set_position_ms(int((curr_t + 3.0) * 1000))
+        dur = self.get_total_duration()
+        target_t = curr_t + 3.0
+        if dur > 0:
+            target_t = min(dur, target_t)
+        self.set_position_ms(int(round(target_t * 1000)))
 
     def skip_backward(self) -> None:
         curr_t = self._get_audio_t()
@@ -1314,10 +1363,13 @@ class AudioPreviewWidget(QFrame):
 
     def _on_waveform_seek_requested(self, timestamp_s: float, sync_resolve: bool = False) -> None:
         """Receives playhead click/scrub from WaveformTimelineWidget for 60 FPS local playback and video sync."""
+        dur = self.get_total_duration()
+        if dur > 0:
+            timestamp_s = max(0.0, min(dur, timestamp_s))
         audio_pos_s = timestamp_s
         if self.clean_ops:
             audio_pos_s = self._original_to_audio_time(timestamp_s)
-        self.set_position_ms(int(audio_pos_s * 1000))
+        self.set_position_ms(int(round(audio_pos_s * 1000)))
         if sync_resolve and self.main_window and hasattr(self.main_window, "_jump_playhead"):
             self.main_window._jump_playhead(timestamp_s)
 
@@ -1404,6 +1456,28 @@ class AudioPreviewWidget(QFrame):
                 merged.append(cur)
         return merged
 
+    def _stop_at_timeline_end(self, dur: float) -> None:
+        """Pauses playback cleanly at the timeline end boundary so audio never overshoots dur."""
+        dur = max(0.0, float(dur))
+        # INVARIANT: Always pause and clamp playhead at timeline end; underlying raw media
+        # (e.g., tail-trimmed DaVinci Resolve clips) must never keep playing past dur.
+        if self.player.playbackState() == QMediaPlayer.PlayingState:
+            self.player.pause()
+        if hasattr(self, "update_timer") and self.update_timer.isActive():
+            self.update_timer.stop()
+        self._start_pos_s = dur
+        self._real_start_time = time.time()
+        self._at_timeline_end = True
+        target_ms = int(round(dur * 1000))
+        if abs(self.player.position() - target_ms) > 20:
+            self.player.setPosition(target_ms)
+        orig_t = self._audio_to_original_time(dur) if self.clean_ops else dur
+        self.lbl_timecode.setText(self._format_timecode(orig_t))
+        if not getattr(self, "_seek_dragging", False) and self.slider_seek:
+            self.slider_seek.setValue(1000 if dur > 0 else 0)
+        if hasattr(self, "waveform_timeline") and self.waveform_timeline:
+            self.waveform_timeline.set_playhead_time(dur)
+
     def sync_playback(self) -> None:
         """60 FPS synchronization tick for playhead, waveform, video, and words."""
         if getattr(self, "is_collapsed", False):
@@ -1413,14 +1487,26 @@ class AudioPreviewWidget(QFrame):
         if not canvas or not getattr(canvas, "words_data", None):
             return
 
+        dur = self.get_total_duration()
         audio_t = max(0.0, self._get_audio_t())
+        is_playing = (self.player.playbackState() == QMediaPlayer.PlayingState)
+
+        # Hard boundary stop: never play past the timeline/waveform duration
+        if dur > 0 and audio_t >= dur:
+            if is_playing:
+                self._stop_at_timeline_end(dur)
+                return
+            audio_t = dur
 
         # Real-time skipping of cut sections during active playback
-        if getattr(self, "skip_cuts", False) and self.player.playbackState() == QMediaPlayer.PlayingState:
+        if getattr(self, "skip_cuts", False) and is_playing:
             cut_intervals = self.get_cut_intervals()
             if cut_intervals:
                 for c_start, c_end in cut_intervals:
                     if c_start - 0.01 <= audio_t < c_end - 0.02:
+                        if dur > 0 and c_end >= dur - 0.05:
+                            self._stop_at_timeline_end(dur)
+                            return
                         target_ms = int(c_end * 1000)
                         # De-click buffer protection: temporarily mute audio output right before seeking
                         # to eliminate acoustic pop/click caused by buffer interruption mid-wave
@@ -1432,7 +1518,6 @@ class AudioPreviewWidget(QFrame):
 
         orig_t = self._audio_to_original_time(audio_t) if self.clean_ops else audio_t
 
-        dur = self.get_total_duration()
         self.lbl_timecode.setText(self._format_timecode(orig_t))
 
         # Update seek slider position

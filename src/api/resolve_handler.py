@@ -876,7 +876,7 @@ class ResolveHandler:
                 "TargetDir":       export_path,
                 "CustomName":      unique_id,
                 "ExportVideo":     True,
-                "ExportAudio":     False,  # Video preview proxy only needs video! BadWords plays audio directly from WAV
+                "ExportAudio":     False,  # Video-only from Resolve; ResolveTimelineProxyWorker muxes the exact selected-tracks WAV via FFmpeg
                 "CustomResolution": True,
                 "ResolutionWidth":  640,
                 "ResolutionHeight": 360,

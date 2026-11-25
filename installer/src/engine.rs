@@ -911,77 +911,188 @@ pub fn detect_local_version() -> Option<String> {
     None
 }
 
-/// Cleanly wipes obsolete code, scripts, assets and temporary files from target_dir,
-/// while strictly preserving personal user settings, models, saves, venv and binaries (whitelist).
-fn clean_wipe_target_dir(target_dir: &Path, sender: &EventSender) {
+pub const WHITELIST_APP_SUBDIRS: &[&str] = &[
+    "api",
+    "config",
+    "engine",
+    "gui",
+    "handlers",
+    "i18n",
+    "startup",
+    "assets",
+    "setupfiles",
+    "__pycache__",
+    "bridge",
+];
+
+pub const WHITELIST_APP_ROOT_FILES: &[&str] = &[
+    "main.py",
+    "algorithms.py",
+    "assembler.py",
+    "osdoc.py",
+    "updater.py",
+    ".version",
+    "BadWords.py",
+    "config.py",
+    "gui.py",
+    "resolve_handler.py",
+    "audio_engine.py",
+    "BadWords_Launcher.py",
+    "transcribe.py",
+    "timeline.py",
+    "silence.py",
+    "audio.py",
+    "BadWords.lua",
+    "Badwords.py",
+    "BadWords (Linux).py",
+    "BadWords (Mac).py",
+    "BadWords (macOS).py",
+    "BadWords (Windows).py",
+    "interface.py",
+    "whisper_net.py",
+];
+
+/// Returns true if target_dir or its direct parent contains a .git directory.
+pub fn is_git_repo_dir(target_dir: &Path) -> bool {
+    target_dir.join(".git").exists()
+        || target_dir
+            .parent()
+            .is_some_and(|p| p.join(".git").exists())
+}
+
+/// Strictly verifies that target_dir has an unmistakable BadWords installation signature.
+pub fn has_badwords_install_signature(target_dir: &Path) -> bool {
+    let has_main =
+        target_dir.join("main.py").is_file() || target_dir.join("src").join("main.py").is_file();
+    let has_core = target_dir.join("osdoc.py").is_file()
+        || target_dir.join("gui").join("main_window.py").is_file()
+        || target_dir.join("src").join("osdoc.py").is_file();
+    has_main && has_core
+}
+
+/// Strictly removes ONLY whitelisted BadWords application code/asset entries directly
+/// inside target_dir. Never uses a blacklist, never touches parent directories, and
+/// 100% preserves user settings, models, saves, temp, venv, native launchers, and user files.
+pub fn clean_badwords_code_whitelist(
+    target_dir: &Path,
+    skip_exe: Option<&Path>,
+    allow_git_for_test: bool,
+) -> Result<(Vec<PathBuf>, Vec<String>), String> {
     if !target_dir.is_dir() {
-        return;
+        return Ok((Vec::new(), Vec::new()));
     }
 
-    if is_unsafe_dir_to_delete(target_dir) || !is_legitimate_badwords_dir(target_dir) {
-        emit_log(
-            sender,
-            "ERROR",
-            &format!(
-                "Safety block: Refusing to wipe non-BadWords or protected system directory: {}",
-                target_dir.display()
-            ),
-        );
+    if is_unsafe_dir_to_delete(target_dir) {
+        return Err(format!(
+            "Safety block: Refusing to clean protected system directory: {}",
+            target_dir.display()
+        ));
+    }
+
+    if !allow_git_for_test && is_git_repo_dir(target_dir) {
+        return Err(format!(
+            "Safety block: Refusing to clean development .git repository: {}",
+            target_dir.display()
+        ));
+    }
+
+    if !has_badwords_install_signature(target_dir) {
+        // Brand-new, empty, or unverified folder: skip cleaning without deleting anything.
+        return Ok((Vec::new(), Vec::new()));
+    }
+
+    let mut removed = Vec::new();
+    let mut warnings = Vec::new();
+    let skip_canon = skip_exe.and_then(|p| fs::canonicalize(p).ok());
+
+    for subdir in WHITELIST_APP_SUBDIRS {
+        let p = target_dir.join(subdir);
+        if fs::symlink_metadata(&p).is_ok_and(|m| m.file_type().is_symlink()) {
+            continue;
+        }
+        if p.is_dir() {
+            match fs::remove_dir_all(&p) {
+                Ok(()) => removed.push(p),
+                Err(e) => warnings.push(format!(
+                    "Could not fully remove '{}' (possibly locked by running BadWords): {}",
+                    p.display(),
+                    e
+                )),
+            }
+        }
+    }
+
+    for fname in WHITELIST_APP_ROOT_FILES {
+        let p = target_dir.join(fname);
+        if let Some(ref sk) = skip_canon {
+            if fs::canonicalize(&p).ok().as_ref() == Some(sk) {
+                continue;
+            }
+        }
+        let meta = match fs::symlink_metadata(&p) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.is_file() || meta.file_type().is_symlink() {
+            match fs::remove_file(&p) {
+                Ok(()) => removed.push(p),
+                Err(e) => warnings.push(format!(
+                    "Could not remove '{}' (possibly locked by running BadWords): {}",
+                    p.display(),
+                    e
+                )),
+            }
+        }
+    }
+
+    Ok((removed, warnings))
+}
+
+/// Cleanly removes obsolete BadWords code entries from target_dir using a strict whitelist,
+/// while 100% preserving personal user settings, models, saves, temp, venv, launchers, and user files.
+fn clean_wipe_target_dir(target_dir: &Path, sender: &EventSender) {
+    if !target_dir.is_dir() {
         return;
     }
 
     emit_log(
         sender,
         "INFO",
-        "Performing clean application reset (preserving user settings, models, saves & venv)...",
+        "Refreshing application code (strict whitelist; preserving user data, models, saves, temp & launchers)...",
     );
 
-    let protected_names = [
-        "settings.json",
-        "user.json",
-        "pref.json",
-        "dev.json",
-        ".python_auto_installed",
-        ".no_self_upgrade",
-        "models",
-        "saves",
-        "venv",
-        "bin",
-        "libs",
-    ];
-
-    if let Ok(entries) = fs::read_dir(target_dir) {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            let file_name = entry.file_name().to_string_lossy().to_string();
-
-            if protected_names
-                .iter()
-                .any(|&prot| prot.eq_ignore_ascii_case(&file_name))
-            {
-                continue;
+    let cur_exe = std::env::current_exe().ok();
+    match clean_badwords_code_whitelist(target_dir, cur_exe.as_deref(), false) {
+        Ok((removed, warnings)) => {
+            for w in warnings {
+                emit_log(sender, "WARN", &w);
             }
-
-            let name_lower = file_name.to_lowercase();
-            if name_lower.contains("installer") || name_lower.starts_with("badwords-setup") {
-                continue;
-            }
-
-            // Do not delete current running installer exe if it's placed in target_dir
-            if let Ok(cur_exe) = std::env::current_exe() {
-                if cur_exe == p || fs::canonicalize(&cur_exe).ok() == fs::canonicalize(&p).ok() {
-                    continue;
-                }
-            }
-
-            if p.is_dir() {
-                let _ = fs::remove_dir_all(&p);
-            } else if p.is_file() || p.is_symlink() {
-                let _ = fs::remove_file(&p);
-            }
+            emit_log(
+                sender,
+                "OK",
+                &format!(
+                    "Application code refreshed ({} obsolete entries cleaned).",
+                    removed.len()
+                ),
+            );
+        }
+        Err(err_msg) => {
+            emit_log(sender, "ERROR", &err_msg);
         }
     }
-    emit_log(sender, "OK", "Target directory reset to clean state.");
+}
+
+/// Resolves the version string to stamp into `.version` after remote/branch deployment.
+pub fn resolve_deployed_version(detected_tag: Option<&str>, target_dir: &Path) -> String {
+    detected_tag
+        .map(|t| {
+            t.trim()
+                .trim_start_matches(|c| c == 'v' || c == 'V')
+                .to_string()
+        })
+        .filter(|s| !s.is_empty())
+        .or_else(|| read_app_version_from_dir(target_dir))
+        .unwrap_or_else(|| APP_VERSION.to_string())
 }
 
 /// Deploys BadWords application files (from local repo or online GitHub/GitLab zip)
@@ -1114,6 +1225,7 @@ fn deploy_remote_files(target_dir: &Path, sender: &EventSender) -> bool {
 
     let mut downloaded = false;
     let mut candidate_urls = Vec::new();
+    let mut detected_tag: Option<String> = None;
 
     if let Some((tag, zip_url)) = fetch_latest_github_release() {
         emit_log(
@@ -1121,6 +1233,7 @@ fn deploy_remote_files(target_dir: &Path, sender: &EventSender) -> bool {
             "INFO",
             &format!("Detected latest GitHub release: {}", tag),
         );
+        detected_tag = Some(tag.clone());
         candidate_urls.push(zip_url);
         candidate_urls.push(format!(
             "https://github.com/veritus-git/BadWords/archive/refs/tags/{}.zip",
@@ -1132,6 +1245,7 @@ fn deploy_remote_files(target_dir: &Path, sender: &EventSender) -> bool {
             "INFO",
             &format!("Detected latest GitLab release: {}", tag),
         );
+        detected_tag = Some(tag.clone());
         candidate_urls.push(zip_url);
     }
 
@@ -1225,6 +1339,9 @@ fn deploy_remote_files(target_dir: &Path, sender: &EventSender) -> bool {
                         }
                     }
                 }
+
+                let resolved_ver = resolve_deployed_version(detected_tag.as_deref(), target_dir);
+                let _ = fs::write(target_dir.join(".version"), format!("{}\n", resolved_ver));
 
                 emit_log(
                     sender,
@@ -1352,6 +1469,9 @@ fn deploy_branch_files(target_dir: &Path, branch: &str, sender: &EventSender) ->
                         }
                     }
                 }
+
+                let resolved_ver = resolve_deployed_version(None, target_dir);
+                let _ = fs::write(target_dir.join(".version"), format!("{}\n", resolved_ver));
 
                 emit_log(
                     sender,
@@ -2045,53 +2165,57 @@ fn ensure_ffmpeg(bin_dir: &Path, sender: &EventSender) {
     );
 }
 
-/// Verifies presence and importability of critical BadWords packages in venv.
-/// Returns list of package names that failed to import.
+/// Verifies presence and live importability of critical BadWords packages in venv.
+/// Returns list of pip requirement specifiers that failed to import or verify.
 fn check_missing_dependencies(v_py: &Path, check_nvidia: bool) -> Vec<String> {
     let mut missing = Vec::new();
 
-    // 1. PySide6
-    // Headless-safe verification: check package presence via importlib.util to avoid false failures
-    // on Linux CI / headless systems lacking libGL / X11 display libraries
+    // 1. PySide6 (real QtCore import guarded with QT_QPA_PLATFORM=offscreen for headless Linux/CI)
     let pyside_ok = os::create_hidden_command(v_py)
-        .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None else 1)"])
+        .env("QT_QPA_PLATFORM", "offscreen")
+        .args(["-c", "import PySide6.QtCore"])
         .output()
         .is_ok_and(|o| o.status.success());
     if !pyside_ok {
         missing.push("PySide6".to_string());
     }
 
-    // 2. faster-whisper
+    // 2. faster-whisper + ctranslate2 ABI check
     let whisper_ok = os::create_hidden_command(v_py)
-        .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('faster_whisper') is not None else 1)"])
+        .args(["-c", "import faster_whisper, ctranslate2"])
         .output()
         .is_ok_and(|o| o.status.success());
     if !whisper_ok {
         missing.push("faster-whisper".to_string());
     }
 
-    // 3. pypdf
+    // 3. PyAV (< 19 required by faster-whisper <= 1.2.1)
+    let av_ok = os::create_hidden_command(v_py)
+        .args(["-c", "import av; assert int(av.__version__.split('.')[0]) < 19"])
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !av_ok {
+        missing.push("av<19".to_string());
+    }
+
+    // 4. pypdf
     let pypdf_ok = os::create_hidden_command(v_py)
-        .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('pypdf') is not None else 1)"])
+        .args(["-c", "import pypdf"])
         .output()
         .is_ok_and(|o| o.status.success());
     if !pypdf_ok {
         missing.push("pypdf".to_string());
     }
 
-    // 4. NVIDIA CUDA acceleration modules (if applicable)
+    // 5. NVIDIA CUDA acceleration modules (if applicable)
     if check_nvidia {
         let ct2_ok = os::create_hidden_command(v_py)
-            .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('ctranslate2') is not None else 1)"])
+            .args(["-c", "import ctranslate2"])
             .output()
             .is_ok_and(|o| o.status.success());
         if !ct2_ok {
-            if !missing.contains(&"nvidia-cublas-cu12".to_string()) {
-                missing.push("nvidia-cublas-cu12".to_string());
-            }
-            if !missing.contains(&"nvidia-cudnn-cu12".to_string()) {
-                missing.push("nvidia-cudnn-cu12".to_string());
-            }
+            missing.push("nvidia-cublas-cu12".to_string());
+            missing.push("nvidia-cudnn-cu12".to_string());
         }
     }
 
@@ -2123,7 +2247,7 @@ fn setup_python_environment(
     let venv_valid = v_py.is_file()
         && os::create_hidden_command(&v_py)
             .arg("-c")
-            .arg("import sys; sys.exit(0 if sys.version_info >= (3, 10) and sys.version_info < (3, 13) else 1)")
+            .arg("import sys, encodings, pip; sys.exit(0 if (3, 10) <= sys.version_info < (3, 13) else 1)")
             .output()
             .is_ok_and(|o| o.status.success());
     if !venv_valid {
@@ -2205,16 +2329,17 @@ fn setup_python_environment(
         );
         emit_log(sender, "OK", "Package manager tools updated.");
 
-        // Sub-step: PySide6
+        // Sub-step: PySide6 (real import probe guarded with QT_QPA_PLATFORM=offscreen)
         let pyside_check = os::create_hidden_command(&v_py)
-            .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None else 1)"])
+            .env("QT_QPA_PLATFORM", "offscreen")
+            .args(["-c", "import PySide6.QtCore"])
             .output()
             .is_ok_and(|o| o.status.success());
         if !pyside_check {
-            emit_log(sender, "INFO", "Installing PySide6 framework...");
+            emit_log(sender, "INFO", "Installing/repairing PySide6 framework...");
             run_pip_install_streaming(
                 &v_py,
-                &["PySide6"],
+                &["--upgrade", "--force-reinstall", "PySide6"],
                 68,
                 78,
                 "Installing GUI framework...",
@@ -2233,30 +2358,30 @@ fn setup_python_environment(
             emit_log(sender, "OK", "PySide6 is ready.");
         }
 
-        // Sub-step: faster-whisper, pypdf
-        emit_log(sender, "INFO", "Installing faster-whisper and pypdf...");
+        // Sub-step: faster-whisper, av<19, pypdf (always upgrade during Option 1 updates)
+        emit_log(sender, "INFO", "Installing/upgrading faster-whisper, av<19 and pypdf...");
         run_pip_install_streaming(
             &v_py,
             // av<19: PyAV 19 removed av.open(metadata_errors=...), which faster-whisper <= 1.2.1 still passes
-            &["faster-whisper", "av<19", "pypdf"],
+            &["--upgrade", "faster-whisper", "av<19", "pypdf"],
             78,
             85,
             "Installing AI speech engine...",
             "Downloading Faster-Whisper AI engine & PyPDF",
             sender,
         );
-        emit_log(sender, "OK", "Faster-Whisper and PyPDF installed.");
+        emit_log(sender, "OK", "Faster-Whisper and PyPDF ready.");
 
         // Sub-step: Hardware Acceleration (CUDA 12 or CPU runtime)
         if has_nvidia {
             emit_log(
                 sender,
                 "INFO",
-                "Installing nvidia-cublas-cu12 and nvidia-cudnn-cu12...",
+                "Installing/upgrading nvidia-cublas-cu12 and nvidia-cudnn-cu12...",
             );
             run_pip_install_streaming(
                 &v_py,
-                &["nvidia-cublas-cu12", "nvidia-cudnn-cu12"],
+                &["--upgrade", "nvidia-cublas-cu12", "nvidia-cudnn-cu12"],
                 85,
                 90,
                 "Installing GPU acceleration...",
@@ -2357,13 +2482,16 @@ fn setup_python_environment(
                 ),
             );
 
-            let missing_refs: Vec<&str> = missing.iter().map(|s| s.as_str()).collect();
+            let mut repair_args: Vec<&str> = vec!["--upgrade", "--force-reinstall"];
+            for m in &missing {
+                repair_args.push(m.as_str());
+            }
             run_pip_install_streaming(
                 &v_py,
-                &missing_refs,
+                &repair_args,
                 90,
                 92,
-                "Downloading missing libraries...",
+                "Repairing missing/broken libraries...",
                 "Recovering failed package downloads",
                 sender,
             );
@@ -2480,7 +2608,8 @@ fn reconfigure_relocated_python_environment(to_dir: &Path, sender: &EventSender)
 
     if v_py.is_file() {
         let test_ok = os::create_hidden_command(&v_py)
-            .args(["-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('PySide6') is not None and importlib.util.find_spec('faster_whisper') is not None else 1)"])
+            .env("QT_QPA_PLATFORM", "offscreen")
+            .args(["-c", "import PySide6.QtCore, faster_whisper, av, pypdf; assert int(av.__version__.split('.')[0]) < 19"])
             .output()
             .is_ok_and(|o| o.status.success());
         if test_ok {
@@ -2919,7 +3048,7 @@ pub fn run_repair(mut target_dir: PathBuf, version: Option<String>, sender: Even
             }
         }
 
-        // Re-deploy application core files
+        // Re-deploy application core files (whitelist-clean obsolete modules first so stale .py files don't linger)
         emit_progress(
             &sender,
             30,
@@ -2927,6 +3056,7 @@ pub fn run_repair(mut target_dir: PathBuf, version: Option<String>, sender: Even
             "Repairing core files...",
             "Re-syncing files from repository",
         );
+        clean_wipe_target_dir(&target_dir, &sender);
         let deploy_ok = match version.as_deref() {
             Some(ver) if ver != "LOCAL" => {
                 emit_progress(
@@ -4042,5 +4172,202 @@ mod tests {
         assert!(!generated.contains("__BADWORDS_INSTALL_DIR__"));
         assert!(!generated.contains("ctypes.CDLL(os.path.join(_bin_p"));
         assert!(generated.contains("PYTHONNOUSERSITE"));
+    }
+
+    #[test]
+    fn test_resolve_deployed_version_extraction() {
+        let temp_dir = std::env::temp_dir().join("badwords_test_resolve_ver");
+        let _ = fs::remove_dir_all(&temp_dir);
+        let _ = fs::create_dir_all(temp_dir.join("config"));
+        let _ = fs::write(
+            temp_dir.join("config").join("app_constants.py"),
+            "_DEFAULT_VERSION = \"4.1.0\"\n",
+        );
+
+        assert_eq!(resolve_deployed_version(Some("4.1.0"), &temp_dir), "4.1.0");
+        assert_eq!(resolve_deployed_version(Some("v4.1.0"), &temp_dir), "4.1.0");
+        assert_eq!(resolve_deployed_version(None, &temp_dir), "4.1.0");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_clean_badwords_code_whitelist_preserves_user_and_custom_dir() {
+        let root = std::env::temp_dir().join("badwords_test_whitelist_root");
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::create_dir_all(&root);
+
+        let parent_file = root.join("important_user_file.txt");
+        fs::write(&parent_file, "do not touch").unwrap();
+
+        for folder_name in ["BadWords", "BW_custom"] {
+            let inst = root.join(folder_name);
+            fs::create_dir_all(inst.join("gui")).unwrap();
+            fs::create_dir_all(inst.join("api")).unwrap();
+            fs::create_dir_all(inst.join("models")).unwrap();
+            fs::create_dir_all(inst.join("saves")).unwrap();
+            fs::create_dir_all(inst.join("temp")).unwrap();
+            fs::create_dir_all(inst.join("venv").join("bin")).unwrap();
+            fs::create_dir_all(inst.join("my_videos")).unwrap();
+
+            // BadWords code files (whitelisted for refresh)
+            fs::write(inst.join("main.py"), "# main").unwrap();
+            fs::write(inst.join("osdoc.py"), "# osdoc").unwrap();
+            fs::write(inst.join(".version"), "4.0.1\n").unwrap();
+            fs::write(inst.join("gui").join("stale_file.py"), "# stale").unwrap();
+            fs::write(inst.join("api").join("old_api.py"), "# old").unwrap();
+
+            // Protected launchers, runtime data, and personal user files
+            fs::write(inst.join("BadWords"), "elf").unwrap();
+            fs::write(inst.join("BadWords.exe"), "pe").unwrap();
+            fs::write(inst.join("badwords-installer"), "inst").unwrap();
+            fs::write(inst.join("settings.json"), "{\"ok\":1}").unwrap();
+            fs::write(inst.join("user.json"), "{\"ok\":1}").unwrap();
+            fs::write(inst.join("models").join("dummy"), "model").unwrap();
+            fs::write(inst.join("saves").join("dummy.bws"), "save").unwrap();
+            fs::write(inst.join("temp").join("active.wav"), "wav").unwrap();
+            fs::write(inst.join("venv").join("bin").join("python"), "py").unwrap();
+            fs::write(inst.join("my_videos").join("clip.mp4"), "video").unwrap();
+            fs::write(inst.join("notes.txt"), "personal notes").unwrap();
+
+            let res = clean_badwords_code_whitelist(&inst, None, true).unwrap();
+            assert!(!res.0.is_empty());
+
+            // Obsolete code removed
+            assert!(!inst.join("gui").exists());
+            assert!(!inst.join("api").exists());
+            assert!(!inst.join("main.py").exists());
+            assert!(!inst.join("osdoc.py").exists());
+            assert!(!inst.join(".version").exists());
+
+            // Everything else 100% preserved
+            assert!(inst.join("BadWords").is_file());
+            assert!(inst.join("BadWords.exe").is_file());
+            assert!(inst.join("badwords-installer").is_file());
+            assert!(inst.join("settings.json").is_file());
+            assert!(inst.join("user.json").is_file());
+            assert!(inst.join("models").join("dummy").is_file());
+            assert!(inst.join("saves").join("dummy.bws").is_file());
+            assert!(inst.join("temp").join("active.wav").is_file());
+            assert!(inst.join("venv").join("bin").join("python").is_file());
+            assert!(inst.join("my_videos").join("clip.mp4").is_file());
+            assert!(inst.join("notes.txt").is_file());
+            assert!(parent_file.is_file());
+        }
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_clean_badwords_code_whitelist_blocks_unsafe_git_and_unverified() {
+        // 1. Unsafe system directory (Desktop / Root)
+        if let Some(dt) = dirs::desktop_dir() {
+            assert!(clean_badwords_code_whitelist(&dt, None, true).is_err());
+        }
+
+        // 2. .git repository guard (direct and parent)
+        let git_root = std::env::temp_dir().join("badwords_test_git_guard");
+        let _ = fs::remove_dir_all(&git_root);
+        fs::create_dir_all(git_root.join(".git")).unwrap();
+        fs::write(git_root.join("main.py"), "#").unwrap();
+        fs::write(git_root.join("osdoc.py"), "#").unwrap();
+        assert!(clean_badwords_code_whitelist(&git_root, None, false).is_err());
+        assert!(git_root.join("main.py").is_file());
+
+        let child = git_root.join("sub_install");
+        fs::create_dir_all(&child).unwrap();
+        fs::write(child.join("main.py"), "#").unwrap();
+        fs::write(child.join("osdoc.py"), "#").unwrap();
+        assert!(clean_badwords_code_whitelist(&child, None, false).is_err());
+        assert!(child.join("main.py").is_file());
+
+        // 3. Unverified folder without BadWords signature
+        let unverified = std::env::temp_dir().join("badwords_test_unverified_dir");
+        let _ = fs::remove_dir_all(&unverified);
+        fs::create_dir_all(unverified.join("gui")).unwrap();
+        fs::write(unverified.join("gui").join("user_doc.txt"), "keep").unwrap();
+        let res = clean_badwords_code_whitelist(&unverified, None, true).unwrap();
+        assert!(res.0.is_empty());
+        assert!(unverified.join("gui").join("user_doc.txt").is_file());
+
+        let _ = fs::remove_dir_all(&git_root);
+        let _ = fs::remove_dir_all(&unverified);
+    }
+
+    #[test]
+    fn test_badwords_exe_candidate_urls_order() {
+        let urls = os::windows::build_badwords_exe_candidate_urls(Some("4.1.0"));
+        assert_eq!(
+            urls,
+            vec![
+                "https://github.com/veritus-git/BadWords/releases/download/4.1.0/BadWords.exe",
+                "https://github.com/veritus-git/BadWords/releases/download/v4.1.0/BadWords.exe",
+                "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe",
+            ]
+        );
+
+        let urls_v = os::windows::build_badwords_exe_candidate_urls(Some("v4.1.0"));
+        assert_eq!(urls_v, urls);
+
+        let urls_none = os::windows::build_badwords_exe_candidate_urls(None);
+        assert_eq!(
+            urls_none,
+            vec!["https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_linux_local_bin_entry_no_dangling_symlink() {
+        let root = std::env::temp_dir().join("badwords_test_linux_bin_entry");
+        let _ = fs::remove_dir_all(&root);
+        let local_bin = root.join("local_bin");
+        let install_dir = root.join("install");
+        fs::create_dir_all(&local_bin).unwrap();
+        fs::create_dir_all(install_dir.join("venv").join("bin")).unwrap();
+        fs::write(install_dir.join("venv").join("bin").join("python3"), "#!/bin/sh\n").unwrap();
+        fs::write(install_dir.join("main.py"), "print('ok')\n").unwrap();
+
+        // Pre-seed a broken dangling symlink
+        let bin_entry = local_bin.join("badwords");
+        std::os::unix::fs::symlink(install_dir.join("MissingBinary"), &bin_entry).unwrap();
+
+        os::linux::ensure_linux_local_bin_entry(&local_bin, &install_dir, false);
+        assert!(!fs::symlink_metadata(&bin_entry).unwrap().file_type().is_symlink());
+        let content = fs::read_to_string(&bin_entry).unwrap();
+        assert!(content.starts_with("#!/bin/sh\nexec "));
+        assert!(content.contains("python3"));
+        assert!(content.contains("main.py"));
+
+        // When launcher_ready = true, symlink points to install_dir/BadWords
+        fs::write(install_dir.join("BadWords"), "elf").unwrap();
+        os::linux::ensure_linux_local_bin_entry(&local_bin, &install_dir, true);
+        assert!(fs::symlink_metadata(&bin_entry).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_link(&bin_entry).unwrap(), install_dir.join("BadWords"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_check_missing_dependencies_real_probe() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join("badwords_test_dep_probe");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+
+        // Mock python executable simulating av==19.0.0 (too new) & missing pypdf
+        let fake_py = root.join("fake_py.sh");
+        fs::write(
+            &fake_py,
+            "#!/bin/sh\ncase \"$*\" in\n  *PySide6.QtCore*) exit 0 ;;\n  *faster_whisper*) exit 0 ;;\n  *av.__version__*) exit 1 ;;\n  *pypdf*) exit 1 ;;\n  *) exit 1 ;;\nesac\n",
+        )
+        .unwrap();
+        fs::set_permissions(&fake_py, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let missing = check_missing_dependencies(&fake_py, false);
+        assert_eq!(missing, vec!["av<19".to_string(), "pypdf".to_string()]);
+
+        let _ = fs::remove_dir_all(&root);
     }
 }

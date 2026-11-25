@@ -65,7 +65,166 @@ def load_app_version(install_dir=None):
     return "4.0.0"
 
 UPDATER_VERSION = load_app_version()
-UPDATER_BUILD   = 2026111002
+UPDATER_BUILD   = 2026112501
+
+WHITELIST_APP_SUBDIRS = (
+    "api", "config", "engine", "gui", "handlers", "i18n",
+    "startup", "assets", "setupfiles", "__pycache__", "bridge",
+)
+
+WHITELIST_APP_ROOT_FILES = (
+    "main.py", "algorithms.py", "assembler.py", "osdoc.py", "updater.py", ".version",
+    "BadWords.py", "config.py", "gui.py", "resolve_handler.py", "audio_engine.py",
+    "BadWords_Launcher.py", "transcribe.py", "timeline.py", "silence.py",
+    "audio.py", "BadWords.lua", "Badwords.py", "BadWords (Linux).py",
+    "BadWords (Mac).py", "BadWords (macOS).py", "BadWords (Windows).py",
+    "interface.py", "whisper_net.py",
+)
+
+
+def is_dev_git_repo(install_dir: str) -> bool:
+    """Returns True if install_dir or its direct parent contains a .git repository."""
+    if not install_dir:
+        return False
+    abs_dir = os.path.abspath(install_dir)
+    parent_dir = os.path.dirname(abs_dir)
+    return os.path.exists(os.path.join(abs_dir, ".git")) or os.path.exists(os.path.join(parent_dir, ".git"))
+
+
+def is_verified_badwords_install_dir(install_dir: str) -> bool:
+    """
+    Strictly verifies that install_dir is a real BadWords installation directory
+    and never a filesystem root or unrelated folder.
+    """
+    if not install_dir or not os.path.isdir(install_dir):
+        return False
+    abs_dir = os.path.abspath(install_dir)
+    if os.path.dirname(abs_dir) == abs_dir:
+        return False
+    has_main = os.path.isfile(os.path.join(abs_dir, "main.py")) or os.path.isfile(os.path.join(abs_dir, "src", "main.py"))
+    has_core = (
+        os.path.isfile(os.path.join(abs_dir, "osdoc.py"))
+        or os.path.isdir(os.path.join(abs_dir, "gui"))
+        or os.path.isfile(os.path.join(abs_dir, "src", "osdoc.py"))
+    )
+    return bool(has_main and has_core)
+
+
+def build_candidate_tag_urls(rel_tag: str) -> list:
+    """Builds candidate source zip URLs supporting both bare (4.1.0) and v-prefixed (v4.1.0) tags."""
+    raw = str(rel_tag or "").strip()
+    if not raw:
+        return []
+    clean = raw.lstrip("vV")
+    variants = []
+    for cand in (raw, clean, f"v{clean}"):
+        if cand and cand not in variants:
+            variants.append(cand)
+    urls = []
+    for t in variants:
+        urls.append(f"https://github.com/veritus-git/BadWords/archive/refs/tags/{t}.zip")
+    for t in variants:
+        urls.append(f"https://gitlab.com/badwords/BadWords/-/archive/{t}/BadWords-{t}.zip")
+    return urls
+
+
+def clean_badwords_code_whitelist(install_dir: str, cur_script: str = None, allow_git_for_test: bool = False) -> dict:
+    """
+    Safely removes ONLY whitelisted BadWords application code/asset entries directly
+    inside install_dir. Never uses a blacklist, never deletes parent directories, and
+    100% preserves user data (settings, models, saves, temp, venv, launchers, personal files).
+    """
+    abs_dir = os.path.abspath(install_dir)
+    cur_abs = os.path.abspath(cur_script) if cur_script else os.path.abspath(__file__)
+
+    if not allow_git_for_test and is_dev_git_repo(abs_dir):
+        return {"cleaned": False, "reason": "git_repo", "removed": []}
+    if not is_verified_badwords_install_dir(abs_dir):
+        return {"cleaned": False, "reason": "unverified_dir", "removed": []}
+
+    removed = []
+
+    # 1. Whitelisted subdirectories directly inside install_dir (never symlinks)
+    for subdir in WHITELIST_APP_SUBDIRS:
+        sub_path = os.path.join(abs_dir, subdir)
+        if os.path.dirname(os.path.abspath(sub_path)) != abs_dir:
+            continue
+        if not os.path.exists(sub_path) and not os.path.islink(sub_path):
+            continue
+        if os.path.islink(sub_path) or not os.path.isdir(sub_path):
+            continue
+        if cur_abs.startswith(os.path.abspath(sub_path) + os.sep):
+            # Updater is running from inside this subdir (e.g., setupfiles/updater.py)
+            for root, dirs, files in os.walk(sub_path, topdown=False):
+                for fname in files:
+                    fpath = os.path.join(root, fname)
+                    if os.path.abspath(fpath) == cur_abs:
+                        continue
+                    try:
+                        os.remove(fpath)
+                        removed.append(fpath)
+                    except PermissionError:
+                        pass
+                    except Exception:
+                        pass
+                for dname in dirs:
+                    dpath = os.path.join(root, dname)
+                    try:
+                        if not os.listdir(dpath):
+                            os.rmdir(dpath)
+                    except Exception:
+                        pass
+        else:
+            try:
+                shutil.rmtree(sub_path, ignore_errors=False)
+                removed.append(sub_path)
+            except PermissionError:
+                pass
+            except Exception:
+                shutil.rmtree(sub_path, ignore_errors=True)
+                removed.append(sub_path)
+
+    # 2. Whitelisted root files directly inside install_dir
+    for fname in WHITELIST_APP_ROOT_FILES:
+        fpath = os.path.join(abs_dir, fname)
+        if os.path.dirname(os.path.abspath(fpath)) != abs_dir:
+            continue
+        if os.path.abspath(fpath) == cur_abs:
+            continue
+        if os.path.isfile(fpath) or os.path.islink(fpath):
+            try:
+                os.remove(fpath)
+                removed.append(fpath)
+            except PermissionError:
+                pass
+            except Exception:
+                pass
+
+    return {"cleaned": True, "reason": "ok", "removed": removed}
+
+
+def _probe_venv_imports(venv_py: str) -> dict:
+    """Probes live importability of core packages in venv without failing on headless Linux."""
+    env = os.environ.copy()
+    env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    results = {}
+    probes = {
+        "PySide6": "import PySide6.QtCore",
+        "faster-whisper": "import faster_whisper, ctranslate2",
+        "av<19": "import av; assert int(av.__version__.split('.')[0]) < 19",
+        "pypdf": "import pypdf",
+    }
+    for pkg, stmt in probes.items():
+        try:
+            r = subprocess.run(
+                [venv_py, "-c", stmt],
+                capture_output=True, text=True, env=env, timeout=20,
+                **_sp_hidden_kwargs()
+            )
+            results[pkg] = (r.returncode == 0)
+        except Exception:
+            results[pkg] = False
+    return results
 
 def is_no_self_upgrade_configured(install_dir: str = None, args_no_self_upgrade: bool = False) -> bool:
     """
@@ -1012,10 +1171,11 @@ def main():
         sys.exit(1)
 
     install_dir = os.path.abspath(args.install_dir)
-    if not os.path.isdir(install_dir) or not (
-        os.path.isfile(os.path.join(install_dir, "main.py")) or 
-        os.path.isfile(os.path.join(install_dir, "src", "main.py"))
-    ):
+    if is_dev_git_repo(install_dir):
+        err(f"Safety block: Refusing to run updater against a development .git repository: {install_dir}")
+        sys.exit(1)
+
+    if not is_verified_badwords_install_dir(install_dir):
         err(f"Valid BadWords installation not found at: {install_dir}")
         sys.exit(1)
 
@@ -1103,14 +1263,9 @@ def main():
     info(f"Downloading source release from {source_repo}...")
     dl_ok = download(zip_url, zip_path)
     if not dl_ok:
-        # Try alternate tag formatting (with or without leading 'v') and mirror
-        alt_tag = rel_tag[1:] if (rel_tag.startswith("v") or rel_tag.startswith("V")) else f"v{rel_tag}"
-        alt_urls = [
-            f"https://github.com/veritus-git/BadWords/archive/refs/tags/{alt_tag}.zip",
-            f"https://gitlab.com/badwords/BadWords/-/archive/{rel_tag}/BadWords-{rel_tag}.zip",
-            f"https://gitlab.com/badwords/BadWords/-/archive/{alt_tag}/BadWords-{alt_tag}.zip",
-        ]
-        for a_url in alt_urls:
+        for a_url in build_candidate_tag_urls(rel_tag):
+            if a_url == zip_url:
+                continue
             info(f"Retrying download using candidate URL: {a_url}")
             if download(a_url, zip_path):
                 dl_ok = True
@@ -1146,33 +1301,23 @@ def main():
     assets_path = os.path.join(extracted_root, "assets")
     setupfiles_path = os.path.join(extracted_root, "setupfiles")
 
-    info("Resetting application files to clean state (preserving user data)...")
-    protected_names = {
-        "settings.json", "user.json", "pref.json", "dev.json", ".python_auto_installed",
-        ".v4_migration_notified", ".no_self_upgrade", "models", "saves", "venv", "bin", "libs"
-    }
-    cur_script = os.path.abspath(__file__)
-    if os.path.isdir(install_dir):
-        for item in os.listdir(install_dir):
-            if item.lower() in {p.lower() for p in protected_names}:
-                continue
-            full_path = os.path.join(install_dir, item)
-            if os.path.abspath(full_path) == cur_script:
-                continue
-            try:
-                if os.path.isdir(full_path) and not os.path.islink(full_path):
-                    shutil.rmtree(full_path, ignore_errors=True)
-                else:
-                    os.remove(full_path)
-            except Exception as e:
-                log(f"Clean wipe warning: {e}")
+    info("Cleaning whitelisted application code (preserving launchers, settings, models, saves, temp & user files)...")
+    clean_res = clean_badwords_code_whitelist(install_dir, cur_script=os.path.abspath(__file__))
+    if not clean_res.get("cleaned"):
+        err(f"Safety abort during cleanup ({clean_res.get('reason')}); preserving existing files.")
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        sys.exit(1)
 
-    # Clean previous logs on every update so logs start fresh
+    # Clean previous logs on every update so logs start fresh (gracefully ignore locked open logs on Windows)
     for _log_name in ["badwords_debug.log", "badwords.log", "badwords_setup.log", "setup.log"]:
         _lf = os.path.join(install_dir, _log_name)
         if os.path.isfile(_lf):
-            try: os.remove(_lf)
-            except Exception: pass
+            try:
+                os.remove(_lf)
+            except PermissionError:
+                pass
+            except Exception:
+                pass
 
     info("Deploying fresh application files...")
     if os.path.isdir(source_path):
@@ -1185,7 +1330,10 @@ def main():
         shutil.copytree(setupfiles_path, dst_setupfiles, dirs_exist_ok=True)
         up_py = os.path.join(setupfiles_path, "updater.py")
         if os.path.isfile(up_py):
-            shutil.copy2(up_py, os.path.join(install_dir, "updater.py"))
+            try:
+                shutil.copy2(up_py, os.path.join(install_dir, "updater.py"))
+            except Exception as e:
+                warn(f"Could not overwrite root updater.py while running: {e}")
 
     log("Application files deployed cleanly.")
 
@@ -1236,6 +1384,10 @@ def main():
         venv_pip = os.path.join(venv_dir, "bin", "pip")
 
     if os.path.isfile(venv_pip):
+        is_v4_to_v4 = (curr_tuple[0] >= 4 and target_tuple[0] >= 4)
+        probe_before = _probe_venv_imports(venv_py) if os.path.isfile(venv_py) else {}
+        pyside_already_ok = bool(probe_before.get("PySide6"))
+
         info("Upgrading pip, setuptools & wheel...")
         subprocess.run([venv_pip, "install", "--upgrade", "pip", "setuptools", "wheel", "--quiet"], capture_output=True, **_sp_hidden_kwargs())
 
@@ -1245,16 +1397,26 @@ def main():
             info("Uninstalling legacy PyTorch to save disk space...")
             subprocess.run([venv_pip, "uninstall", "-y", "torch", "torchaudio"], capture_output=True, **_sp_hidden_kwargs())
 
-        info("Upgrading core dependencies (faster-whisper, pypdf, PySide6)...")
-        # av<19: PyAV 19 removed av.open(metadata_errors=...), which faster-whisper <= 1.2.1 still passes
-        r = subprocess.run([venv_pip, "install", "--upgrade", "faster-whisper", "av<19", "pypdf", "PySide6"],
+        # On 4.x -> 4.x live updates, do NOT upgrade/reinstall PySide6 over loaded Windows DLLs
+        # when PySide6 is already importable and working in venv.
+        upgrade_pkgs = ["faster-whisper", "av<19", "pypdf"]
+        if not (is_v4_to_v4 and pyside_already_ok):
+            upgrade_pkgs.append("PySide6")
+        else:
+            info("PySide6 is already working in venv; skipping live PySide6 upgrade to prevent Windows DLL locks.")
+
+        info(f"Checking/upgrading core dependencies ({', '.join(upgrade_pkgs)})...")
+        r = subprocess.run([venv_pip, "install", "--upgrade"] + upgrade_pkgs,
                            capture_output=True, text=True, **_sp_hidden_kwargs())
         for line in r.stdout.splitlines():
             if "Requirement already" not in line:
                 info(line)
         if r.stderr:
             for line in r.stderr.splitlines():
-                if "WARNING" in line or "ERROR" in line:
+                lower_line = line.lower()
+                if "access is denied" in lower_line or "permissionerror" in lower_line or "used by another process" in lower_line:
+                    warn(f"Live file lock notice during pip upgrade (non-fatal): {line}")
+                elif "WARNING" in line or "ERROR" in line:
                     warn(line)
 
         # Hardware acceleration packages (NVIDIA CUDA 12)
@@ -1275,15 +1437,20 @@ def main():
             else:
                 warn("Apple GPU engine could not be installed. Transcription will use the CPU.")
 
-        # Verify environment integrity
+        # Verify environment integrity without blindly force-reinstalling locked PySide6
         info("Verifying Python packages integrity...")
-        test_cmd = [venv_py, "-c", "import PySide6, faster_whisper, pypdf; print('OK')"]
-        verify_res = subprocess.run(test_cmd, capture_output=True, text=True, **_sp_hidden_kwargs())
-        if verify_res.returncode != 0:
-            warn(f"Integrity check notice: {verify_res.stderr.strip() if verify_res.stderr else 'missing modules'}. Running automatic repair...")
-            subprocess.run([venv_pip, "install", "--upgrade", "--force-reinstall", "faster-whisper", "av<19", "pypdf", "PySide6"],
-                           capture_output=True, **_sp_hidden_kwargs())
-            info("Auto-repair completed.")
+        probe_after = _probe_venv_imports(venv_py) if os.path.isfile(venv_py) else {}
+        failed_pkgs = [pkg for pkg, ok in probe_after.items() if not ok]
+        if failed_pkgs:
+            warn(f"Integrity check notice for {failed_pkgs}. Attempting targeted repair...")
+            rep = subprocess.run(
+                [venv_pip, "install", "--upgrade", "--force-reinstall"] + failed_pkgs,
+                capture_output=True, text=True, **_sp_hidden_kwargs()
+            )
+            if rep.returncode != 0:
+                warn(f"Targeted repair notice (non-fatal if locked by running app): {rep.stderr.strip()[-300:] if rep.stderr else 'unknown'}")
+            else:
+                info("Auto-repair completed.")
 
         log("Python packages verified and ready.")
     else:
@@ -1324,7 +1491,7 @@ def main():
 
     # Cleanup
     shutil.rmtree(tmp_dir, ignore_errors=True)
-    log(f"BadWords updated to {tag} successfully!")
+    log(f"BadWords updated to {rel_tag} successfully!")
     log("Please restart BadWords (close and relaunch from DaVinci Resolve or Desktop shortcut).")
 
     # 9. Milestone notice for 3.x -> 4.x migration (post-update)

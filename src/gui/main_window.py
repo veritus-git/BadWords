@@ -4894,6 +4894,17 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         if hasattr(self, 'w_track_options'):
             self.w_track_options.refresh_tracks()
 
+        if not (hasattr(self, 'src_toggle') and self.src_toggle.active_tab == 1):
+            if hasattr(self.engine, 'resolve_handler') and self.engine.resolve_handler:
+                snap = getattr(self, '_transcription_source', None)
+                if isinstance(snap, dict) and snap.get("is_complex_video") is None:
+                    try:
+                        snap["is_complex_video"] = bool(
+                            self.engine.resolve_handler.has_complex_timeline_video(selected_tl_name)
+                        )
+                    except Exception:
+                        pass
+
         if hasattr(self, 'audio_preview'):
             self.audio_preview.check_audio_availability()
 
