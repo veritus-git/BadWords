@@ -48,7 +48,7 @@
 
 ## 3. Automated Test Suite (`python3 run_tests.py`)
 
-Test Runner: `run_tests.py` using Python `unittest` (total: **117 tests** across 13 modules, plus **24 Cargo tests** in `installer/`).
+Test Runner: `run_tests.py` using Python `unittest` (total: **118 tests** across 13 modules, plus **24 Cargo tests** in `installer/`).
 
 | Test Module | Coverage | Status |
 | :--- | :--- | :--- |
@@ -192,7 +192,7 @@ Test Runner: `run_tests.py` using Python `unittest` (total: **117 tests** across
     - **Playback Boundary & Resolve Proxy Audio (`audio_preview.py`, `audio_engine.py`, `analysis_worker.py`, `main_window.py`)**: Added hard timeline-end pause/clamp (`_stop_at_timeline_end`), Play-at-end rewind to `0.0s`, trailing `skip_cuts` boundary stop, `skip_forward()` clamping, raw-video guard for head-trimmed (`left_offset > 0`) Resolve timelines, and fast FFmpeg `-c:v copy -c:a aac -shortest` audio muxing (`mux_audio_into_proxy`) into rendered 360p Resolve video proxies.
     - **Safe Auto-Updater (`setupfiles/updater.py`)**: Replaced blacklist folder wipe with strict hardcoded BadWords whitelist cleanup (`clean_badwords_code_whitelist`) preserving launchers, `temp/`, `models/`, `saves/`, `venv/`, and unrelated user files; added `.git` dev-repo abort guard, bare + `v`-prefixed tag URL candidates, and `4.x -> 4.x` live `PySide6` DLL-lock avoidance.
     - **Rust Installer Option 1 Hardening (`installer/src/engine.rs`, `os/windows.rs`, `os/linux.rs`)**: Replaced blacklist wipe with strict whitelist cleanup (also invoked during `run_repair()`), added real ABI import probes (`PySide6.QtCore`, `faster_whisper`, `av<19`, `pypdf`, `ctranslate2`), `.version` stamping in `deploy_remote_files()` & `deploy_branch_files()`, atomic `BadWords.exe` download with bare + `v` tag URLs, and clean Linux `~/.local/bin/badwords` POSIX wrapper fallback when no C compiler is present.
-    - **Release Metadata & Verification**: Bumped `_DEFAULT_VERSION` and `installer/Cargo.toml` to `4.1.0`, updated `src/config/release_notes.json` and `CHANGELOG.md`, and verified **117 Python tests** (`tests/test_playback_and_release.py`) + **24 Cargo tests**.
+    - **Release Metadata & Verification**: Bumped `_DEFAULT_VERSION` and `installer/Cargo.toml` to `4.1.0`, updated `src/config/release_notes.json` and `CHANGELOG.md`, and verified **118 Python tests** (`tests/test_playback_and_release.py`) + **24 Cargo tests**.
 
 ---
 
@@ -200,7 +200,7 @@ Test Runner: `run_tests.py` using Python `unittest` (total: **117 tests** across
 
 1. **Continue Roadmap Cementing**: Begin Stage 2 starting with **Point 5** in `ROADMAP_CEMENTING.md` (FFmpeg discovery, audio extraction, loudness normalization, silence detection & speech islands). Note: replacing the legacy in-place `setupfiles/updater.py` mechanism remains tracked in **Point 21**.
 2. **Baseline Verification Commands**:
-   - `python3 run_tests.py` (117 tests)
+   - `python3 run_tests.py` (118 tests)
    - `python3 -m compileall src`
    - `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`
    - `cd installer && cargo check && cargo test` (24 tests)

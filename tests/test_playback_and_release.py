@@ -392,6 +392,39 @@ class TestUpdaterHardening(unittest.TestCase):
         self.assertIn("https://github.com/veritus-git/BadWords/archive/refs/tags/4.1.0.zip", urls_v)
         self.assertIn("https://github.com/veritus-git/BadWords/archive/refs/tags/v4.1.0.zip", urls_v)
 
+    def test_updater_windows_exe_urls_and_linux_wrapper_fallback(self):
+        exe_urls = updater.build_badwords_exe_candidate_urls("4.1.0")
+        self.assertEqual(
+            exe_urls,
+            [
+                "https://github.com/veritus-git/BadWords/releases/download/4.1.0/BadWords.exe",
+                "https://github.com/veritus-git/BadWords/releases/download/v4.1.0/BadWords.exe",
+                "https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe",
+            ],
+        )
+
+        if os.name == "posix":
+            inst = os.path.join(self.tmp_dir, "inst")
+            local_bin = os.path.join(self.tmp_dir, "local_bin")
+            os.makedirs(os.path.join(inst, "venv", "bin"), exist_ok=True)
+            os.makedirs(local_bin, exist_ok=True)
+            with open(os.path.join(inst, "venv", "bin", "python3"), "w", encoding="utf-8") as f:
+                f.write("#!/bin/sh\n")
+            with open(os.path.join(inst, "main.py"), "w", encoding="utf-8") as f:
+                f.write("print('ok')\n")
+
+            bin_entry = os.path.join(local_bin, "badwords")
+            os.symlink(os.path.join(inst, "MissingBadWords"), bin_entry)
+
+            ok = updater.ensure_linux_local_bin_entry(inst, local_bin_dir=local_bin)
+            self.assertTrue(ok)
+            self.assertFalse(os.path.islink(bin_entry))
+            with open(bin_entry, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.assertTrue(content.startswith("#!/bin/sh\nexec "))
+            self.assertIn("python3", content)
+            self.assertIn("main.py", content)
+
 
 if __name__ == "__main__":
     unittest.main()

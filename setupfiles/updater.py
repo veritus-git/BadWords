@@ -65,7 +65,7 @@ def load_app_version(install_dir=None):
     return "4.0.0"
 
 UPDATER_VERSION = load_app_version()
-UPDATER_BUILD   = 2026112501
+UPDATER_BUILD   = 2026112502
 
 WHITELIST_APP_SUBDIRS = (
     "api", "config", "engine", "gui", "handlers", "i18n",
@@ -1122,8 +1122,101 @@ def ensure_ffmpeg(bin_dir):
         warn(f"Portable FFmpeg download notice: {e}")
     return False
 
-def refresh_os_launchers_and_shortcuts(install_dir):
+def build_badwords_exe_candidate_urls(rel_tag: str = "") -> list:
+    """Builds ordered candidate download URLs for BadWords.exe (bare tag, v-prefixed, latest)."""
+    urls = []
+    clean = str(rel_tag or "").strip().lstrip("vV")
+    if clean and clean[0].isdigit():
+        urls.append(f"https://github.com/veritus-git/BadWords/releases/download/{clean}/BadWords.exe")
+        urls.append(f"https://github.com/veritus-git/BadWords/releases/download/v{clean}/BadWords.exe")
+    urls.append("https://github.com/veritus-git/BadWords/releases/latest/download/BadWords.exe")
+    return urls
+
+
+def ensure_windows_launcher_exe(install_dir: str, rel_tag: str = "") -> bool:
+    """Atomically refreshes BadWords.exe on Windows without deleting the existing binary on failure/lock."""
+    if os.name != "nt":
+        return False
+    launcher_exe = os.path.join(install_dir, "BadWords.exe")
+    setup_cand = os.path.join(install_dir, "setupfiles", "windows", "BadWords.exe")
+    if os.path.isfile(setup_cand) and os.path.getsize(setup_cand) > 10000:
+        try:
+            shutil.copy2(setup_cand, launcher_exe)
+            return True
+        except Exception:
+            pass
+
+    tmp_exe = os.path.join(install_dir, "BadWords.exe.tmp")
+    for dl_url in build_badwords_exe_candidate_urls(rel_tag):
+        try:
+            if os.path.isfile(tmp_exe):
+                os.remove(tmp_exe)
+            if download(dl_url, tmp_exe) and os.path.isfile(tmp_exe) and os.path.getsize(tmp_exe) > 10000:
+                os.replace(tmp_exe, launcher_exe)
+                info(f"Updated native Windows launcher BadWords.exe from {dl_url}")
+                return True
+        except PermissionError:
+            warn("BadWords.exe is currently in use by running process; keeping existing launcher.")
+            break
+        except Exception:
+            pass
+        finally:
+            if os.path.isfile(tmp_exe):
+                try:
+                    os.remove(tmp_exe)
+                except Exception:
+                    pass
+    return os.path.isfile(launcher_exe)
+
+
+def ensure_linux_local_bin_entry(install_dir: str, local_bin_dir: str = None) -> bool:
+    """
+    Ensures ~/.local/bin/badwords is never a dangling symlink after an in-place update:
+    symlinks to install_dir/BadWords if present, otherwise writes a clean POSIX #!/bin/sh wrapper.
+    """
+    if local_bin_dir is None:
+        local_bin_dir = os.path.join(os.path.expanduser("~"), ".local", "bin")
+    if not os.path.isdir(local_bin_dir):
+        return False
+
+    bin_entry = os.path.join(local_bin_dir, "badwords")
+    if os.path.islink(bin_entry) or os.path.exists(bin_entry):
+        try:
+            os.unlink(bin_entry)
+        except Exception:
+            pass
+
+    launcher_bin = os.path.join(install_dir, "BadWords")
+    if os.path.isfile(launcher_bin) and os.path.getsize(launcher_bin) > 0:
+        try:
+            os.symlink(launcher_bin, bin_entry)
+            return True
+        except Exception:
+            return False
+
+    py_bin = os.path.join(install_dir, "venv", "bin", "python3")
+    if not os.path.isfile(py_bin):
+        py_bin = os.path.join(install_dir, "venv", "bin", "python")
+    main_py = os.path.join(install_dir, "src", "main.py")
+    if not os.path.isfile(main_py):
+        main_py = os.path.join(install_dir, "main.py")
+
+    py_esc = py_bin.replace('"', '\\"')
+    main_esc = main_py.replace('"', '\\"')
+    wrapper = f'#!/bin/sh\nexec "{py_esc}" "{main_esc}" "$@"\n'
+    try:
+        with open(bin_entry, "w", encoding="utf-8") as f:
+            f.write(wrapper)
+        os.chmod(bin_entry, 0o755)
+        return True
+    except Exception:
+        return False
+
+
+def refresh_os_launchers_and_shortcuts(install_dir, rel_tag: str = ""):
     info("Refreshing native launchers and system shortcuts...")
+    if os.name == "nt":
+        ensure_windows_launcher_exe(install_dir, rel_tag=rel_tag)
     try:
         sys.path.insert(0, install_dir)
         sys.path.insert(0, os.path.join(install_dir, "setupfiles"))
@@ -1136,6 +1229,8 @@ def refresh_os_launchers_and_shortcuts(install_dir):
             warn(f"Shortcuts refresh notice: {e}")
     except Exception as e:
         warn(f"Integration refresh notice: {e}")
+    if sys.platform.startswith("linux"):
+        ensure_linux_local_bin_entry(install_dir)
 
 def main():
     parser = argparse.ArgumentParser(description="BadWords Auto-Updater")
@@ -1399,7 +1494,7 @@ def main():
 
         # On 4.x -> 4.x live updates, do NOT upgrade/reinstall PySide6 over loaded Windows DLLs
         # when PySide6 is already importable and working in venv.
-        upgrade_pkgs = ["faster-whisper", "av<19", "pypdf"]
+        upgrade_pkgs = ["faster-whisper", "av<19", "pypdf", "certifi"]
         if not (is_v4_to_v4 and pyside_already_ok):
             upgrade_pkgs.append("PySide6")
         else:
@@ -1487,7 +1582,7 @@ def main():
     deploy_davinci_wrappers(install_dir)
 
     # 8. Refresh OS launchers and shortcuts
-    refresh_os_launchers_and_shortcuts(install_dir)
+    refresh_os_launchers_and_shortcuts(install_dir, rel_tag=rel_tag)
 
     # Cleanup
     shutil.rmtree(tmp_dir, ignore_errors=True)
