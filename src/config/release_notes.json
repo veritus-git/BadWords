@@ -4,7 +4,7 @@
     "Fixed Whisper model download failures (WinError 1314) on non-admin Windows 11 PCs by bypassing Hugging Face symlinks automatically, prevented incomplete snapshot folders from passing cache verification, and removed macOS-only firewall references from all 11 languages.",
     "Added opt-in automatic crash reporting for unexpected technical errors during transcription and silence analysis, while keeping offline/firewall, missing-file, disk-full, and manual-cancel errors silent in telemetry.",
     "Fixed Settings reopening cleanly maximized when previously closed maximized (eliminating right/bottom Windows 11 border and Linux Wayland/X11 spacing artifacts while keeping the exit-maximize icon accurate), and fixed Always-On-Top Z-order state sticking on Windows 11.",
-    "Eliminated Windows 11 white flash sheets on window open/reopen/close and the 1px white outline inside taskbar hover thumbnails via dark DWM border styling and paint-synchronized window cloaking.",
+    "Eliminated Windows 11 white flash sheets on window open/reopen/close, bottom white bars on maximized startup, white outlines during unmaximize animations, and the 1px white border inside Dark Mode taskbar hover thumbnails via dark DWM border styling, DWM pass-through non-client composition, and paint-synchronized window cloaking.",
     "Made installer upgrades and repairs transactional (downloading and extracting packages before cleaning old code) and explicitly ensured certifi is installed and verified."
   ]
 }

@@ -5,7 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [4.1.1] - 2026-11-25
 ### Changed
-- **Windows 11 Taskbar Preview & Window Surfaces (`mixins.py`, `boot_splash.py`, `update_dialog.py`)**: Replaced `DWMWA_COLOR_NONE` (`0xFFFFFFFE`) with exact dark `DWMWA_BORDER_COLOR` (`0x00101010` / `0x002e2e2e`), applied dark Win32 `GCLP_HBRBACKGROUND` class brushes and opaque dark `QPalette`/`paintEvent` fills, and extended paint-synchronized DWM cloaking across every open/reopen and hide/close transition to eliminate white sheets and the 1px white taskbar thumbnail border.
+- **Windows 11 Taskbar Preview & Window Surfaces (`mixins.py`, `boot_splash.py`, `update_dialog.py`)**: Replaced `DWMWA_COLOR_NONE` (`0xFFFFFFFE`) with exact dark `DWMWA_BORDER_COLOR` (`0x00101010` / `0x002e2e2e`), stopped `nativeEvent` from swallowing `WM_NCPAINT` (`0x0085`) and `WM_NCACTIVATE` (`0x0086`) so DWM composes the hidden 8px maximized non-client frame cleanly (`DWMWA_EXTENDED_FRAME_BOUNDS` matching `rcWork` instead of leaving an unpainted white ring), applied dark Win32 `GCLP_HBRBACKGROUND` class brushes and opaque dark `QPalette`/`paintEvent` fills, and extended paint-synchronized DWM cloaking across every transition - eliminating the Dark Mode taskbar preview white outline, maximized startup bottom white bar, and white unmaximize/close outlines.
 - **Localized Model Download Guidance (`src/i18n/*.json`)**: Updated `msg_model_download_failed` across all 11 languages to remove macOS-only `Little Snitch` references and point Windows/Linux/macOS users to internet, firewall/antivirus, folder write permissions, and disk space checks.
 
 ### Fixed

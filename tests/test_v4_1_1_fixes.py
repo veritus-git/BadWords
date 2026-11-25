@@ -308,6 +308,26 @@ class TestV411Fixes(unittest.TestCase):
             vp.close()
             parent.close()
 
+    def test_native_event_does_not_suppress_wm_ncpaint_or_ncactivate(self):
+        import ast
+        mixins_path = os.path.join(self._repo_root, "src", "gui", "components", "mixins.py")
+        with open(mixins_path, "r", encoding="utf-8") as f:
+            src = f.read()
+        tree = ast.parse(src)
+        native_fn = next(
+            (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "nativeEvent"),
+            None,
+        )
+        self.assertIsNotNone(native_fn)
+        # Ensure neither WM_NCPAINT (0x0085) nor WM_NCACTIVATE (0x0086) is matched/swallowed
+        matched_consts = {
+            n.value for n in ast.walk(native_fn) if isinstance(n, ast.Constant) and isinstance(n.value, int)
+        }
+        self.assertNotIn(0x0085, matched_consts)
+        self.assertNotIn(0x0086, matched_consts)
+        self.assertIn(0x0083, matched_consts)  # WM_NCCALCSIZE intact
+        self.assertIn(0x0014, matched_consts)  # WM_ERASEBKGND intact
+
 
 if __name__ == "__main__":
     unittest.main()

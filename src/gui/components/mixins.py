@@ -10,8 +10,9 @@ ROLE: GUI Component (Red Zone)
 DESCRIPTION:
 Cross-platform frameless window mixin providing 1:1 root window behavior across
 BadWordsGUI and SettingsDialog:
-- Windows: zero-artifact WM_NCCALCSIZE (live IsZoomed -> exact rcWork), WM_NCPAINT
-  suppression, dark WM_ERASEBKGND brush, ScreenToClient WM_NCHITTEST (8 edges when
+- Windows: zero-artifact WM_NCCALCSIZE (live IsZoomed -> exact rcWork), DWM pass-through
+  for WM_NCPAINT/WM_NCACTIVATE (prevents white maximized/thumbnail/unmax non-client ring),
+  dark WM_ERASEBKGND brush, ScreenToClient WM_NCHITTEST (8 edges when
   windowed, 100% disabled when maximized for Fitts's Law corner X & top-edge rip),
   Windows 11 Snap Layouts (HTMAXBUTTON), and Win32 WINDOWPLACEMENT restore/rip.
 - Linux / macOS: 8 ResizeGrips (strictly hidden when maximized), 1px mouse-transparent
@@ -1280,10 +1281,14 @@ class FramelessWindowMixin:
                 pass
             return True, 0
 
-        # ── WM_NCPAINT (0x0085) ───────────────────────────────────────────────
-        # Suppress native non-client border & caption button painting completely.
-        if msg.message == 0x0085:
-            return True, 0
+        # ── WM_NCPAINT (0x0085) & WM_NCACTIVATE (0x0086) ─────────────────────
+        # INVARIANT: Never swallow WM_NCPAINT (0x0085) or WM_NCACTIVATE (0x0086) by returning
+        # True without DefWindowProcW. Swallowing them leaves GDI's non-client redirection ring
+        # unpainted white (#FFFFFF) around maximized windows (-8..+8px) and keeps
+        # DWMWA_EXTENDED_FRAME_BOUNDS expanded, causing a white bottom stripe at startup above
+        # the taskbar, white taskbar preview thumbnail outlines in Dark Mode, and white
+        # borders during unmaximize animations. Letting DefWindowProcW handle both together
+        # with DWMWA_USE_IMMERSIVE_DARK_MODE + DWMWA_BORDER_COLOR composes zero-artifact frames.
 
         # ── WM_ERASEBKGND (0x0014) ────────────────────────────────────────────
         # Fill exposed client area with dark app background so resize/rip never flashes white.
@@ -1303,17 +1308,6 @@ class FramelessWindowMixin:
                             return True, 1
             except Exception:
                 pass
-
-        # ── WM_NCACTIVATE (0x0086) ────────────────────────────────────────────
-        # Return TRUE without calling DefWindowProcW (unless minimized) so Windows
-        # allows activation changes without ever painting native NC chrome/buttons.
-        if msg.message == 0x0086:
-            try:
-                if not user32.IsIconic(hwnd):
-                    return True, 1
-            except Exception:
-                return True, 1
-            return super().nativeEvent(eventType, message)
 
         # ── WM_MOUSEACTIVATE (0x0021) ─────────────────────────────────────────
         if msg.message == 0x0021:
