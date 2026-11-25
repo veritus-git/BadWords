@@ -902,24 +902,35 @@ class OSDoctor:
                     try:
                         import ctypes
                         from ctypes import wintypes
-                        v_size = ctypes.windll.version.GetFileVersionInfoSizeW(exe_path, None)
+                        ver_dll = ctypes.windll.version
+                        ver_dll.GetFileVersionInfoSizeW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD)]
+                        ver_dll.GetFileVersionInfoSizeW.restype = wintypes.DWORD
+                        ver_dll.GetFileVersionInfoW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID]
+                        ver_dll.GetFileVersionInfoW.restype = wintypes.BOOL
+                        ver_dll.VerQueryValueW.argtypes = [
+                            wintypes.LPCVOID, wintypes.LPCWSTR,
+                            ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.UINT),
+                        ]
+                        ver_dll.VerQueryValueW.restype = wintypes.BOOL
+
+                        v_size = ver_dll.GetFileVersionInfoSizeW(exe_path, None)
                         if v_size:
                             buf = ctypes.create_string_buffer(v_size)
-                            if ctypes.windll.version.GetFileVersionInfoW(exe_path, 0, v_size, buf):
+                            if ver_dll.GetFileVersionInfoW(exe_path, 0, v_size, buf):
                                 lp_trans = ctypes.c_void_p()
                                 u_len = wintypes.UINT()
-                                if ctypes.windll.version.VerQueryValueW(buf, r'\VarFileInfo\Translation', ctypes.byref(lp_trans), ctypes.byref(u_len)) and u_len.value >= 4:
-                                    trans = ctypes.cast(lp_trans, ctypes.POINTER(wintypes.WORD))
+                                if ver_dll.VerQueryValueW(buf, r'\VarFileInfo\Translation', ctypes.byref(lp_trans), ctypes.byref(u_len)) and u_len.value >= 4 and lp_trans.value:
+                                    trans = ctypes.cast(lp_trans.value, ctypes.POINTER(wintypes.WORD))
                                     lang, cp = trans[0], trans[1]
-                                    lp_buf = ctypes.c_wchar_p()
+                                    lp_buf = ctypes.c_void_p()
                                     if not info["version"]:
                                         sub = f'\\StringFileInfo\\{lang:04x}{cp:04x}\\ProductVersion'
-                                        if ctypes.windll.version.VerQueryValueW(buf, sub, ctypes.byref(lp_buf), ctypes.byref(u_len)) and lp_buf.value:
-                                            info["version"] = lp_buf.value.strip()
+                                        if ver_dll.VerQueryValueW(buf, sub, ctypes.byref(lp_buf), ctypes.byref(u_len)) and lp_buf.value:
+                                            info["version"] = ctypes.wstring_at(lp_buf.value).strip()
                                     if info["edition"] == "Unknown":
                                         sub_prod = f'\\StringFileInfo\\{lang:04x}{cp:04x}\\ProductName'
-                                        if ctypes.windll.version.VerQueryValueW(buf, sub_prod, ctypes.byref(lp_buf), ctypes.byref(u_len)) and lp_buf.value:
-                                            prod_name = lp_buf.value.strip()
+                                        if ver_dll.VerQueryValueW(buf, sub_prod, ctypes.byref(lp_buf), ctypes.byref(u_len)) and lp_buf.value:
+                                            prod_name = ctypes.wstring_at(lp_buf.value).strip()
                                             info["edition"] = "Studio" if "Studio" in prod_name else "Free"
                     except Exception as e:
                         log_warn(f"Fast Win32 version check error: {e}")
@@ -1364,14 +1375,50 @@ class OSDoctor:
         if not self.is_win:
             return
         try:
-            set_window_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+            from ctypes import wintypes
+            dwmapi = ctypes.windll.dwmapi
+            dwmapi.DwmSetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+            dwmapi.DwmSetWindowAttribute.restype = ctypes.c_long
+            hwnd = wintypes.HWND(int(window_id))
             # Attribute 20 (Windows 10 20H1+), fallback to 19; value 1 enables dark mode
             val = ctypes.c_int(1)
-            res = set_window_attribute(window_id, 20, ctypes.byref(val), ctypes.sizeof(val))
+            res = dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(val), ctypes.sizeof(val))
             if res != 0:
-                set_window_attribute(window_id, 19, ctypes.byref(val), ctypes.sizeof(val))
+                dwmapi.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(val), ctypes.sizeof(val))
         except Exception:
             pass
+
+    @staticmethod
+    def _configure_topmost_user32():
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        user32.SetWindowPos.argtypes = [
+            wintypes.HWND, wintypes.HWND,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            wintypes.UINT,
+        ]
+        user32.SetWindowPos.restype = wintypes.BOOL
+        if ctypes.sizeof(ctypes.c_void_p) == 8 and hasattr(user32, "GetWindowLongPtrW"):
+            user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+            user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+            get_long = user32.GetWindowLongPtrW
+        else:
+            user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+            user32.GetWindowLongW.restype = ctypes.c_long
+            get_long = user32.GetWindowLongW
+        return user32, get_long
+
+    def is_window_topmost(self, window_id: int) -> bool:
+        """Checks the live Win32 WS_EX_TOPMOST window style on Windows."""
+        if not self.is_win or not window_id:
+            return False
+        try:
+            from ctypes import wintypes
+            _, get_long = self._configure_topmost_user32()
+            ex_style = int(get_long(wintypes.HWND(int(window_id)), -20))
+            return bool(ex_style & 0x00000008)
+        except Exception:
+            return False
 
     def set_always_on_top(self, window_id: int, top: bool) -> bool:
         """
@@ -1383,13 +1430,18 @@ class OSDoctor:
         """
         if self.is_win:
             try:
-                import ctypes
+                from ctypes import wintypes
+                user32, _ = self._configure_topmost_user32()
                 # HWND_TOPMOST = -1, HWND_NOTOPMOST = -2
                 # SWP_NOSIZE(1) | SWP_NOMOVE(2) | SWP_NOACTIVATE(0x10)
-                hwnd_insert_after = -1 if top else -2
+                hwnd_insert_after = wintypes.HWND(-1 if top else -2)
                 flags = 0x0001 | 0x0002 | 0x0010
-                ctypes.windll.user32.SetWindowPos(window_id, hwnd_insert_after, 0, 0, 0, 0, flags)
-                return True
+                ok = bool(user32.SetWindowPos(
+                    wintypes.HWND(int(window_id)),
+                    hwnd_insert_after,
+                    0, 0, 0, 0, flags,
+                ))
+                return ok and (self.is_window_topmost(window_id) == bool(top))
             except Exception:
                 return False
 
@@ -1856,8 +1908,18 @@ class OSDoctor:
                     ]
 
                 k32 = ctypes.windll.kernel32
+                k32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+                k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+                k32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+                k32.Process32FirstW.restype = wintypes.BOOL
+                k32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+                k32.Process32NextW.restype = wintypes.BOOL
+                k32.CloseHandle.argtypes = [wintypes.HANDLE]
+                k32.CloseHandle.restype = wintypes.BOOL
+
+                invalid_handle = wintypes.HANDLE(-1).value
                 h = k32.CreateToolhelp32Snapshot(2, 0)  # TH32CS_SNAPPROCESS = 2
-                if h != -1:
+                if h and h != invalid_handle:
                     try:
                         pe = PROCESSENTRY32W()
                         pe.dwSize = ctypes.sizeof(PROCESSENTRY32W)

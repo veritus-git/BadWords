@@ -469,10 +469,14 @@ def apply_dark_title_bar(window: QWidget):
             if not window.testAttribute(Qt.WA_WState_Created):
                 return
             import ctypes
-            hwnd = int(window.winId())
+            from ctypes import wintypes
+            dwmapi = ctypes.windll.dwmapi
+            dwmapi.DwmSetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+            dwmapi.DwmSetWindowAttribute.restype = ctypes.c_long
+            hwnd = wintypes.HWND(int(window.winId()))
             val = ctypes.c_int(1)
-            if ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(val), 4) != 0:
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(val), 4)
+            if dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(val), 4) != 0:
+                dwmapi.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(val), 4)
         except Exception:
             pass
 

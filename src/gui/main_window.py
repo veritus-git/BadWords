@@ -598,7 +598,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._settings_dialog.finished.connect(self._on_settings_dialog_finished)
         else:
             self._settings_dialog._reload_preferences()
-        is_top = getattr(self, '_always_on_top_active', False) or bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
+        is_top = bool(getattr(self, '_always_on_top_active', bool(self.windowFlags() & Qt.WindowStaysOnTopHint)))
         self._settings_dialog.set_always_on_top_state(is_top)
         return self._settings_dialog
 
@@ -1057,19 +1057,27 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
     def _enforce_native_always_on_top(self):
         try:
-            if getattr(self, '_always_on_top_active', False) and self.isVisible():
-                if hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
-                    self.engine.os_doc.set_always_on_top(int(self.winId()), True)
+            enable = bool(getattr(self, '_always_on_top_active', False))
+            if self.isVisible() and self.testAttribute(Qt.WA_WState_Created):
+                os_doc = getattr(getattr(self, 'engine', None), 'os_doc', None)
+                if os_doc:
+                    win_id = int(self.winId())
+                    if getattr(os_doc, 'is_win', False) and hasattr(os_doc, 'is_window_topmost'):
+                        if os_doc.is_window_topmost(win_id) != enable:
+                            os_doc.set_always_on_top(win_id, enable)
+                    elif enable:
+                        os_doc.set_always_on_top(win_id, True)
         except Exception:
             pass
 
     def _apply_always_on_top(self, enable: bool):
-        self._always_on_top_active = bool(enable)
+        enable = bool(enable)
+        self._always_on_top_active = enable
         native_ok = False
         try:
             win_id = int(self.winId()) if self.testAttribute(Qt.WA_WState_Created) else 0
             if win_id and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
-                native_ok = self.engine.os_doc.set_always_on_top(win_id, enable)
+                native_ok = bool(self.engine.os_doc.set_always_on_top(win_id, enable))
         except Exception:
             native_ok = False
 
@@ -1082,6 +1090,11 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     self.showFullScreen()
                 else:
                     self.show()
+                if self.testAttribute(Qt.WA_WState_Created) and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
+                    try:
+                        self.engine.os_doc.set_always_on_top(int(self.winId()), enable)
+                    except Exception:
+                        pass
 
         dlg = getattr(self, '_settings_dialog', None)
         if dlg is not None and hasattr(dlg, 'set_always_on_top_state'):
@@ -5019,11 +5032,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                     dlg.stack.setCurrentIndex(i)
                     dlg.category_list.setCurrentRow(i)
                     break
-        dlg.show()
-        if dlg.isMinimized():
-            dlg.showNormal()
-        dlg.raise_()
-        dlg.activateWindow()
+        if hasattr(dlg, 'present'):
+            dlg.present()
+        else:
+            dlg.show()
+            if dlg.isMinimized():
+                dlg.showNormal()
+            dlg.raise_()
+            dlg.activateWindow()
 
     def _build_marker_radio_buttons(self):
         # Clear layout
@@ -5295,11 +5311,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
     def _on_settings(self):
         """Open independent Settings window cleanly (non-modal so Alt+Tab works freely)."""
         dlg = self._get_settings_dialog()
-        dlg.show()
-        if dlg.isMinimized():
-            dlg.showNormal()
-        dlg.raise_()
-        dlg.activateWindow()
+        if hasattr(dlg, 'present'):
+            dlg.present()
+        else:
+            dlg.show()
+            if dlg.isMinimized():
+                dlg.showNormal()
+            dlg.raise_()
+            dlg.activateWindow()
 
 
 
@@ -5640,6 +5659,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             except Exception:
                 pass
                 
+            if hasattr(self, '_dwm_cloak'):
+                self._dwm_cloak(True)
             event.accept()
             if self.closeEvent_callback:
                 self.closeEvent_callback()

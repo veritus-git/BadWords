@@ -830,9 +830,10 @@ class TestPoint3WindowsTitlebarVSync(unittest.TestCase):
             self.assertEqual(recorded_wp[-1], (960, 0, 1920, 1032))
 
             # Step 4: DWM corner preference MUST enforce DWMWCP_DONOTROUND (33 -> 1)
+            # and dark COLORREF border #101010 (34 -> 0x00101010) instead of white taskbar outline
             fw._enforce_win_dwm_attributes(9999, include_extend=True)
             self.assertIn((33, 1), fake_dwm_calls)
-            self.assertIn((34, 0xFFFFFFFE), fake_dwm_calls)
+            self.assertIn((34, 0x00101010), fake_dwm_calls)
 
 
 if __name__ == "__main__":

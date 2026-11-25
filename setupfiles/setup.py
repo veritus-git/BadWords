@@ -367,6 +367,17 @@ def _check_missing_dependencies(venv_py, check_nvidia=False, nvidia_pkgs=""):
     except Exception:
         missing.append("pypdf")
 
+    # 4. certifi
+    try:
+        r = subprocess.run(
+            [venv_py, "-c", "import sys; import importlib.util; sys.exit(0 if importlib.util.find_spec('certifi') is not None else 1)"],
+            capture_output=True, timeout=12, **_sp_hidden_kwargs()
+        )
+        if r.returncode != 0:
+            missing.append("certifi")
+    except Exception:
+        missing.append("certifi")
+
     # 4. Optional GPU acceleration packages
     if check_nvidia and nvidia_pkgs:
         try:
@@ -2788,10 +2799,10 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
         # av<19: PyAV 19 removed av.open(metadata_errors=...), which faster-whisper <= 1.2.1 still passes
         if is_update:
             log_info("Upgrading core dependencies...")
-            _pip_run("install", "--upgrade", "faster-whisper", "av<19", "pypdf", "-q",
-                     label="Upgrading Whisper / PyPDF")
+            _pip_run("install", "--upgrade", "faster-whisper", "av<19", "pypdf", "certifi", "-q",
+                     label="Upgrading Whisper / PyPDF / Certifi")
         else:
-            pkg_list = ["faster-whisper", "av<19", "pypdf"]
+            pkg_list = ["faster-whisper", "av<19", "pypdf", "certifi"]
             if has_nvidia and nvidia_pkgs:
                 pkg_list.extend(nvidia_pkgs.split())
             _pip_run("install", *pkg_list, "-q",
@@ -2823,7 +2834,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
 
         # ── Comprehensive Package Verification & Auto-Recovery ──
         console.print()
-        log_step("Verifying installed packages (faster-whisper, PySide6, pypdf)...")
+        log_step("Verifying installed packages (faster-whisper, PySide6, pypdf, certifi)...")
         missing_pkgs = _check_missing_dependencies(venv_py, check_nvidia=has_nvidia, nvidia_pkgs=nvidia_pkgs)
         retry_count = 0
         MAX_RETRIES = 2
@@ -2844,7 +2855,7 @@ def option_install_update(force_main=False, preset_path=None, title="── Stan
                 pause()
             return False
 
-        log_ok("All required packages (faster-whisper, PySide6, pypdf) successfully verified.")
+        log_ok("All required packages (faster-whisper, PySide6, pypdf, certifi) successfully verified.")
 
         # ── Libs symlink ──────────────────────────────────────
         console.print()

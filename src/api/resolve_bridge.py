@@ -318,9 +318,24 @@ class ResolveBridgeClient:
                 FILE_SHARE_DELETE = 4
                 OPEN_EXISTING = 3
                 FILE_ATTRIBUTE_NORMAL = 0x80
-                INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+                INVALID_HANDLE_VALUE = wintypes.HANDLE(-1).value
 
                 k32 = ctypes.windll.kernel32
+                k32.CreateFileW.argtypes = [
+                    wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                    wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+                ]
+                k32.CreateFileW.restype = wintypes.HANDLE
+                k32.GetFileSize.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+                k32.GetFileSize.restype = wintypes.DWORD
+                k32.ReadFile.argtypes = [
+                    wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD,
+                    ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p,
+                ]
+                k32.ReadFile.restype = wintypes.BOOL
+                k32.CloseHandle.argtypes = [wintypes.HANDLE]
+                k32.CloseHandle.restype = wintypes.BOOL
+
                 handle = k32.CreateFileW(
                     path_str,
                     GENERIC_READ,
@@ -330,10 +345,10 @@ class ResolveBridgeClient:
                     FILE_ATTRIBUTE_NORMAL,
                     None
                 )
-                if handle != INVALID_HANDLE_VALUE:
+                if handle and handle != INVALID_HANDLE_VALUE:
                     try:
                         size = k32.GetFileSize(handle, None)
-                        if size > 0:
+                        if size > 0 and size != 0xFFFFFFFF:
                             buf = ctypes.create_string_buffer(size)
                             bytes_read = wintypes.DWORD(0)
                             if k32.ReadFile(handle, buf, size, ctypes.byref(bytes_read), None):

@@ -665,6 +665,7 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
             return words_data, []
 
         except Exception as e:
+            self.last_pipeline_error = (e, traceback.format_exc())
             log_error(f"run_fast_silence_pipeline error: {traceback.format_exc()}")
             return None, None
         finally:
@@ -926,9 +927,16 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
                     use_mlx=use_mlx,
                 )
                 if not dl_ok:
-                    log_error("Model download/verification failed. Cannot proceed.")
+                    err_detail = str(getattr(self, "last_download_error", "") or "").strip()
+                    err_kind = getattr(self, "last_download_error_kind", None) or "network"
+                    log_error(f"Model download/verification failed (kind={err_kind}): {err_detail}")
+                    msg = self.txt("msg_model_download_failed", model=model, path=self.models_dir)
+                    if err_kind == "technical" and err_detail:
+                        msg = f"{msg}\n\n{err_detail}"
                     raise ModelDownloadError(
-                        self.txt("msg_model_download_failed", model=model, path=self.models_dir)
+                        msg,
+                        technical=(err_kind == "technical"),
+                        detail=err_detail,
                     )
             
             update_status(self.txt("status_whisper_init"))
@@ -1105,9 +1113,10 @@ class AudioEngine(PreferencesMixin, AudioExtractionMixin, TranscriptionMixin):
 
 
         except ModelDownloadError:
-            # User-actionable: let it reach AnalysisWorker so the GUI shows the message
+            # User-actionable or download diagnostic: let it reach AnalysisWorker
             raise
         except Exception as e:
+            self.last_pipeline_error = (e, traceback.format_exc())
             log_error(f"Pipeline Critical Error: {traceback.format_exc()}")
             return None, None
     def _extract_hotwords(self, text):

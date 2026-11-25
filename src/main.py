@@ -43,6 +43,12 @@ os.environ.setdefault("MKL_NUM_THREADS", "2")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
 os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "2")
 
+# Safe-boot software rendering fallback (triggered automatically on Windows retry)
+if os.environ.get("BADWORDS_SAFE_BOOT") == "1":
+    os.environ.setdefault("QT_OPENGL", "software")
+    os.environ.setdefault("QSG_RHI_BACKEND", "software")
+    os.environ.setdefault("QT_FFMPEG_ENCODING_HW_DEVICE_TYPES", "")
+
 # --- Early startup guard (stdlib-only, Python 3.8+ parseable) ---
 from startup import EXIT_FATAL_REPORTED, crash_report, env_guard, fatal_dialog
 
@@ -91,18 +97,23 @@ class InitThread(QThread):
 
     def run(self):
         try:
+            osdoc.log_info("[BOOT] Probing hardware topology...")
             try:
                 self.os_doc.log_hardware_info()
             except Exception as he:
                 osdoc.log_warn(f"log_hardware_info error during startup: {he}")
 
+            osdoc.log_info("[BOOT] Syncing DaVinci Resolve scripts...")
             try:
                 self.os_doc.sync_resolve_scripts()
             except Exception as se:
                 osdoc.log_warn(f"sync_resolve_scripts error during startup: {se}")
 
+            osdoc.log_info("[BOOT] Initializing ResolveHandler...")
             resolve = self.api_mod.ResolveHandler(self.os_doc)
+            osdoc.log_info("[BOOT] Initializing AudioEngine...")
             audio_engine = self.engine_mod.AudioEngine(self.os_doc, resolve)
+            osdoc.log_info("[BOOT] Background initialization finished.")
             self.loaded.emit(resolve, audio_engine)
         except Exception as e:
             self.error.emit(f"{e}\n\n{traceback.format_exc()}")
@@ -129,6 +140,16 @@ class AppController:
         try:
             self._splash_start_time = time.time()
             self.os_doc = osdoc.OSDoctor()
+            try:
+                import faulthandler
+                lf = getattr(self.os_doc, "log_file", None)
+                if lf is not None and hasattr(lf, "fileno"):
+                    lf.fileno()
+                    faulthandler.enable(file=lf, all_threads=True)
+            except Exception:
+                pass
+            if os.environ.get("BADWORDS_SAFE_BOOT") == "1":
+                osdoc.log_warn("[BOOT] Safe-boot mode active (software OpenGL/RHI fallback).")
             osdoc.log_info("Event loop started.")
             QApplication.processEvents()
 
@@ -252,7 +273,7 @@ def main():
             import faulthandler
             if sys.stderr is not None and hasattr(sys.stderr, "fileno"):
                 sys.stderr.fileno()
-                faulthandler.enable(file=sys.stderr, all_threads=False)
+                faulthandler.enable(file=sys.stderr, all_threads=True)
         except Exception:
             pass
 
@@ -264,9 +285,13 @@ def main():
             except Exception:
                 pass
 
-        fmt = QSurfaceFormat()
-        fmt.setSwapInterval(1)
-        QSurfaceFormat.setDefaultFormat(fmt)
+        if os.environ.get("BADWORDS_SAFE_BOOT") != "1":
+            try:
+                fmt = QSurfaceFormat()
+                fmt.setSwapInterval(1)
+                QSurfaceFormat.setDefaultFormat(fmt)
+            except Exception:
+                pass
 
         QLoggingCategory.setFilterRules("qt.text.font.db.warning=false\nqt.text.font.db.debug=false")
 

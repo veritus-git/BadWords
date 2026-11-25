@@ -18,6 +18,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#include <io.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +27,74 @@
 
 #define MAX_PATH_LEN 4096
 #define MAX_ENV_LEN  32768
+
+static FILE *g_log_fp = NULL;
+static wchar_t g_log_path[MAX_PATH_LEN] = {0};
+
+static void launcher_log(const wchar_t *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    if (g_log_fp) {
+        vfwprintf(g_log_fp, fmt, ap);
+        fflush(g_log_fp);
+    } else {
+        vfwprintf(stderr, fmt, ap);
+        fflush(stderr);
+    }
+    va_end(ap);
+}
+
+static LONG WINAPI badwords_seh_handler(EXCEPTION_POINTERS *ep) {
+    DWORD code = (ep && ep->ExceptionRecord) ? ep->ExceptionRecord->ExceptionCode : 0;
+    void *addr = (ep && ep->ExceptionRecord) ? ep->ExceptionRecord->ExceptionAddress : NULL;
+    launcher_log(L"[LAUNCHER] FATAL UNHANDLED SEH EXCEPTION: 0x%08lX at %p\n", code, addr);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static int relaunch_safe_boot(const wchar_t *real_exe, const wchar_t *work_dir) {
+    wchar_t retry_flag[16] = {0};
+    if (GetEnvironmentVariableW(L"_BADWORDS_SAFE_BOOT_RETRY", retry_flag, 15) &&
+        wcscmp(retry_flag, L"1") == 0) {
+        return 0;
+    }
+
+    launcher_log(L"[LAUNCHER] Abnormal startup exit detected. Retrying once in software safe-boot mode...\n");
+    if (g_log_fp) {
+        fclose(g_log_fp);
+        g_log_fp = NULL;
+    }
+
+    SetEnvironmentVariableW(L"_BADWORDS_SAFE_BOOT_RETRY", L"1");
+    SetEnvironmentVariableW(L"BADWORDS_SAFE_BOOT", L"1");
+    SetEnvironmentVariableW(L"QSG_RHI_BACKEND", L"software");
+    SetEnvironmentVariableW(L"QT_OPENGL", L"software");
+
+    wchar_t cmdline[MAX_ENV_LEN];
+    _snwprintf(cmdline, MAX_ENV_LEN, L"\"%s\"", real_exe);
+    int argc = 0;
+    LPWSTR *argvW = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (argvW && argc > 1) {
+        for (int i = 1; i < argc; i++) {
+            size_t cur_len = wcslen(cmdline);
+            _snwprintf(cmdline + cur_len, MAX_ENV_LEN - cur_len, L" \"%s\"", argvW[i]);
+        }
+    }
+    if (argvW) {
+        LocalFree(argvW);
+    }
+
+    STARTUPINFOW si;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&pi, sizeof(pi));
+    if (CreateProcessW(NULL, cmdline, NULL, NULL, FALSE, 0, NULL, work_dir, &si, &pi)) {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return 1;
+    }
+    return 0;
+}
 
 static int file_exists_w(const wchar_t *path) {
     if (!path || path[0] == L'\0') return 0;
@@ -74,28 +144,34 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     }
 
     // 2. Redirect stdout & stderr to badwords_debug.log immediately for diagnostic safety
-    wchar_t log_path[MAX_PATH_LEN];
-    _snwprintf(log_path, MAX_PATH_LEN, L"%s\\badwords_debug.log", install_dir);
-    FILE *log_fp = _wfsopen(log_path, L"a", _SH_DENYNO);
-    if (!log_fp) {
+    _snwprintf(g_log_path, MAX_PATH_LEN, L"%s\\badwords_debug.log", install_dir);
+    g_log_fp = _wfsopen(g_log_path, L"a", _SH_DENYNO);
+    if (!g_log_fp) {
         wchar_t local_app[MAX_PATH_LEN] = {0};
         if (GetEnvironmentVariableW(L"LOCALAPPDATA", local_app, MAX_PATH_LEN - 1)) {
-            _snwprintf(log_path, MAX_PATH_LEN, L"%s\\BadWords\\badwords_debug.log", local_app);
-            log_fp = _wfsopen(log_path, L"a", _SH_DENYNO);
+            _snwprintf(g_log_path, MAX_PATH_LEN, L"%s\\BadWords\\badwords_debug.log", local_app);
+            g_log_fp = _wfsopen(g_log_path, L"a", _SH_DENYNO);
         }
     }
-    if (log_fp) {
-        int log_fd = _fileno(log_fp);
+    if (g_log_fp) {
+        int log_fd = _fileno(g_log_fp);
         (void)_dup2(log_fd, 1);
         (void)_dup2(log_fd, 2);
+        HANDLE hLog = (HANDLE)_get_osfhandle(log_fd);
+        if (hLog && hLog != INVALID_HANDLE_VALUE) {
+            SetStdHandle(STD_OUTPUT_HANDLE, hLog);
+            SetStdHandle(STD_ERROR_HANDLE, hLog);
+        }
+        setvbuf(g_log_fp, NULL, _IONBF, 0);
         setvbuf(stdout, NULL, _IONBF, 0);
         setvbuf(stderr, NULL, _IONBF, 0);
         SetEnvironmentVariableW(L"BADWORDS_STDIO_REDIRECTED", L"1");
         _wputenv_s(L"BADWORDS_STDIO_REDIRECTED", L"1");
     }
-    fwprintf(stderr, L"\n=== BadWords Windows Native Launcher (PID %lu) ===\n", GetCurrentProcessId());
-    fwprintf(stderr, L"[LAUNCHER] Executable:   %s\n", real_exe);
-    fwprintf(stderr, L"[LAUNCHER] Install dir:  %s\n", install_dir);
+    SetUnhandledExceptionFilter(badwords_seh_handler);
+    launcher_log(L"\n=== BadWords Windows Native Launcher (PID %lu) ===\n", GetCurrentProcessId());
+    launcher_log(L"[LAUNCHER] Executable:   %s\n", real_exe);
+    launcher_log(L"[LAUNCHER] Install dir:  %s\n", install_dir);
 
     // 3. Resolve Python binary (prefer pythonw.exe for windowed, python.exe fallback)
     wchar_t python_bin[MAX_PATH_LEN] = {0};
@@ -109,7 +185,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     } else if (file_exists_w(python_bin)) {
         wcsncpy(active_py, python_bin, MAX_PATH_LEN - 1);
     }
-    fwprintf(stderr, L"[LAUNCHER] Python target: %s\n", active_py);
+    launcher_log(L"[LAUNCHER] Python target: %s\n", active_py);
 
     // 4. Resolve Main Python script
     wchar_t main_py[MAX_PATH_LEN] = {0};
@@ -123,10 +199,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             wcsncpy(main_py, cand_main, MAX_PATH_LEN - 1);
         }
     }
-    fwprintf(stderr, L"[LAUNCHER] Main script:   %s\n", main_py);
+    launcher_log(L"[LAUNCHER] Main script:   %s\n", main_py);
 
     if (active_py[0] == L'\0') {
-        fwprintf(stderr, L"[LAUNCHER] ERROR: No valid python.exe or pythonw.exe found in %s\\venv\\Scripts\n", install_dir);
+        launcher_log(L"[LAUNCHER] ERROR: No valid python.exe or pythonw.exe found in %s\\venv\\Scripts\n", install_dir);
         MessageBoxW(NULL,
             L"BadWords could not locate Python in the virtual environment.\n\n"
             L"Please reinstall or run the BadWords Setup Installer to repair the environment.",
@@ -135,7 +211,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         return 1;
     }
     if (main_py[0] == L'\0') {
-        fwprintf(stderr, L"[LAUNCHER] ERROR: No main.py found in %s\n", install_dir);
+        launcher_log(L"[LAUNCHER] ERROR: No main.py found in %s\n", install_dir);
         MessageBoxW(NULL,
             L"BadWords could not locate the main application script (main.py).\n\n"
             L"Please reinstall or run the BadWords Setup Installer to repair the files.",
@@ -172,7 +248,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             }
         }
         fclose(fcfg);
-        fwprintf(stderr, L"[LAUNCHER] pyvenv.cfg home: %s (ver=%d.%d)\n", venv_home, py_maj, py_min);
+        launcher_log(L"[LAUNCHER] pyvenv.cfg home: %s (ver=%d.%d)\n", venv_home, py_maj, py_min);
     }
 
     // 6. Discover exact pythonXYY.dll matching pyvenv.cfg
@@ -219,7 +295,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             }
         }
     }
-    fwprintf(stderr, L"[LAUNCHER] Python DLL:    %s\n", python_dll[0] ? python_dll : L"(none)");
+    launcher_log(L"[LAUNCHER] Python DLL:    %s\n", python_dll[0] ? python_dll : L"(none)");
 
     // 7. Detect site-packages directory
     wchar_t site_pkgs[MAX_PATH_LEN] = {0};
@@ -228,7 +304,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     if (dir_exists_w(cand_sp)) {
         wcsncpy(site_pkgs, cand_sp, MAX_PATH_LEN - 1);
     }
-    fwprintf(stderr, L"[LAUNCHER] Site packages: %s\n", site_pkgs[0] ? site_pkgs : L"(none)");
+    launcher_log(L"[LAUNCHER] Site packages: %s\n", site_pkgs[0] ? site_pkgs : L"(none)");
 
     // 8. Configure Isolated Virtual Environment Variables (strip foreign Python/Conda)
     wchar_t venv_dir[MAX_PATH_LEN];
@@ -272,7 +348,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 
     // 10. Strategy A: In-Process Execution via python3xx.dll
     if (python_dll[0] != L'\0' && file_exists_w(python_dll)) {
-        fwprintf(stderr, L"[LAUNCHER] Attempting in-process execution via LoadLibraryW(%s)...\n", python_dll);
+        launcher_log(L"[LAUNCHER] Attempting in-process execution via LoadLibraryW(%s)...\n", python_dll);
         wchar_t dll_dir[MAX_PATH_LEN] = {0};
         wcsncpy(dll_dir, python_dll, MAX_PATH_LEN - 1);
         wchar_t *last_p = wcsrchr(dll_dir, L'\\');
@@ -284,7 +360,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         if (hPy) {
             int (*Py_BytesMain)(int, char **) = (int (*)(int, char **))GetProcAddress(hPy, "Py_BytesMain");
             if (Py_BytesMain) {
-                fwprintf(stderr, L"[LAUNCHER] Invoking in-process Py_BytesMain (BadWords.exe)...\n");
+                launcher_log(L"[LAUNCHER] Invoking in-process Py_BytesMain (BadWords.exe)...\n");
 
                 // Convert arguments to UTF-8
                 int argc = 0;
@@ -313,29 +389,44 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
                 if (argvW) LocalFree(argvW);
 
                 DWORD t_start = GetTickCount();
-                int ret = Py_BytesMain(new_argc, new_argv);
+                int ret = 1;
+#ifdef _MSC_VER
+                __try {
+                    ret = Py_BytesMain(new_argc, new_argv);
+                } __except (EXCEPTION_EXECUTE_HANDLER) {
+                    DWORD exc = GetExceptionCode();
+                    launcher_log(L"[LAUNCHER] Caught Win32 SEH exception 0x%08lX inside Py_BytesMain\n", exc);
+                    ret = (int)exc;
+                    if (ret == 0 || ret == 3) ret = 1;
+                }
+#else
+                ret = Py_BytesMain(new_argc, new_argv);
+#endif
                 DWORD t_dur = GetTickCount() - t_start;
-                fwprintf(stderr, L"[LAUNCHER] In-process execution finished with code %d (ran for %lu ms)\n", ret, t_dur);
-                if (ret != 0 && ret != 3 && t_dur < 5000) {
+                launcher_log(L"[LAUNCHER] In-process execution finished with code %d (ran for %lu ms)\n", ret, t_dur);
+                if (ret != 0 && ret != 3) {
+                    if (relaunch_safe_boot(real_exe, lp_work_dir)) {
+                        return 0;
+                    }
                     wchar_t err_msg[1024];
                     _snwprintf(err_msg, 1024,
                         L"BadWords failed to start (exit code %d).\n\n"
                         L"Diagnostic logs were written to:\n%s\n\n"
                         L"On a fresh Windows installation, installing Microsoft Visual C++ 2015-2022 Redistributable (x64) may help.",
-                        ret, log_path);
+                        ret, g_log_path);
                     MessageBoxW(NULL, err_msg, L"BadWords - Startup Error", MB_ICONERROR | MB_OK);
                 }
                 return ret;
             } else {
-                fwprintf(stderr, L"[LAUNCHER] GetProcAddress failed to find Py_BytesMain\n");
+                launcher_log(L"[LAUNCHER] GetProcAddress failed to find Py_BytesMain\n");
             }
         } else {
-            fwprintf(stderr, L"[LAUNCHER] LoadLibraryW failed (error %lu)\n", GetLastError());
+            launcher_log(L"[LAUNCHER] LoadLibraryW failed (error %lu)\n", GetLastError());
         }
     }
 
     // 11. Strategy B: Safe Fallback to CreateProcessW (CREATE_NO_WINDOW)
-    fwprintf(stderr, L"[LAUNCHER] Falling back to CreateProcessW(%s)...\n", active_py);
+    launcher_log(L"[LAUNCHER] Falling back to CreateProcessW(%s)...\n", active_py);
     wchar_t cmdline[MAX_ENV_LEN];
     _snwprintf(cmdline, MAX_ENV_LEN, L"\"%s\" \"%s\"", active_py, main_py);
 
@@ -381,20 +472,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
         DWORD t_dur = GetTickCount() - t_start;
-        fwprintf(stderr, L"[LAUNCHER] Child process exited with code %lu (ran for %lu ms)\n", exit_code, t_dur);
-        if (exit_code != 0 && exit_code != 3 && t_dur < 5000) {
+        launcher_log(L"[LAUNCHER] Child process exited with code %lu (ran for %lu ms)\n", exit_code, t_dur);
+        if (exit_code != 0 && exit_code != 3) {
+            if (relaunch_safe_boot(real_exe, lp_work_dir)) {
+                return 0;
+            }
             wchar_t err_msg[1024];
             _snwprintf(err_msg, 1024,
                 L"BadWords failed to start (exit code %lu).\n\n"
                 L"Diagnostic logs were written to:\n%s\n\n"
                 L"On a fresh Windows installation, installing Microsoft Visual C++ 2015-2022 Redistributable (x64) may help.",
-                exit_code, log_path);
+                exit_code, g_log_path);
             MessageBoxW(NULL, err_msg, L"BadWords - Startup Error", MB_ICONERROR | MB_OK);
         }
         return (int)exit_code;
     } else {
         DWORD err = GetLastError();
-        fwprintf(stderr, L"[LAUNCHER] CreateProcessW failed (error %lu)\n", err);
+        launcher_log(L"[LAUNCHER] CreateProcessW failed (error %lu)\n", err);
         wchar_t err_msg[1024];
         _snwprintf(err_msg, 1024,
             L"Failed to launch BadWords process (System Error %lu).\n\n"

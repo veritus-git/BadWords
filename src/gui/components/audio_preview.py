@@ -446,12 +446,22 @@ class AudioPreviewWidget(QFrame):
 
         self.content_layout.addWidget(self.media_container)
 
-        # 7. Media Player Engine
-        self.player = QMediaPlayer()
-        self.audio_output = QAudioOutput()
-        self.player.setAudioOutput(self.audio_output)
-        self.audio_output.setVolume(1.0)
-        self.player.setVideoOutput(self.video_preview_widget.video_widget)
+        # 7. Media Player Engine (defensively guarded for systems without GPU/Media Feature Pack)
+        self.player = None
+        self.audio_output = None
+        try:
+            self.player = QMediaPlayer()
+            self.audio_output = QAudioOutput()
+            self.player.setAudioOutput(self.audio_output)
+            self.audio_output.setVolume(1.0)
+            vw = getattr(self.video_preview_widget, "video_widget", None)
+            if vw is not None:
+                self.player.setVideoOutput(vw)
+        except Exception as e:
+            from osdoc import log_warn
+            log_warn(f"AudioPreview could not initialize QMediaPlayer/QAudioOutput ({e}); playback preview disabled.")
+            self.player = None
+            self.audio_output = None
 
         # Signal Connections
         self.btn_play.clicked.connect(self.toggle_play)
@@ -466,7 +476,8 @@ class AudioPreviewWidget(QFrame):
         subscribe_timer(self.update_timer)
         self.update_timer.timeout.connect(self.sync_playback)
 
-        self.player.playbackStateChanged.connect(self.on_state_changed)
+        if self.player is not None:
+            self.player.playbackStateChanged.connect(self.on_state_changed)
 
         # State Variables
         self.current_word_idx = -1
@@ -788,7 +799,7 @@ class AudioPreviewWidget(QFrame):
                 wt._rebuild_waveform_pixmap()
 
         media_path = self._source_video_path if (self._source_video_path and os.path.exists(self._source_video_path)) else self._source_audio_path
-        if media_path and os.path.exists(media_path):
+        if media_path and os.path.exists(media_path) and self.player is not None:
             self.player.setSource(QUrl.fromLocalFile(media_path))
             pos_ms = int(state.get("pos_ms", 0) or 0)
             if pos_ms > 0:
@@ -828,7 +839,7 @@ class AudioPreviewWidget(QFrame):
         target_h = self._get_expanded_target_height()
 
         if target_collapsed:
-            if self.player.playbackState() == QMediaPlayer.PlayingState:
+            if self.player is not None and self.player.playbackState() == QMediaPlayer.PlayingState:
                 self.player.pause()
             self.update_timer.stop()
             self._clear_highlights()
@@ -1110,7 +1121,8 @@ class AudioPreviewWidget(QFrame):
         if self._source_audio_path != target_source:
             self._source_audio_path = target_source
             self.original_audio_path = target_source
-            self.player.setSource(QUrl.fromLocalFile(target_source))
+            if self.player is not None:
+                self.player.setSource(QUrl.fromLocalFile(target_source))
             self.clean_ops = None
             self.current_word_idx = -1
             self.last_jumped_ts = -1.0
@@ -1126,6 +1138,11 @@ class AudioPreviewWidget(QFrame):
         if not proxy_path or not os.path.isfile(proxy_path):
             return
         self.video_preview_widget.show_loading(False)
+        if self.player is None:
+            self._source_audio_path = proxy_path
+            self.original_audio_path = proxy_path
+            self.video_preview_widget.show_placeholder(True)
+            return
         pos = self.player.position()
         dur = self.get_total_duration()
         if dur > 0 and pos > int(round(dur * 1000)):
@@ -1182,7 +1199,8 @@ class AudioPreviewWidget(QFrame):
         else:
             ms = max(0, int(ms))
 
-        self.player.setPosition(ms)
+        if self.player is not None:
+            self.player.setPosition(ms)
         self._start_pos_s = ms / 1000.0
         self._real_start_time = time.time()
         self._at_timeline_end = bool(dur > 0 and self._start_pos_s >= max(0.0, dur - 0.05))
@@ -1206,17 +1224,22 @@ class AudioPreviewWidget(QFrame):
         canvas = getattr(self.main_window, "text_canvas", None)
         if canvas and getattr(canvas, "words_data", None):
             return float(canvas.words_data[-1].get("end", 0.0))
-        dur = self.player.duration()
-        if dur > 0:
-            return dur / 1000.0
+        if self.player is not None:
+            dur = self.player.duration()
+            if dur > 0:
+                return dur / 1000.0
         return 0.0
 
     def _get_audio_t(self) -> float:
+        if self.player is None:
+            return getattr(self, "_start_pos_s", 0.0)
         if self.player.playbackState() != QMediaPlayer.PlayingState:
             return getattr(self, "_start_pos_s", self.player.position() / 1000.0)
         return getattr(self, "_start_pos_s", 0.0) + (time.time() - getattr(self, "_real_start_time", 0.0)) * self.player.playbackRate()
 
     def toggle_play(self) -> None:
+        if self.player is None:
+            return
         if self.player.playbackState() == QMediaPlayer.PlayingState:
             cur_t = self._get_audio_t()
             dur = self.get_total_duration()
@@ -1249,7 +1272,8 @@ class AudioPreviewWidget(QFrame):
             self.btn_play.update_icon("player-stop.png")
             self.update_timer.start()
             vol = self.slider_vol.value()
-            self.audio_output.setVolume(vol / 100.0)
+            if getattr(self, "audio_output", None) is not None:
+                self.audio_output.setVolume(vol / 100.0)
             self._force_system_volume(vol)
         else:
             self.btn_play.update_icon("player-play.png")
@@ -1273,7 +1297,8 @@ class AudioPreviewWidget(QFrame):
         self.set_position_ms(int(max(0.0, curr_t - 3.0) * 1000))
 
     def _on_volume_changed(self, v: int) -> None:
-        self.audio_output.setVolume(v / 100.0)
+        if getattr(self, "audio_output", None) is not None:
+            self.audio_output.setVolume(v / 100.0)
         self._force_system_volume(v)
         from gui.utils import get_layout_icon_path
 
@@ -1293,7 +1318,7 @@ class AudioPreviewWidget(QFrame):
         self.lbl_vol_icon.setPixmap(pixmap)
 
     def change_speed(self, text: str) -> None:
-        if not text.endswith("x"):
+        if not text.endswith("x") or self.player is None:
             return
         try:
             new_rate = float(text[:-1])
@@ -1461,7 +1486,8 @@ class AudioPreviewWidget(QFrame):
         dur = max(0.0, float(dur))
         # INVARIANT: Always pause and clamp playhead at timeline end; underlying raw media
         # (e.g., tail-trimmed DaVinci Resolve clips) must never keep playing past dur.
-        if self.player.playbackState() == QMediaPlayer.PlayingState:
+    def _stop_at_timeline_end(self, dur: float) -> None:
+        if self.player is not None and self.player.playbackState() == QMediaPlayer.PlayingState:
             self.player.pause()
         if hasattr(self, "update_timer") and self.update_timer.isActive():
             self.update_timer.stop()
@@ -1469,7 +1495,7 @@ class AudioPreviewWidget(QFrame):
         self._real_start_time = time.time()
         self._at_timeline_end = True
         target_ms = int(round(dur * 1000))
-        if abs(self.player.position() - target_ms) > 20:
+        if self.player is not None and abs(self.player.position() - target_ms) > 20:
             self.player.setPosition(target_ms)
         orig_t = self._audio_to_original_time(dur) if self.clean_ops else dur
         self.lbl_timecode.setText(self._format_timecode(orig_t))
@@ -1489,7 +1515,7 @@ class AudioPreviewWidget(QFrame):
 
         dur = self.get_total_duration()
         audio_t = max(0.0, self._get_audio_t())
-        is_playing = (self.player.playbackState() == QMediaPlayer.PlayingState)
+        is_playing = (self.player is not None and self.player.playbackState() == QMediaPlayer.PlayingState)
 
         # Hard boundary stop: never play past the timeline/waveform duration
         if dur > 0 and audio_t >= dur:

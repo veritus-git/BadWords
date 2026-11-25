@@ -137,8 +137,25 @@ class BootSplash(QWidget):
         self._timer.timeout.connect(self._animate)
         self._timer.start(300)
 
+    def _win_set_cloak(self, cloak: bool):
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+            hwnd = int(self.winId()) if self.testAttribute(Qt.WA_WState_Created) else 0
+            if hwnd:
+                dwmapi = ctypes.windll.dwmapi
+                dwmapi.DwmSetWindowAttribute.argtypes = [
+                    wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD
+                ]
+                dwmapi.DwmSetWindowAttribute.restype = ctypes.c_long
+                val = ctypes.c_int(1 if cloak else 0)
+                dwmapi.DwmSetWindowAttribute(wintypes.HWND(hwnd), 13, ctypes.byref(val), 4)
+        except Exception:
+            pass
+
     def showEvent(self, event):
-        super().showEvent(event)
         if sys.platform == "win32":
             try:
                 import ctypes
@@ -149,13 +166,35 @@ class BootSplash(QWidget):
                     dwmapi.DwmSetWindowAttribute.argtypes = [
                         wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD
                     ]
+                    dwmapi.DwmSetWindowAttribute.restype = ctypes.c_long
                     dwmapi.DwmExtendFrameIntoClientArea.argtypes = [wintypes.HWND, ctypes.c_void_p]
+                    dwmapi.DwmExtendFrameIntoClientArea.restype = ctypes.c_long
+
+                    # Paint dark splash class brush (#161616 -> COLORREF 0x00161616) and cloak until first frame paints
+                    gdi32 = ctypes.windll.gdi32
+                    user32 = ctypes.windll.user32
+                    gdi32.CreateSolidBrush.argtypes = [wintypes.COLORREF]
+                    gdi32.CreateSolidBrush.restype = wintypes.HBRUSH
+                    brush = gdi32.CreateSolidBrush(0x00161616)
+                    if brush:
+                        if hasattr(user32, "SetClassLongPtrW"):
+                            user32.SetClassLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+                            user32.SetClassLongPtrW.restype = ctypes.c_ssize_t
+                            user32.SetClassLongPtrW(wintypes.HWND(hwnd), -10, int(brush))
+                        elif hasattr(user32, "SetClassLongW"):
+                            user32.SetClassLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
+                            user32.SetClassLongW.restype = wintypes.LONG
+                            user32.SetClassLongW(wintypes.HWND(hwnd), -10, int(brush))
+
+                    cloak_val = ctypes.c_int(1)
+                    dwmapi.DwmSetWindowAttribute(wintypes.HWND(hwnd), 13, ctypes.byref(cloak_val), 4)
+
                     nc_policy = ctypes.c_int(2)
-                    dwmapi.DwmSetWindowAttribute(hwnd, 2, ctypes.byref(nc_policy), 4)
+                    dwmapi.DwmSetWindowAttribute(wintypes.HWND(hwnd), 2, ctypes.byref(nc_policy), 4)
                     corner_pref = ctypes.c_int(1)
-                    dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(corner_pref), 4)
-                    border_color = ctypes.c_uint(0xFFFFFFFE)
-                    dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(border_color), 4)
+                    dwmapi.DwmSetWindowAttribute(wintypes.HWND(hwnd), 33, ctypes.byref(corner_pref), 4)
+                    border_color = ctypes.c_uint(0x002e2e2e)
+                    dwmapi.DwmSetWindowAttribute(wintypes.HWND(hwnd), 34, ctypes.byref(border_color), 4)
 
                     class MARGINS(ctypes.Structure):
                         _fields_ = [
@@ -165,9 +204,13 @@ class BootSplash(QWidget):
                             ("bottom", ctypes.c_int),
                         ]
                     m = MARGINS(0, 0, 0, 1)
-                    dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(m))
+                    dwmapi.DwmExtendFrameIntoClientArea(wintypes.HWND(hwnd), ctypes.byref(m))
             except Exception:
                 pass
+        super().showEvent(event)
+        if sys.platform == "win32":
+            QTimer.singleShot(25, lambda: self._win_set_cloak(False))
+            QTimer.singleShot(140, lambda: self._win_set_cloak(False))
 
     def _animate(self):
         dots = "." * (self._dot_count % 4)
@@ -181,4 +224,5 @@ class BootSplash(QWidget):
 
     def closeEvent(self, event):
         self._timer.stop()
+        self._win_set_cloak(True)
         super().closeEvent(event)

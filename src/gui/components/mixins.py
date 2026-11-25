@@ -89,6 +89,14 @@ def _get_win32_apis():
     user32.GetWindowLongW.restype = wintypes.LONG
     user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
     user32.SetWindowLongW.restype = wintypes.LONG
+    if hasattr(user32, "SetClassLongPtrW"):
+        user32.SetClassLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+        user32.SetClassLongPtrW.restype = ctypes.c_ssize_t
+    if hasattr(user32, "SetClassLongW"):
+        user32.SetClassLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
+        user32.SetClassLongW.restype = wintypes.LONG
+    user32.InvalidateRect.argtypes = [wintypes.HWND, ctypes.c_void_p, wintypes.BOOL]
+    user32.InvalidateRect.restype = wintypes.BOOL
     user32.SetWindowPos.argtypes = [
         wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT
     ]
@@ -129,16 +137,21 @@ def _get_win32_apis():
     return _WIN32_APIS
 
 
-def _get_dark_bg_brush():
-    """Returns a cached Win32 HBRUSH matching config.BG_COLOR (#1c1c1c) for WM_ERASEBKGND."""
-    global _DARK_BG_BRUSH
-    if _DARK_BG_BRUSH is None:
-        _, gdi32, _ = _get_win32_apis()
+_DARK_BG_BRUSHES = {}
+
+
+def _get_dark_bg_brush(color_hex: str = None):
+    """Returns a cached Win32 HBRUSH matching the window dark surface color for WM_ERASEBKGND/WNDCLASS."""
+    if not color_hex:
         import config as _cfg
-        col = QColor(_cfg.BG_COLOR)
+        color_hex = _cfg.BG_COLOR
+    key = str(color_hex).lower()
+    if key not in _DARK_BG_BRUSHES:
+        _, gdi32, _ = _get_win32_apis()
+        col = QColor(color_hex)
         colorref = (col.blue() << 16) | (col.green() << 8) | col.red()
-        _DARK_BG_BRUSH = gdi32.CreateSolidBrush(colorref)
-    return _DARK_BG_BRUSH
+        _DARK_BG_BRUSHES[key] = gdi32.CreateSolidBrush(colorref)
+    return _DARK_BG_BRUSHES[key]
 
 
 def compute_win_nccalcsize_rect(
@@ -385,6 +398,23 @@ class FramelessWindowMixin:
         self._was_maximized = False
         self._dark_brush = None
         self._border_overlay = None
+        self._awaiting_paint_uncloak = False
+        self._dwm_cloaked = False
+
+        # Ensure Qt window palette & initial surface are dark so unpainted rects never flash white.
+        try:
+            from PySide6.QtGui import QPalette
+            import config as _cfg
+            bg_hex = _cfg.BG_COLOR if self._is_root else "#161616"
+            pal = self.palette()
+            dark_col = QColor(bg_hex)
+            pal.setColor(QPalette.Window, dark_col)
+            pal.setColor(QPalette.Base, dark_col)
+            self.setPalette(pal)
+            if self._is_win or self._is_root:
+                self.setAutoFillBackground(True)
+        except Exception:
+            pass
 
         if self._is_win:
             if self._is_root:
@@ -442,8 +472,11 @@ class FramelessWindowMixin:
         is_top = False
         if ref is not None:
             is_top = bool(
-                getattr(ref, '_always_on_top_active', False)
-                or (ref.windowFlags() & Qt.WindowStaysOnTopHint)
+                getattr(
+                    ref,
+                    '_always_on_top_active',
+                    bool(ref.windowFlags() & Qt.WindowStaysOnTopHint),
+                )
             )
         cur = bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
         if cur != is_top:
@@ -830,14 +863,19 @@ class FramelessWindowMixin:
                         ('top', ctypes.c_int),
                         ('bottom', ctypes.c_int),
                     ]
-                margins = MARGINS(0, 0, 0, 1)
+                # Extend 1px only when unmaximized for native DWM drop shadow; maximized needs 0
+                is_zoomed_now = bool(user32.IsZoomed(hwnd))
+                margins = MARGINS(0, 0, 0, 0 if is_zoomed_now else 1)
                 dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
 
             # INVARIANT: Sharp 90-degree corners ALWAYS on Windows 11 (DWMWCP_DONOTROUND = 1)
-            # and suppress Win11 default light/gray DWM outline (DWMWA_COLOR_NONE = 0xFFFFFFFE).
+            # and dark DWM border color (#101010 root / #2e2e2e popup) so taskbar thumbnails
+            # and close transitions never render a white 1px frame outline.
             corner_pref = ctypes.c_uint(1)
             dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(corner_pref), 4)
-            border_color = ctypes.c_uint(0xFFFFFFFE)
+            # COLORREF is 0x00BBGGRR (symmetric hex values like 0x00101010 and 0x002e2e2e)
+            border_colorref = 0x00101010 if getattr(self, '_is_root', False) else 0x002e2e2e
+            border_color = ctypes.c_uint(border_colorref)
             dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(border_color), 4)
         except Exception:
             pass
@@ -943,40 +981,80 @@ class FramelessWindowMixin:
         super().changeEvent(event)
 
     def _apply_dark_class_brush(self, hwnd: int):
-        """Caches the dark Win32 HBRUSH matching BG_COLOR (#1c1c1c) for WM_ERASEBKGND without mutating shared WNDCLASS."""
+        """Sets dark Win32 HBRUSH on class/instance for WM_ERASEBKGND and HWND mapping before Qt paints."""
         try:
-            self._dark_brush = _get_dark_bg_brush()
+            bg_hex = None if getattr(self, '_is_root', False) else "#161616"
+            brush = _get_dark_bg_brush(bg_hex)
+            self._dark_brush = brush
+            if hwnd and brush and getattr(self, '_is_win', False):
+                user32, _, _ = _get_win32_apis()
+                GCLP_HBRBACKGROUND = -10
+                if hasattr(user32, "SetClassLongPtrW"):
+                    user32.SetClassLongPtrW(hwnd, GCLP_HBRBACKGROUND, int(brush))
+                elif hasattr(user32, "SetClassLongW"):
+                    user32.SetClassLongW(hwnd, GCLP_HBRBACKGROUND, int(brush))
+        except Exception:
+            pass
+
+    def _dwm_cloak(self, cloak: bool = True):
+        if _HAS_QFRAMELESS or not getattr(self, '_is_win', False):
+            return
+        try:
+            if self.testAttribute(Qt.WA_WState_Created):
+                _, _, dwmapi = _get_win32_apis()
+                hwnd = int(self.winId())
+                if hwnd:
+                    import ctypes
+                    val = ctypes.c_int(1 if cloak else 0)
+                    dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)
+                    self._dwm_cloaked = bool(cloak)
         except Exception:
             pass
 
     def _dwm_uncloak(self):
         try:
-            import ctypes
+            self._awaiting_paint_uncloak = False
             if self.testAttribute(Qt.WA_WState_Created):
-                _, _, dwmapi = _get_win32_apis()
+                user32, _, _ = _get_win32_apis()
                 hwnd = int(self.winId())
                 if hwnd:
                     self._enforce_win_dwm_attributes(hwnd, include_extend=True)
-                    val = ctypes.c_int(0)
-                    dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)
+                    self._dwm_cloak(False)
                     self._enforce_win_dwm_attributes(hwnd, include_extend=False)
         except Exception:
             pass
+
+    def paintEvent(self, event):
+        try:
+            import config as _cfg
+            bg_hex = _cfg.BG_COLOR if getattr(self, '_is_root', True) else "#161616"
+            painter = QPainter(self)
+            painter.fillRect(self.rect(), QColor(bg_hex))
+            painter.end()
+        except Exception:
+            pass
+        super().paintEvent(event)
+        if getattr(self, '_awaiting_paint_uncloak', False):
+            self._awaiting_paint_uncloak = False
+            QTimer.singleShot(16, self._dwm_uncloak)
+
+    def done(self, result):
+        if not _HAS_QFRAMELESS and getattr(self, '_is_win', False):
+            self._dwm_cloak(True)
+        return super().done(result)
 
     def showEvent(self, event):
         if self._is_popup:
             self._sync_popup_always_on_top()
 
-        # Cloak during initial window mapping on Windows to eliminate DWM standard NC white flash
-        if not _HAS_QFRAMELESS and getattr(self, '_is_win', False) and getattr(self, '_is_root', False):
+        # Cloak before mapping/unhiding on Windows to eliminate DWM white flash on every open/reopen.
+        if not _HAS_QFRAMELESS and getattr(self, '_is_win', False):
+            self._awaiting_paint_uncloak = True
             try:
-                import ctypes
-                _, _, dwmapi = _get_win32_apis()
                 hwnd = int(self.winId())
-                if hwnd and not getattr(self, '_shown_once', False):
-                    self._shown_once = True
-                    val = ctypes.c_int(1)
-                    dwmapi.DwmSetWindowAttribute(hwnd, 13, ctypes.byref(val), 4)
+                if hwnd:
+                    self._apply_dark_class_brush(hwnd)
+                    self._dwm_cloak(True)
                     self._enforce_win_dwm_attributes(hwnd, include_extend=False)
             except Exception:
                 pass
@@ -1015,10 +1093,11 @@ class FramelessWindowMixin:
                         self._was_maximized = True
                         self._sync_win_normal_placement(use_button_restore=False)
 
-                    QTimer.singleShot(35, self._dwm_uncloak)
-                    QTimer.singleShot(150, self._dwm_uncloak)
                 elif hwnd:
+                    self._apply_dark_class_brush(hwnd)
                     self._enforce_win_dwm_attributes(hwnd, include_extend=True)
+                # Safety net fallback uncloak in case paintEvent is deferred
+                QTimer.singleShot(220, self._dwm_uncloak)
             except Exception:
                 self._dwm_uncloak()
 
@@ -1028,7 +1107,7 @@ class FramelessWindowMixin:
         self._record_normal_geometry()
 
     def _refresh_max_state(self):
-        is_max = self.isMaximized()
+        is_max = self._is_effectively_maximized()
         title_bar = getattr(self, '_title_bar', getattr(self, '_tb', None))
         if title_bar and hasattr(title_bar, 'update_maximize_icon'):
             title_bar.update_maximize_icon(is_max)
@@ -1211,7 +1290,8 @@ class FramelessWindowMixin:
         if msg.message == 0x0014:
             try:
                 if msg.wParam:
-                    brush = getattr(self, '_dark_brush', None) or _get_dark_bg_brush()
+                    bg_hex = None if getattr(self, '_is_root', False) else "#161616"
+                    brush = getattr(self, '_dark_brush', None) or _get_dark_bg_brush(bg_hex)
                     if brush:
                         rc = wintypes.RECT()
                         if user32.GetClientRect(hwnd, ctypes.byref(rc)):

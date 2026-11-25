@@ -1095,6 +1095,78 @@ pub fn resolve_deployed_version(detected_tag: Option<&str>, target_dir: &Path) -
         .unwrap_or_else(|| APP_VERSION.to_string())
 }
 
+/// Commits an already-extracted archive directory into `target_dir`.
+/// Wipes obsolete application files ONLY AFTER verifying valid extracted sources so
+/// interrupted downloads never leave the user's installation broken.
+fn commit_extracted_package_to_target(
+    extract_dest: &Path,
+    target_dir: &Path,
+    explicit_version: Option<&str>,
+    detected_tag: Option<&str>,
+    success_log: &str,
+    sender: &EventSender,
+) -> bool {
+    if let Ok(entries) = fs::read_dir(extract_dest) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir()
+                && (p.join("src").join("main.py").is_file() || p.join("main.py").is_file())
+            {
+                clean_wipe_target_dir(target_dir, sender);
+
+                let src_sub = if p.join("src").is_dir() {
+                    p.join("src")
+                } else {
+                    p.clone()
+                };
+                let _ = copy_dir_all(&src_sub, target_dir);
+
+                let assets_sub = p.join("assets");
+                if assets_sub.is_dir() {
+                    let _ = copy_dir_all(&assets_sub, target_dir.join("assets"));
+                }
+
+                let setup_sub = p.join("setupfiles");
+                if setup_sub.is_dir() {
+                    let _ = copy_dir_all(&setup_sub, target_dir.join("setupfiles"));
+                    let up_py = setup_sub.join("updater.py");
+                    if up_py.is_file() {
+                        let _ = fs::copy(up_py, target_dir.join("updater.py"));
+                    }
+                }
+
+                let installer_dest_name = if cfg!(target_os = "windows") {
+                    "badwords-installer.exe"
+                } else {
+                    "badwords-installer"
+                };
+                if let Ok(cur_exe) = std::env::current_exe() {
+                    let dest_bin = target_dir.join(installer_dest_name);
+                    if cur_exe != dest_bin {
+                        let _ = fs::copy(&cur_exe, &dest_bin);
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let _ =
+                                fs::set_permissions(&dest_bin, fs::Permissions::from_mode(0o755));
+                        }
+                    }
+                }
+
+                let ver_text = match explicit_version {
+                    Some(v) => v.trim_start_matches(|c| c == 'v' || c == 'V').to_string(),
+                    None => resolve_deployed_version(detected_tag, target_dir),
+                };
+                let _ = fs::write(target_dir.join(".version"), format!("{}\n", ver_text));
+
+                emit_log(sender, "OK", success_log);
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Deploys BadWords application files (from local repo or online GitHub/GitLab zip)
 fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
     if let Some(repo_dir) = find_local_repo() {
@@ -1105,9 +1177,12 @@ fn deploy_application_files(target_dir: &Path, sender: &EventSender) -> bool {
         );
 
         let src_dir = repo_dir.join("src");
-        if src_dir.is_dir() {
-            let _ = copy_dir_all(&src_dir, target_dir);
+        if !src_dir.is_dir() {
+            emit_log(sender, "ERROR", "Local repository is missing src/ directory.");
+            return false;
         }
+        clean_wipe_target_dir(target_dir, sender);
+        let _ = copy_dir_all(&src_dir, target_dir);
 
         let src_assets = repo_dir.join("assets");
         if src_assets.is_dir() {
@@ -1290,74 +1365,22 @@ fn deploy_remote_files(target_dir: &Path, sender: &EventSender) -> bool {
     emit_log(sender, "INFO", "Extracting BadWords application files...");
     if extract_zip(&zip_dest, &extract_dest).is_err() {
         emit_log(sender, "ERROR", "Failed to extract downloaded archive.");
+        let _ = fs::remove_file(&zip_dest);
+        let _ = fs::remove_dir_all(&extract_dest);
         return false;
     }
 
-    // Find the extracted root directory (e.g. BadWords-dev-v4 or BadWords-main)
-    if let Ok(entries) = fs::read_dir(&extract_dest) {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if p.is_dir()
-                && (p.join("src").join("main.py").is_file() || p.join("main.py").is_file())
-            {
-                let src_sub = if p.join("src").is_dir() {
-                    p.join("src")
-                } else {
-                    p.clone()
-                };
-                let _ = copy_dir_all(&src_sub, target_dir);
-
-                let assets_sub = p.join("assets");
-                if assets_sub.is_dir() {
-                    let _ = copy_dir_all(&assets_sub, target_dir.join("assets"));
-                }
-
-                let setupfiles_sub = p.join("setupfiles");
-                if setupfiles_sub.is_dir() {
-                    let _ = copy_dir_all(&setupfiles_sub, target_dir.join("setupfiles"));
-                }
-
-                let updater_sub = p.join("setupfiles").join("updater.py");
-                if updater_sub.is_file() {
-                    let _ = fs::copy(updater_sub, target_dir.join("updater.py"));
-                }
-
-                let installer_dest_name = if cfg!(target_os = "windows") {
-                    "badwords-installer.exe"
-                } else {
-                    "badwords-installer"
-                };
-                if let Ok(cur_exe) = std::env::current_exe() {
-                    let dest_bin = target_dir.join(installer_dest_name);
-                    if cur_exe != dest_bin {
-                        let _ = fs::copy(&cur_exe, &dest_bin);
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let _ =
-                                fs::set_permissions(&dest_bin, fs::Permissions::from_mode(0o755));
-                        }
-                    }
-                }
-
-                let resolved_ver = resolve_deployed_version(detected_tag.as_deref(), target_dir);
-                let _ = fs::write(target_dir.join(".version"), format!("{}\n", resolved_ver));
-
-                emit_log(
-                    sender,
-                    "OK",
-                    "Remote application files deployed successfully.",
-                );
-                let _ = fs::remove_file(&zip_dest);
-                let _ = fs::remove_dir_all(&extract_dest);
-                return true;
-            }
-        }
-    }
-
+    let ok = commit_extracted_package_to_target(
+        &extract_dest,
+        target_dir,
+        None,
+        detected_tag.as_deref(),
+        "Remote application files deployed successfully.",
+        sender,
+    );
     let _ = fs::remove_file(&zip_dest);
     let _ = fs::remove_dir_all(&extract_dest);
-    false
+    ok
 }
 
 /// Downloads and deploys BadWords from a specific git branch
@@ -1422,72 +1445,16 @@ fn deploy_branch_files(target_dir: &Path, branch: &str, sender: &EventSender) ->
             "ERROR",
             "Failed to extract downloaded branch archive.",
         );
+        let _ = fs::remove_file(&zip_dest);
+        let _ = fs::remove_dir_all(&extract_dest);
         return false;
     }
 
-    if let Ok(entries) = fs::read_dir(&extract_dest) {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if p.is_dir()
-                && (p.join("src").join("main.py").is_file() || p.join("main.py").is_file())
-            {
-                let src_sub = if p.join("src").is_dir() {
-                    p.join("src")
-                } else {
-                    p.clone()
-                };
-                let _ = copy_dir_all(&src_sub, target_dir);
-
-                let assets_sub = p.join("assets");
-                if assets_sub.is_dir() {
-                    let _ = copy_dir_all(&assets_sub, target_dir.join("assets"));
-                }
-
-                let setup_sub = p.join("setupfiles");
-                if setup_sub.is_dir() {
-                    let _ = copy_dir_all(&setup_sub, target_dir.join("setupfiles"));
-                    let up_py = setup_sub.join("updater.py");
-                    if up_py.is_file() {
-                        let _ = fs::copy(up_py, target_dir.join("updater.py"));
-                    }
-                }
-
-                let installer_dest_name = if cfg!(target_os = "windows") {
-                    "badwords-installer.exe"
-                } else {
-                    "badwords-installer"
-                };
-                if let Ok(cur_exe) = std::env::current_exe() {
-                    let dest_bin = target_dir.join(installer_dest_name);
-                    if cur_exe != dest_bin {
-                        let _ = fs::copy(&cur_exe, &dest_bin);
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let _ =
-                                fs::set_permissions(&dest_bin, fs::Permissions::from_mode(0o755));
-                        }
-                    }
-                }
-
-                let resolved_ver = resolve_deployed_version(None, target_dir);
-                let _ = fs::write(target_dir.join(".version"), format!("{}\n", resolved_ver));
-
-                emit_log(
-                    sender,
-                    "OK",
-                    &format!("Branch '{}' deployed successfully.", branch),
-                );
-                let _ = fs::remove_file(&zip_dest);
-                let _ = fs::remove_dir_all(&extract_dest);
-                return true;
-            }
-        }
-    }
-
+    let msg = format!("Branch '{}' deployed successfully.", branch);
+    let ok = commit_extracted_package_to_target(&extract_dest, target_dir, None, None, &msg, sender);
     let _ = fs::remove_file(&zip_dest);
     let _ = fs::remove_dir_all(&extract_dest);
-    false
+    ok
 }
 
 /// Fetches the list of git branch names from GitHub or GitLab API
@@ -1616,72 +1583,23 @@ fn deploy_version_files(target_dir: &Path, version: &str, sender: &EventSender) 
             "ERROR",
             "Failed to extract downloaded version archive.",
         );
+        let _ = fs::remove_file(&zip_dest);
+        let _ = fs::remove_dir_all(&extract_dest);
         return false;
     }
 
-    if let Ok(entries) = fs::read_dir(&extract_dest) {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if p.is_dir()
-                && (p.join("src").join("main.py").is_file() || p.join("main.py").is_file())
-            {
-                let src_sub = if p.join("src").is_dir() {
-                    p.join("src")
-                } else {
-                    p.clone()
-                };
-                let _ = copy_dir_all(&src_sub, target_dir);
-
-                let assets_sub = p.join("assets");
-                if assets_sub.is_dir() {
-                    let _ = copy_dir_all(&assets_sub, target_dir.join("assets"));
-                }
-
-                let setup_sub = p.join("setupfiles");
-                if setup_sub.is_dir() {
-                    let _ = copy_dir_all(&setup_sub, target_dir.join("setupfiles"));
-                    let up_py = setup_sub.join("updater.py");
-                    if up_py.is_file() {
-                        let _ = fs::copy(up_py, target_dir.join("updater.py"));
-                    }
-                }
-
-                let installer_dest_name = if cfg!(target_os = "windows") {
-                    "badwords-installer.exe"
-                } else {
-                    "badwords-installer"
-                };
-                if let Ok(cur_exe) = std::env::current_exe() {
-                    let dest_bin = target_dir.join(installer_dest_name);
-                    if cur_exe != dest_bin {
-                        let _ = fs::copy(&cur_exe, &dest_bin);
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let _ =
-                                fs::set_permissions(&dest_bin, fs::Permissions::from_mode(0o755));
-                        }
-                    }
-                }
-
-                let clean_ver = version.trim_start_matches(|c| c == 'v' || c == 'V');
-                let _ = fs::write(target_dir.join(".version"), format!("{}\n", clean_ver));
-
-                emit_log(
-                    sender,
-                    "OK",
-                    &format!("Version '{}' deployed successfully.", version),
-                );
-                let _ = fs::remove_file(&zip_dest);
-                let _ = fs::remove_dir_all(&extract_dest);
-                return true;
-            }
-        }
-    }
-
+    let msg = format!("Version '{}' deployed successfully.", version);
+    let ok = commit_extracted_package_to_target(
+        &extract_dest,
+        target_dir,
+        Some(version),
+        None,
+        &msg,
+        sender,
+    );
     let _ = fs::remove_file(&zip_dest);
     let _ = fs::remove_dir_all(&extract_dest);
-    false
+    ok
 }
 
 /// Fetches the list of git release tags (>= 4.0.0) from GitHub or GitLab API
@@ -2207,6 +2125,15 @@ fn check_missing_dependencies(v_py: &Path, check_nvidia: bool) -> Vec<String> {
         missing.push("pypdf".to_string());
     }
 
+    // 5. certifi (TLS root CA bundle for GitHub release & webhook HTTPS requests)
+    let certifi_ok = os::create_hidden_command(v_py)
+        .args(["-c", "import certifi"])
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !certifi_ok {
+        missing.push("certifi".to_string());
+    }
+
     // 5. NVIDIA CUDA acceleration modules (if applicable)
     if check_nvidia {
         let ct2_ok = os::create_hidden_command(v_py)
@@ -2358,19 +2285,19 @@ fn setup_python_environment(
             emit_log(sender, "OK", "PySide6 is ready.");
         }
 
-        // Sub-step: faster-whisper, av<19, pypdf (always upgrade during Option 1 updates)
-        emit_log(sender, "INFO", "Installing/upgrading faster-whisper, av<19 and pypdf...");
+        // Sub-step: faster-whisper, av<19, pypdf, certifi (always upgrade during Option 1 updates)
+        emit_log(sender, "INFO", "Installing/upgrading faster-whisper, av<19, pypdf and certifi...");
         run_pip_install_streaming(
             &v_py,
             // av<19: PyAV 19 removed av.open(metadata_errors=...), which faster-whisper <= 1.2.1 still passes
-            &["--upgrade", "faster-whisper", "av<19", "pypdf"],
+            &["--upgrade", "faster-whisper", "av<19", "pypdf", "certifi"],
             78,
             85,
             "Installing AI speech engine...",
-            "Downloading Faster-Whisper AI engine & PyPDF",
+            "Downloading Faster-Whisper AI engine & dependencies",
             sender,
         );
-        emit_log(sender, "OK", "Faster-Whisper and PyPDF ready.");
+        emit_log(sender, "OK", "Faster-Whisper, PyPDF and certifi ready.");
 
         // Sub-step: Hardware Acceleration (CUDA 12 or CPU runtime)
         if has_nvidia {
@@ -2452,7 +2379,7 @@ fn setup_python_environment(
         emit_log(
             sender,
             "INFO",
-            "Verifying installed dependencies (PySide6, faster-whisper, pypdf)...",
+            "Verifying installed dependencies (PySide6, faster-whisper, pypdf, certifi)...",
         );
 
         let mut missing = check_missing_dependencies(&v_py, has_nvidia);
@@ -2521,7 +2448,7 @@ fn setup_python_environment(
         emit_log(
             sender,
             "OK",
-            "All required packages (PySide6, faster-whisper, pypdf) successfully verified.",
+            "All required packages (PySide6, faster-whisper, pypdf, certifi) successfully verified.",
         );
 
         // Final linking
@@ -2771,10 +2698,7 @@ fn run_install_core(
             &format!("Destination folder ready: {}", target_dir.display()),
         );
 
-        // 4. Clean Wipe & Replace (Option 4 style, preserving user personal info and heavy assets)
-        clean_wipe_target_dir(&target_dir, &sender);
-
-        // 5. Sync / Download source files
+        // 4. Sync / Download source files first; deploy helpers clean old code ONLY after valid archive ready
         if is_dev || version.as_deref() == Some("LOCAL") {
             if let Some(ref br) = branch {
                 emit_progress(
@@ -3048,7 +2972,7 @@ pub fn run_repair(mut target_dir: PathBuf, version: Option<String>, sender: Even
             }
         }
 
-        // Re-deploy application core files (whitelist-clean obsolete modules first so stale .py files don't linger)
+        // Re-deploy application core files (deploy helpers wipe obsolete files ONLY after valid package ready)
         emit_progress(
             &sender,
             30,
@@ -3056,7 +2980,6 @@ pub fn run_repair(mut target_dir: PathBuf, version: Option<String>, sender: Even
             "Repairing core files...",
             "Re-syncing files from repository",
         );
-        clean_wipe_target_dir(&target_dir, &sender);
         let deploy_ok = match version.as_deref() {
             Some(ver) if ver != "LOCAL" => {
                 emit_progress(
@@ -4356,17 +4279,68 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
 
-        // Mock python executable simulating av==19.0.0 (too new) & missing pypdf
+        // Mock python executable simulating av==19.0.0 (too new), missing pypdf & missing certifi
         let fake_py = root.join("fake_py.sh");
         fs::write(
             &fake_py,
-            "#!/bin/sh\ncase \"$*\" in\n  *PySide6.QtCore*) exit 0 ;;\n  *faster_whisper*) exit 0 ;;\n  *av.__version__*) exit 1 ;;\n  *pypdf*) exit 1 ;;\n  *) exit 1 ;;\nesac\n",
+            "#!/bin/sh\ncase \"$*\" in\n  *PySide6.QtCore*) exit 0 ;;\n  *faster_whisper*) exit 0 ;;\n  *av.__version__*) exit 1 ;;\n  *pypdf*) exit 1 ;;\n  *certifi*) exit 1 ;;\n  *) exit 1 ;;\nesac\n",
         )
         .unwrap();
         fs::set_permissions(&fake_py, fs::Permissions::from_mode(0o755)).unwrap();
 
         let missing = check_missing_dependencies(&fake_py, false);
-        assert_eq!(missing, vec!["av<19".to_string(), "pypdf".to_string()]);
+        assert_eq!(
+            missing,
+            vec!["av<19".to_string(), "pypdf".to_string(), "certifi".to_string()]
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_commit_extracted_preserves_target_on_missing_or_invalid_archive() {
+        let root = std::env::temp_dir().join("badwords_test_transactional_wipe");
+        let _ = fs::remove_dir_all(&root);
+        let target_dir = root.join("target");
+        let extract_dir = root.join("extract");
+        fs::create_dir_all(target_dir.join("gui")).unwrap();
+        fs::create_dir_all(&extract_dir).unwrap();
+        fs::write(target_dir.join("main.py"), "# existing 4.1.0").unwrap();
+        fs::write(target_dir.join("osdoc.py"), "# existing osdoc").unwrap();
+        fs::write(target_dir.join("settings.json"), "{}").unwrap();
+        fs::write(target_dir.join("gui").join("main_window.py"), "# ok").unwrap();
+
+        // Empty or invalid extract folder must NOT wipe existing target installation
+        let (tx, _rx) = std::sync::mpsc::channel();
+        assert!(!commit_extracted_package_to_target(
+            &extract_dir,
+            &target_dir,
+            Some("4.1.1"),
+            None,
+            "ok",
+            &tx,
+        ));
+        assert!(target_dir.join("main.py").is_file());
+        assert!(target_dir.join("gui").join("main_window.py").is_file());
+        assert!(target_dir.join("settings.json").is_file());
+
+        // Valid extracted package cleanly replaces old code while keeping settings.json
+        let pkg = extract_dir.join("BadWords-4.1.1");
+        fs::create_dir_all(pkg.join("src")).unwrap();
+        fs::write(pkg.join("src").join("main.py"), "# new 4.1.1").unwrap();
+        assert!(commit_extracted_package_to_target(
+            &extract_dir,
+            &target_dir,
+            Some("4.1.1"),
+            None,
+            "ok",
+            &tx,
+        ));
+        assert_eq!(
+            fs::read_to_string(target_dir.join("main.py")).unwrap(),
+            "# new 4.1.1"
+        );
+        assert!(target_dir.join("settings.json").is_file());
 
         let _ = fs::remove_dir_all(&root);
     }

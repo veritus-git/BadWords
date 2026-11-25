@@ -515,6 +515,8 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
         self.reject()
 
     def closeEvent(self, event):
+        if hasattr(self, '_dwm_cloak'):
+            self._dwm_cloak(True)
         event.accept()
 
     @staticmethod

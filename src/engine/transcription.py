@@ -34,6 +34,23 @@ class ModelDownloadError(RuntimeError):
     """Raised when a Whisper model is missing locally and cannot be downloaded.
     Carries a user-facing message, so the pipeline lets it through to the GUI."""
 
+    def __init__(self, message: str, technical: bool = False, detail: str = ""):
+        super().__init__(message)
+        self.technical = bool(technical)
+        self.detail = str(detail or "")
+
+
+_HF_WIN_NO_SYMLINK_SNIPPET = """
+if sys.platform == 'win32':
+    try:
+        import huggingface_hub.file_download as _hf_fd
+        _hf_fd.are_symlinks_supported = lambda *a, **kw: False
+        if hasattr(_hf_fd, '_are_symlinks_supported_in_dir'):
+            _hf_fd._are_symlinks_supported_in_dir.clear()
+    except Exception:
+        pass
+"""
+
 
 # Apple Silicon GPU engine (mlx-whisper): same Whisper weights as the faster-whisper models,
 # converted for MLX. Keys match the model names used by run_whisper().
@@ -353,6 +370,7 @@ except Exception as e:
 import sys
 import os
 import re
+import traceback
 
 if sys.platform == 'win32':
     try:
@@ -411,14 +429,19 @@ libs_dir = {repr(safe_libs_dir)}
 if os.path.exists(libs_dir) and libs_dir not in sys.path:
     sys.path.insert(0, libs_dir)
 
+{_HF_WIN_NO_SYMLINK_SNIPPET}
+
 try:
     print("DL-START: Target dir " + {repr(safe_models_dir)})
     {dl_code}
     print("Download Complete.")
 except Exception as e:
     print(f"Error: {{e}}")
+    traceback.print_exc()
     sys.exit(1)
 """
+        self.last_download_error = ""
+        self.last_download_error_kind = None
         runner_path = os.path.join(self.os_doc.get_temp_folder(), "fw_downloader.py")
         with open(runner_path, "w", encoding="utf-8") as f:
             f.write(script_content)
@@ -450,10 +473,12 @@ except Exception as e:
             if progress_callback:
                 progress_callback(-1)
 
+            captured_lines = []
             for line in process.stdout:
                 line_s = line.strip()
                 if line_s:
                     log_info(f"[FW-DL] {line_s}")
+                    captured_lines.append(line_s)
                     if status_callback and ("downloading" in line_s.lower() or "dl-start" in line_s.lower()):
                         status_callback(self.txt("status_downloading_model"))
 
@@ -462,9 +487,14 @@ except Exception as e:
                 log_info(f"Model {model_name} ready.")
                 return True
             else:
-                log_error(f"Model download failed (return code {process.returncode})")
+                detail, kind = self._classify_download_failure(captured_lines, process.returncode)
+                self.last_download_error = detail
+                self.last_download_error_kind = kind
+                log_error(f"Model download failed (return code {process.returncode}, kind={kind}): {detail}")
                 return False
         except Exception as e:
+            self.last_download_error = str(e)
+            self.last_download_error_kind = "technical"
             log_error(f"Download execution failed: {e}")
             return False
         finally:
@@ -473,12 +503,56 @@ except Exception as e:
                 except Exception as e:
                     log_error(f"download_whisper_model_interactive: cleanup failed: {e}")
 
-
+    @staticmethod
+    def _classify_download_failure(captured_lines, return_code: int):
+        """Distinguishes offline/firewall errors from local OS/permission/code bugs."""
+        err_lines = [l for l in captured_lines if l.startswith("Error:") or "Error" in l or "Exception" in l]
+        detail = err_lines[-1] if err_lines else (captured_lines[-1] if captured_lines else f"Exit code {return_code}")
+        full_lower = "\n".join(captured_lines).lower()
+        tech_markers = (
+            "winerror 1314", "symlink", "privilege", "modulenotfounderror",
+            "importerror", "syntaxerror", "typeerror", "attributeerror",
+            "memoryerror", "no space left", "errno 28", "access is denied",
+            "winerror 5", "permissionerror",
+        )
+        if any(m in full_lower for m in tech_markers):
+            return detail, "technical"
+        net_markers = (
+            "connectionerror", "connecttimeout", "readtimeout", "timed out",
+            "name resolution", "getaddrinfo", "nodename nor servname",
+            "network is unreachable", "temporary failure in name resolution",
+            "localentrynotfounderror", "offline", "max retries exceeded",
+            "ssl", "certifi", "certificate", "proxy", "remote end closed",
+            "httperror", "403", "429", "502", "503", "504",
+        )
+        if any(m in full_lower for m in net_markers):
+            return detail, "network"
+        return detail, "technical"
 
     def check_model_exists(self, model_name, use_mlx=False):
         model_folder = os.path.join(self.models_dir, self.model_cache_folder(model_name, use_mlx))
         snapshots_dir = os.path.join(model_folder, "snapshots")
-        return os.path.exists(snapshots_dir) and len(os.listdir(snapshots_dir)) > 0
+        if not os.path.isdir(snapshots_dir):
+            return False
+        for rev in os.listdir(snapshots_dir):
+            rev_dir = os.path.join(snapshots_dir, rev)
+            if not os.path.isdir(rev_dir):
+                continue
+            try:
+                files = set(os.listdir(rev_dir))
+            except Exception:
+                continue
+            if use_mlx:
+                has_cfg = "config.json" in files
+                has_weights = any(f.endswith((".safetensors", ".npz")) for f in files)
+                if has_cfg and has_weights:
+                    return True
+            else:
+                model_bin = os.path.join(rev_dir, "model.bin")
+                cfg_json = os.path.join(rev_dir, "config.json")
+                if os.path.isfile(model_bin) and os.path.getsize(model_bin) > 0 and os.path.isfile(cfg_json):
+                    return True
+        return False
 
     # ── Apple Silicon GPU engine (mlx-whisper) ───────────────────────────────
 
@@ -826,6 +900,7 @@ if os.path.exists(libs_dir) and libs_dir not in sys.path:
 
 {self._get_cuda_preinit_code(fw_device)}
 {self._get_av_compat_code()}
+{_HF_WIN_NO_SYMLINK_SNIPPET}
 
 try:
     from faster_whisper import WhisperModel
@@ -1069,6 +1144,7 @@ if os.path.exists(libs_dir) and libs_dir not in sys.path:
 
 {self._get_cuda_preinit_code(fw_device)}
 {self._get_av_compat_code()}
+{_HF_WIN_NO_SYMLINK_SNIPPET}
 
 try:
     # --- FASTER-WHISPER NATIVE INTEGRATION ---

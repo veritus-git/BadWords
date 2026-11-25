@@ -3,6 +3,17 @@
 All notable changes to the **BadWords** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [4.1.1] - 2026-11-25
+### Changed
+- **Windows 11 Taskbar Preview & Window Surfaces (`mixins.py`, `boot_splash.py`, `update_dialog.py`)**: Replaced `DWMWA_COLOR_NONE` (`0xFFFFFFFE`) with exact dark `DWMWA_BORDER_COLOR` (`0x00101010` / `0x002e2e2e`), applied dark Win32 `GCLP_HBRBACKGROUND` class brushes and opaque dark `QPalette`/`paintEvent` fills, and extended paint-synchronized DWM cloaking across every open/reopen and hide/close transition to eliminate white sheets and the 1px white taskbar thumbnail border.
+- **Localized Model Download Guidance (`src/i18n/*.json`)**: Updated `msg_model_download_failed` across all 11 languages to remove macOS-only `Little Snitch` references and point Windows/Linux/macOS users to internet, firewall/antivirus, folder write permissions, and disk space checks.
+
+### Fixed
+- **Windows Startup Diagnostics & GPU-less PC Resilience (`launcher.c`, `main.py`, `osdoc.py`, `runtime_data.py`, `resolve_bridge.py`, `resolve_handler.py`, `audio_preview.py`, `video_preview.py`)**: Fixed `/SUBSYSTEM:WINDOWS` launcher log output via `_wfsopen` + `SetStdHandle`, added Win32 `SetUnhandledExceptionFilter` + MSVC SEH wrapper and automatic one-time `BADWORDS_SAFE_BOOT=1` software RHI/OpenGL relaunch, enabled `faulthandler(..., all_threads=True)`, added full 64-bit ctypes `argtypes`/`restype` across all Win32 handles, deferred `DaVinciResolveScript`/`fusionscript.dll` loading until Resolve is actually running (after an isolated child probe), and guarded `QMediaPlayer`/`QVideoWidget` initialization cleanly.
+- **Settings Maximize Reopen & Always-On-Top Z-Order (`settings_dialog.py`, `main_window.py`, `mixins.py`, `osdoc.py`)**: Tracked maximized state on close so reopening restores genuine OS maximize (removing Win11 16px client shrink and Linux Wayland/X11 edge gaps and updating the top-right exit-maximize icon), fixed 64-bit `SetWindowPos` + `WS_EX_TOPMOST` verification, and stopped stale Qt flags from sticking Settings always-on-top when disabled.
+- **Windows Whisper Model Symlink Error (`WinError 1314`) & Worker Crash Reporting (`transcription.py`, `audio_engine.py`, `analysis_worker.py`)**: Forced `huggingface_hub.file_download.are_symlinks_supported` to `False` on Windows to avoid unprivileged symlink failures, validated `model.bin`/`config.json` in `check_model_exists()` so partial downloads cannot falsely pass, and wired opt-in auto-crash-reporting for unexpected technical errors in `AnalysisWorker`.
+- **Transactional Installer Updates & `certifi` (`installer/src/engine.rs`, `setupfiles/setup.py`)**: Moved obsolete code cleanup (`clean_wipe_target_dir`) inside deployment helpers so existing files are wiped only after a valid package is downloaded and extracted, and explicitly installed/verified `certifi` alongside `faster-whisper`, `av<19`, and `pypdf`.
+
 ## [4.1.0] - 2026-11-25
 ### Added
 - **Startup Guard & Consent-Based Self-Heal**: Instant startup splash (`BootSplash`), isolated Python 3.10-3.12 runtime guard, foreign `sys.path` pruning, and consent-gated automatic dependency repair.

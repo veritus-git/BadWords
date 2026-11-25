@@ -63,12 +63,41 @@ class ResolveHandler:
         self._async_queue = queue.Queue()
         self._async_thread = threading.Thread(target=self._async_worker, daemon=True, name="ResolveAsyncWorker")
         self._async_thread.start()
-        
-        # Attempt to load script module silently on boot
-        self._load_resolve_script_module(silent=True)
-
-        # Connect to Resolve or Bridge silently on boot
+        # Defer native DaVinciResolveScript/fusionscript.dll loading until _connect
+        # confirms embedded execution or an active Resolve process (non-Free).
         self._connect(silent=True)
+
+    _fusionscript_probe_result = None
+
+    def _probe_resolve_script_import(self, api_path: str) -> bool:
+        """Tests importing DaVinciResolveScript in an isolated child Python so native DLL aborts cannot crash BadWords."""
+        if ResolveHandler._fusionscript_probe_result is not None:
+            return ResolveHandler._fusionscript_probe_result
+        try:
+            py_exe = self.os_doc.get_python_exe() if (hasattr(self, "os_doc") and self.os_doc and hasattr(self.os_doc, "get_python_exe")) else sys.executable
+            exe_name = os.path.basename(py_exe or "").lower()
+            if not py_exe or not os.path.isfile(py_exe) or not exe_name.startswith("python"):
+                ResolveHandler._fusionscript_probe_result = True
+                return True
+            if exe_name.startswith("pythonw") and os.path.isfile(os.path.join(os.path.dirname(py_exe), "python.exe")):
+                py_exe = os.path.join(os.path.dirname(py_exe), "python.exe")
+            import subprocess
+            kwargs = {"capture_output": True, "timeout": 5}
+            if sys.platform == "win32":
+                kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            res = subprocess.run(
+                [py_exe, "-c", "import sys; sys.path.insert(0, sys.argv[1]); import DaVinciResolveScript", api_path],
+                **kwargs,
+            )
+            ok = (res.returncode == 0)
+            if not ok:
+                log_warn(f"Isolated DaVinciResolveScript probe failed (rc={res.returncode}); skipping native fusionscript load.")
+            ResolveHandler._fusionscript_probe_result = ok
+            return ok
+        except Exception as e:
+            log_warn(f"Isolated DaVinciResolveScript probe error ({e}); allowing direct import.")
+            ResolveHandler._fusionscript_probe_result = True
+            return True
 
     def _load_resolve_script_module(self, silent: bool = False):
         """Dynamically imports DaVinciResolveScript using path from OSDoctor."""
@@ -80,6 +109,8 @@ class ResolveHandler:
                 return
         api_path = self.os_doc.get_resolve_api_path() if self.os_doc else None
         if not api_path: return
+        if not self._probe_resolve_script_import(api_path):
+            return
 
         try:
             if api_path not in sys.path:

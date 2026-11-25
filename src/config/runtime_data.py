@@ -428,14 +428,22 @@ def _is_pid_alive(pid: int) -> bool:
     if sys.platform == "win32" or os.name == "nt":
         try:
             import ctypes
+            from ctypes import wintypes
             PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
             STILL_ACTIVE = 259
             k32 = ctypes.windll.kernel32
-            h = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            k32.OpenProcess.restype = wintypes.HANDLE
+            k32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+            k32.GetExitCodeProcess.restype = wintypes.BOOL
+            k32.CloseHandle.argtypes = [wintypes.HANDLE]
+            k32.CloseHandle.restype = wintypes.BOOL
+
+            h = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
             if not h:
                 return False
             try:
-                exit_code = ctypes.c_ulong(0)
+                exit_code = wintypes.DWORD(0)
                 if k32.GetExitCodeProcess(h, ctypes.byref(exit_code)):
                     return exit_code.value == STILL_ACTIVE
                 return True

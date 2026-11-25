@@ -220,22 +220,55 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
     def _get_main_window(self):
         return getattr(self, '_main_window', None) or self.parent()
 
+    def _sync_native_always_on_top(self):
+        """Ensures Win32 WS_EX_TOPMOST matches _always_on_top_active on open/show."""
+        enable = bool(getattr(self, '_always_on_top_active', False))
+        if not self.testAttribute(Qt.WA_WState_Created):
+            return
+        os_doc = getattr(getattr(self, 'engine', None), 'os_doc', None)
+        if not os_doc:
+            return
+        try:
+            win_id = int(self.winId())
+            if not win_id:
+                return
+            if getattr(os_doc, 'is_win', False) and hasattr(os_doc, 'is_window_topmost'):
+                if os_doc.is_window_topmost(win_id) != enable:
+                    os_doc.set_always_on_top(win_id, enable)
+            elif enable:
+                os_doc.set_always_on_top(win_id, True)
+        except Exception:
+            pass
+
     def set_always_on_top_state(self, enable: bool):
         enable = bool(enable)
         self._always_on_top_active = enable
         native_ok = False
+        os_doc = getattr(getattr(self, 'engine', None), 'os_doc', None)
+        if not self.isVisible() and bool(self.windowFlags() & Qt.WindowStaysOnTopHint) != enable:
+            self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
         try:
-            if self.testAttribute(Qt.WA_WState_Created) and self.isVisible():
+            if self.testAttribute(Qt.WA_WState_Created) and os_doc:
                 win_id = int(self.winId())
-                if win_id and hasattr(self, 'engine') and hasattr(self.engine, 'os_doc'):
-                    native_ok = self.engine.os_doc.set_always_on_top(win_id, enable)
+                if win_id:
+                    native_ok = bool(os_doc.set_always_on_top(win_id, enable))
         except Exception:
             native_ok = False
-        if not native_ok or not self.isVisible():
+        if (not native_ok or not self.isVisible()):
             if bool(self.windowFlags() & Qt.WindowStaysOnTopHint) != enable:
+                was_visible = self.isVisible()
+                reopen_max = was_visible and self._is_effectively_maximized()
                 self.setWindowFlag(Qt.WindowStaysOnTopHint, enable)
-                if self.isVisible():
-                    self.show()
+                if was_visible:
+                    if reopen_max:
+                        self.showMaximized()
+                    else:
+                        self.show()
+                if self.testAttribute(Qt.WA_WState_Created) and os_doc:
+                    try:
+                        os_doc.set_always_on_top(int(self.winId()), enable)
+                    except Exception:
+                        pass
 
     def __init__(self, engine, parent=None):
         # Independent top-level window (same Python process) for Alt+Tab & maximize/minimize support
@@ -243,14 +276,21 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         super().__init__(None)
         self._main_window = parent
         self.engine = engine
+        self._reopen_maximized = False
         self.setWindowTitle(self.txt("tool_settings"))
         self.frameless_init(is_popup=False, use_linux_csd_shadow=False)
         self.setWindowIcon(_app_icon())
         self.setMinimumSize(config.S(640), config.S(460))
 
-        # Inherit always on top from main window if active
-        if parent and (getattr(parent, '_always_on_top_active', False) or bool(parent.windowFlags() & Qt.WindowStaysOnTopHint)):
-            self.set_always_on_top_state(True)
+        # Inherit always on top from main window using authoritative _always_on_top_active
+        is_top = bool(
+            parent and getattr(
+                parent,
+                '_always_on_top_active',
+                bool(parent.windowFlags() & Qt.WindowStaysOnTopHint),
+            )
+        )
+        self.set_always_on_top_state(is_top)
 
         self._search_entries = []
         self._temp_clipboard_images = []
@@ -1094,14 +1134,82 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         finally:
             self.setUpdatesEnabled(True)
 
+    def setVisible(self, visible: bool):
+        if visible and getattr(self, '_reopen_maximized', False):
+            self._reopen_maximized = False
+            self.setWindowState((self.windowState() & ~Qt.WindowMinimized) | Qt.WindowMaximized)
+        super().setVisible(visible)
+
+    def present(self):
+        """Shows SettingsDialog cleanly, preserving true maximized state when previously closed maximized."""
+        if getattr(self, '_reopen_maximized', False) or self.isMaximized():
+            self._reopen_maximized = False
+            self.showMaximized()
+        else:
+            self.show()
+            if self.isMinimized():
+                self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _reset_hidden_maximized_state(self):
+        """Clears cached Qt/Win32 maximized state while hidden so next maximized open recomputes clean client bounds."""
+        if self.isVisible():
+            return
+        try:
+            if self.windowState() & Qt.WindowMaximized:
+                self.setWindowState(self.windowState() & ~Qt.WindowMaximized)
+        except Exception:
+            pass
+        if getattr(self, '_is_win', False) and self.testAttribute(Qt.WA_WState_Created):
+            try:
+                from gui.components.mixins import _get_win32_apis
+                user32, _, _ = _get_win32_apis()
+                hwnd = int(self.winId())
+                if hwnd:
+                    GWL_STYLE = -16
+                    style = user32.GetWindowLongW(hwnd, GWL_STYLE)
+                    if style & 0x01000000:  # WS_MAXIMIZE
+                        user32.SetWindowLongW(hwnd, GWL_STYLE, style & ~0x01000000)
+                    target_size = getattr(self, '_default_normal_size', None) or QSize(config.SETTINGS_WINDOW_W, config.SETTINGS_WINDOW_H)
+                    w = max(config.S(640), int(target_size.width()))
+                    h = max(config.S(460), int(target_size.height()))
+                    scr = self.screen() or QApplication.primaryScreen()
+                    if scr:
+                        avail = scr.availableGeometry()
+                        x = avail.x() + max(0, (avail.width() - w) // 2)
+                        y = avail.y() + max(0, (avail.height() - h) // 2)
+                    else:
+                        x, y = 100, 100
+                    user32.SetWindowPos(hwnd, None, x, y, w, h, 0x0004 | 0x0010 | 0x0020)
+            except Exception:
+                pass
+
+    def _post_show_layout_sync(self):
+        if not self.isVisible():
+            return
+        self._update_responsive_layout()
+        self._update_border_overlay()
+        self._update_grips()
+        self._refresh_max_state()
+        if getattr(self, '_is_win', False) and self.testAttribute(Qt.WA_WState_Created):
+            try:
+                hwnd = int(self.winId())
+                if hwnd:
+                    self._enforce_win_dwm_attributes(hwnd, include_extend=True)
+            except Exception:
+                pass
+
     def showEvent(self, event):
         super().showEvent(event)
+        self._sync_native_always_on_top()
         track_window_screen(self)
         self._ensure_screen_scale_tracking()
         if hasattr(self, '_ensure_page_built') and hasattr(self, 'category_list'):
             for i in range(self.category_list.count()):
                 self._ensure_page_built(i)
         self._update_responsive_layout()
+        self._refresh_max_state()
         tb = getattr(self, '_title_bar', getattr(self, '_tb', None))
         if tb:
             for btn_name in ('btn_close', 'btn_max', 'btn_min'):
@@ -1110,6 +1218,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                     btn.reset_state()
 
         self._initial_state = self._get_current_state_dict()
+        QTimer.singleShot(0, self._post_show_layout_sync)
         self.raise_()
         self.activateWindow()
 
@@ -4864,7 +4973,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             self._finish_close(0)
 
     def _finish_close(self, result: int = 0):
+        was_max = bool(self._is_effectively_maximized())
+        self._reopen_maximized = was_max
+        if hasattr(self, '_dwm_cloak'):
+            self._dwm_cloak(True)
         self.hide()
+        if was_max:
+            self._reset_hidden_maximized_state()
         self.finished.emit(result)
 
     def accept(self):

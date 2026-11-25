@@ -1,10 +1,10 @@
 {
   "changes": [
-    "Instant startup splash, isolated Python runtime guard, consent-based self-heal, and optional automatic crash reporting.",
-    "Zero-sudo portable Python 3.12 installation on Linux/macOS and static-CRT Windows 11 installer/launcher (fixing clean-PC VCRUNTIME140.dll errors, 96% stall, and PowerShell popups).",
-    "Windows 11 and cross-OS frameless window overhaul: sharp 90-degree corners, half-screen Aero Snap restore, zero startup flashes, opaque solid borders, proportional cursor rip, and smooth VSync animation.",
-    "Redesigned 9-tab Settings window with live debounced search, streamlined Custom Markers, hardened Export/Import/Reset, and improved Support/Feedback form with screenshots and scrubbed logs.",
-    "Unified 75%-200% cross-platform UI scaling (auto OS DPI without double-scaling), 11-language translation parity (631 keys/lang), vector SVG icons (zero emojis), OS Light-theme immunity, and cleanly rounded progress bars.",
-    "Fixed playback continuing past trimmed DaVinci Resolve clip boundaries, silent Resolve video proxies, standalone DaVinci decoupling, legacy NVIDIA GPU handling, and non-fresh in-place updates (Option 1 and auto-updater)."
+    "Hardened Windows 11 startup diagnostics & stability on PCs without a dedicated GPU (native SEH crash logging, automatic software RHI/OpenGL safe-boot fallback retry, 64-bit Win32 handle signatures, lazy DaVinci Resolve native library loading, and defensive QtMultimedia fallback).",
+    "Fixed Whisper model download failures (WinError 1314) on non-admin Windows 11 PCs by bypassing Hugging Face symlinks automatically, prevented incomplete snapshot folders from passing cache verification, and removed macOS-only firewall references from all 11 languages.",
+    "Added opt-in automatic crash reporting for unexpected technical errors during transcription and silence analysis, while keeping offline/firewall, missing-file, disk-full, and manual-cancel errors silent in telemetry.",
+    "Fixed Settings reopening cleanly maximized when previously closed maximized (eliminating right/bottom Windows 11 border and Linux Wayland/X11 spacing artifacts while keeping the exit-maximize icon accurate), and fixed Always-On-Top Z-order state sticking on Windows 11.",
+    "Eliminated Windows 11 white flash sheets on window open/reopen/close and the 1px white outline inside taskbar hover thumbnails via dark DWM border styling and paint-synchronized window cloaking.",
+    "Made installer upgrades and repairs transactional (downloading and extracting packages before cleaning old code) and explicitly ensured certifi is installed and verified."
   ]
 }

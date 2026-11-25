@@ -132,10 +132,16 @@ class VideoPreviewWidget(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.video_widget = QVideoWidget(self)
-        self.video_widget.setStyleSheet(f"background-color: #000000; border-radius: {config.S(6)}px;")
-        self.video_widget.setAspectRatioMode(Qt.KeepAspectRatio)
-        layout.addWidget(self.video_widget)
+        self.video_widget = None
+        try:
+            self.video_widget = QVideoWidget(self)
+            self.video_widget.setStyleSheet(f"background-color: #000000; border-radius: {config.S(6)}px;")
+            self.video_widget.setAspectRatioMode(Qt.KeepAspectRatio)
+            layout.addWidget(self.video_widget)
+        except Exception as e:
+            from osdoc import log_warn
+            log_warn(f"VideoPreviewWidget could not initialize QVideoWidget ({e}); continuing without video surface.")
+            self.video_widget = None
 
         self.loading_widget = VideoLoadingWidget(self)
         self.loading_widget.hide()
@@ -145,7 +151,7 @@ class VideoPreviewWidget(QFrame):
         self.lbl_placeholder.setAlignment(Qt.AlignCenter)
         self.lbl_placeholder.setStyleSheet(f"color: #4a4a4a; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(8.5)}px; font-style: italic;")
         self.lbl_placeholder.setText(self.txt("lbl_video_preview", "Video Preview"))
-        self.lbl_placeholder.hide()
+        self.lbl_placeholder.setVisible(self.video_widget is None)
         layout.addWidget(self.lbl_placeholder)
 
     def sizeHint(self) -> QSize:
@@ -154,12 +160,13 @@ class VideoPreviewWidget(QFrame):
         return QSize(w, h)
 
     def show_placeholder(self, show: bool = True, text: str = None) -> None:
-        if show:
+        if show or self.video_widget is None:
             self.loading_widget.stop()
             self.lbl_placeholder.setStyleSheet(f"color: #4a4a4a; font-family: '{config.UI_FONT_NAME}'; font-size: {config.FS_PX(8.5)}px; font-style: italic;")
             self.lbl_placeholder.setText(text if text else self.txt("lbl_video_preview", "Video Preview"))
             self.lbl_placeholder.show()
-            self.video_widget.hide()
+            if self.video_widget is not None:
+                self.video_widget.hide()
         else:
             self.lbl_placeholder.hide()
             if not self.loading_widget.isVisible():
@@ -168,9 +175,10 @@ class VideoPreviewWidget(QFrame):
     def show_loading(self, show: bool = True, text: str = None) -> None:
         if show:
             self.lbl_placeholder.hide()
-            self.video_widget.hide()
+            if self.video_widget is not None:
+                self.video_widget.hide()
             self.loading_widget.start(text if text else self.txt("lbl_generating_preview", "Generating preview..."))
         else:
             self.loading_widget.stop()
-            if not self.lbl_placeholder.isVisible():
+            if not self.lbl_placeholder.isVisible() and self.video_widget is not None:
                 self.video_widget.show()

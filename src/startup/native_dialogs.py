@@ -140,10 +140,14 @@ def _apply_dark_titlebar_if_win(dialog):
     if sys.platform == "win32" or os.name == "nt":
         try:
             import ctypes
-            hwnd = int(dialog.winId())
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                hwnd, 20, ctypes.byref(ctypes.c_int(1)), 4
-            )
+            from ctypes import wintypes
+            dwmapi = ctypes.windll.dwmapi
+            dwmapi.DwmSetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+            dwmapi.DwmSetWindowAttribute.restype = ctypes.c_long
+            hwnd = wintypes.HWND(int(dialog.winId()))
+            val = ctypes.c_int(1)
+            if dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(val), 4) != 0:
+                dwmapi.DwmSetWindowAttribute(hwnd, 19, ctypes.byref(val), 4)
         except Exception:
             pass
 

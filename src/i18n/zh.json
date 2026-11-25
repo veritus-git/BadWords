@@ -143,7 +143,7 @@
     "status_direct_source": "正在直接从源素材提取音频…",
     "status_check_model": "正在检查模型…",
     "status_downloading_model": "正在下载模型…",
-    "msg_model_download_failed": "本地尚未下载 Whisper 模型 '{model}'，且无法从 Hugging Face 下载。\n\n请检查网络连接以及防火墙（如 Little Snitch）是否阻止了 DaVinci Resolve 或 BadWords，然后重试。您也可以手动将模型文件放入以下目录：\n{path}",
+    "msg_model_download_failed": "本地尚未下载 Whisper 模型 '{model}'，且无法从 Hugging Face 准备该模型。\n\n请检查网络连接以及防火墙或杀毒软件是否阻止了 BadWords 或 DaVinci Resolve，并确认磁盘可用空间和文件夹写入权限后重试。您也可以手动将模型文件放入以下目录：\n{path}",
     "first_run_hint_1": "首次启动会慢一些--AI 正在本地缓存模型权重。",
     "first_run_hint_2": "正在预热本地 AI 引擎，之后会快很多！",
     "first_run_hint_3": "AI 正在收拾自己的行囊，请稍等片刻。",
