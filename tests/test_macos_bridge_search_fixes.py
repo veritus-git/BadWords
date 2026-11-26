@@ -353,6 +353,34 @@ class TestMacosBridgeSearchFixes(unittest.TestCase):
             osdoc_src = f.read()
         self.assertIn("if top else (1 << 7)", osdoc_src)
 
+    def test_cemented_v412_invariants_and_version_parity(self):
+        with open(os.path.join(_REPO_ROOT, "src", "gui", "dialogs", "settings_dialog.py"), "r", encoding="utf-8") as f:
+            sd_src = f.read()
+        with open(os.path.join(_REPO_ROOT, "src", "gui", "main_window.py"), "r", encoding="utf-8") as f:
+            mw_src = f.read()
+        with open(os.path.join(_REPO_ROOT, "src", "gui", "components", "titlebar.py"), "r", encoding="utf-8") as f:
+            tb_src = f.read()
+
+        # Cemented macOS scale-rebuild & popup drag invariants
+        self.assertNotIn("old_central.setParent(None)", sd_src)
+        self.assertNotIn("old_central.setParent(None)", mw_src)
+        self.assertIn("self.btn_close.clicked.connect(self.close)", sd_src)
+        self.assertIn("_macos_close_native_window", sd_src)
+        self.assertNotIn("isinstance(win, QMainWindow)", tb_src)
+        self.assertIn("getattr(win, '_is_popup', False)", tb_src)
+
+        # Version parity across app_constants.py and installer/Cargo.toml
+        with open(os.path.join(_REPO_ROOT, "src", "config", "app_constants.py"), "r", encoding="utf-8") as f:
+            ac_src = f.read()
+        with open(os.path.join(_REPO_ROOT, "installer", "Cargo.toml"), "r", encoding="utf-8") as f:
+            cargo_src = f.read()
+        import re
+        m_py = re.search(r'^_DEFAULT_VERSION\s*=\s*"([^"]+)"', ac_src, re.MULTILINE)
+        m_rs = re.search(r'^version\s*=\s*"([^"]+)"', cargo_src, re.MULTILINE)
+        self.assertIsNotNone(m_py)
+        self.assertIsNotNone(m_rs)
+        self.assertEqual(m_py.group(1), m_rs.group(1))
+
 
 if __name__ == "__main__":
     unittest.main()

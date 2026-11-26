@@ -1347,6 +1347,7 @@ class ResolveHandler:
         fps = float(self.fps or 24.0)
 
         if self.backend == 'bridge':
+            # INVARIANT: Bridge fingerprint must strip clip names and match Native schema (start, duration, left_offset) 1:1.
             try:
                 res = self.bridge_client.call("GetTimelineStructure", {
                     "timeline_name": timeline_name or ""
@@ -1843,6 +1844,7 @@ class ResolveHandler:
         import hashlib
 
         if self.backend == 'bridge':
+            # INVARIANT: Bridge fingerprint must strip clip names and match Native schema (start, duration, left_offset) 1:1.
             try:
                 res = self.bridge_client.call("GetTimelineStructure", {
                     "timeline_name": timeline_name

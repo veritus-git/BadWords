@@ -32,6 +32,7 @@ description: Architecture zones, cementing rules, UI quality, crash-report workf
 7. Runtime data & isolation
 8. Unified UI scaling
 9. i18n, vector UI & theme
+10. macOS UX, Bridge & search
 
 ## 4. Coding & Verification Rules
 1. **No Monoliths**: Keep subpackages focused; do not bloat `main_window.py`.
@@ -39,8 +40,8 @@ description: Architecture zones, cementing rules, UI quality, crash-report workf
 3. **GitHub CLI**: `gh` is authenticated for issues, PRs, releases.
 4. **UI & Animation**: App QSS/themes; **ZERO system emojis** (SVG/Qt icons only); dim disabled controls (`200-250ms`, `1.0 <-> 0.35`, `Qt.WA_TransparentForMouseEvents`).
 5. **State & Releases**: Read `docs/DEV_STATE.md` at start; update after changes; update `src/config/release_notes.json` on releases.
-6. **Empirical, Resolve & Git**: Test live end-to-end. Check **Resolve 21.1+** limits (`davinci-resolve-current` skill). Never commit `.dev_workspace/`, `settings.json`, `user.json`, `*.log`, `saves/`, `temp/`, `models/`, `venv/`, `__pycache__/`, `raport/`, `devlogs/`.
+6. **Empirical, Resolve & Git**: Test live. Check Resolve 21.1+ limits (`davinci-resolve-current`). Never commit `.dev_workspace/`, `settings.json`, `user.json`, `*.log`, `saves/`, `temp/`, `models/`, `venv/`, `__pycache__/`, `raport/`, `devlogs/`.
 7. **Checks**: Run `python3 run_tests.py`, `python3 -m compileall src`, `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`, and `cd installer && cargo check && cargo test`.
-8. **Proactive UX**: Render PNGs (`tests/artifacts/`), inspect every PNG, polish UI/modals/errors first.
-9. **VM Verification**: Auto-verify Win11/clean-Linux changes in KVM VMs (`badwords-win11`, `badwords-linux-kde`), then give PO a short Polish checklist.
+8. **Proactive UX**: Render PNGs (`tests/artifacts/`), inspect every PNG, polish UI first.
+9. **VM Verification**: Verify Win11/clean-Linux changes in KVM VMs (`badwords-win11`, `badwords-linux-kde`), then give PO a short Polish checklist.
 10. **Sync & Push**: Sync `src/`, `installer/`, `setupfiles/` to `/mnt/dump/BadWords FILES/`, conventional commit, `git push all <branch>`.

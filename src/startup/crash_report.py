@@ -371,6 +371,7 @@ class _CrashRateLimiter:
         Identical fingerprints are deduplicated per BadWords app_version so that
         an updated release gets a fresh chance to report recurring issues.
         """
+        # INVARIANT: Ledger keys are scoped by app_version ("<ver>:<fp>") so updates get a fresh reporting slot.
         ver_str = str(app_version or "").strip()
         ledger_key = "{0}:{1}".format(ver_str, fingerprint) if ver_str else fingerprint
         now = time.time()

@@ -694,8 +694,8 @@ class CustomTitleBar(QWidget):
 
         win = self.window()
 
-        # On macOS, dragging fixed/frameless popups via startSystemMove() can distort Cocoa bounds;
-        # move manually clamped inside the active screen's availableGeometry instead.
+        # INVARIANT: On macOS, popups/dialogs (_is_popup=True) must drag via manual clamped
+        # win.move() - never startSystemMove() (which distorts Cocoa fixed bounds and triggers Sequoia tiling).
         if getattr(self, '_manual_drag_offset', None) is not None and getattr(win, '_is_mac', False) and getattr(win, '_is_popup', False):
             self._manual_drag_active = True
             nx = cur_global.x() - self._manual_drag_offset.x()

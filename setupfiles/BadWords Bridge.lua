@@ -395,6 +395,7 @@ end
 local handlers = rawget(_G, "BadWordsBridgeHandlers") or {}
 _G.BadWordsBridgeHandlers = handlers
 
+-- INVARIANT: Read-only handlers must use find_timeline_by_name() without calling SetCurrentTimeline().
 local function find_timeline_by_name(proj, timeline_name)
     if not proj then return nil end
     local cur = proj:GetCurrentTimeline()

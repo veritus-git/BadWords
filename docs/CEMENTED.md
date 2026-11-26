@@ -241,3 +241,34 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
   - `# INVARIANT:` Never attach un-scoped container CSS (like bare `QWidget { background: transparent; border: none; }`) to wrappers holding themed buttons or controls; always use `#ObjectName` selectors.
 - **Regression Tests:** `tests/test_point4_i18n_theme_dialogs.py`, `tests/test_visual_progress_bar.py`, `tests/test_ui_scaling.py`, `tests/test_settings_and_version.py`, `tests/test_window_titlebar_vsync.py`, plus verified PNG screenshots in `tests/artifacts/point4_*.png` and `liquid_progress_bar_*.png`.
 - **Do Not Change Without Product Owner Approval:** Vector SVG icon contract, global `Fusion` dark palette enforcement, `BootSplash` early localization via `detect_language()`, `fit_dialog_to_screen()` screen clamping, `settings.json` vs `user.json` privacy isolation on import/export/reset, and `auto_check_updates` -> `auto_update_on_start` toggle coupling (with in-place updater replacement deferred to Point 21).
+
+---
+
+## 11. macOS UX Parity, Resolve Bridge Stability, Search Debouncing, Chunked Marks & Versioned Crash Reporting (`v4.1.2`)
+- **Status:** CEMENTED (2026-11-26)
+- **Files:** `src/gui/main_window.py`, `src/gui/dialogs/settings_dialog.py`, `src/gui/dialogs/settings_widgets.py`, `src/gui/dialogs/telemetry_popup.py`, `src/gui/dialogs/crash_report_dialog.py`, `src/gui/dialogs/export_dialog.py`, `src/gui/dialogs/update_dialog.py`, `src/gui/components/titlebar.py`, `src/gui/components/mixins.py`, `src/gui/components/search_overlay.py`, `src/gui/components/transcription_canvas.py`, `src/gui/views/welcome_view.py`, `src/gui/widgets/buttons.py`, `src/gui/__init__.py`, `src/config/settings_defaults.py`, `src/api/resolve_bridge.py`, `src/api/resolve_handler.py`, `setupfiles/BadWords Bridge.lua`, `setupfiles/updater.py`, `src/startup/crash_report.py`, `src/osdoc.py`, `src/main.py`
+- **What It Solves:**
+  1. **macOS Windowing, Popups & Fullscreen Polish:**
+     - Main window opens desktop-maximized (`mac_window_maximized=True` -> `showMaximized()`, no forced Fullscreen Space) on first launch and persists Fullscreen Space, Maximized, or custom normal geometry across restarts.
+     - Popups and consent dialogs use `Qt.ApplicationModal` (never Cocoa `Qt.WindowModal` Sheets), render Retina vector icons using `deviceIndependentSize()`, wrap card text without right-edge gaps, and drag via clamped manual `win.move()` instead of `startSystemMove()`.
+     - Closing Settings on macOS (bottom `Close`, native red `X`, or `Escape`) closes the underlying Cocoa `NSWindow` natively (`[nsWindow close]` + `deleteLater()`), eliminating empty gray ghosts and stranded black Fullscreen Spaces.
+     - Live UI scale changes inside Fullscreen Settings defer off-Space `MainWindow` rebuilds until Settings closes, never call `setParent(None)` on widgets containing `QVideoWidget`, and avoid `setMinimumSize()` mutations while fullscreen so macOS never switches to Desktop.
+     - `osdoc.set_always_on_top(False)` restores `NSWindowCollectionBehaviorFullScreenPrimary` (`1 << 7`) on macOS.
+  2. **Resolve Bridge & `.bws` Parity:**
+     - Lua read-only handlers use `find_timeline_by_name()` without calling `SetCurrentTimeline()`, and the server loop sends `bridge_ack(req.id)` immediately before executing handlers.
+     - Bridge `compute_timeline_fingerprint()` strips clip names and normalizes to the exact Native schema (`start`, `duration`, `left_offset`) for identical SHA-256 parity; `.bws` exports always bundle XML fallback when Resolve is connected and prefer XML on import under Bridge/Free 21.1+.
+     - `has_complex_timeline_video()` guards `GetLeftTransition`/`GetRightTransition` with `callable()`, Bridge timeouts are widened (`0.75s` alive, `6.0s` info/tracks, `15.0s` structure), `welcome_view` mailbox watcher is debounced (`1500ms`, ignoring `request.lua`), and `main.py` defers `app.quit()` via `QTimer.singleShot(0, app.quit)`.
+  3. **Chunked Streaming Manual Marks & Search Debouncing:**
+     - `merge_manual_marks_into_words()` preserves user-edited tokens (`manual_status`, `overlay_suppressed`, `selected`, `status`) across tail rewinds and `_populate_editor()` finalization (`chapters[0]`, `text_canvas`, `waveform_timeline`).
+     - Search debouncing & caching are active across `SearchOverlayWidget` (`300ms` + regex/word cache + instant clear/Enter flush), `SettingsDialog` (`180ms` + folded-entry/chevron cache + `setUpdatesEnabled`), and `SearchableDropdown` (`160ms` + Enter/Up/Down flush).
+  4. **Updater & Versioned Crash Reporting:**
+     - Exported `UpdateNotifyDialog` in `gui.__init__._LAZY`, imported `QFont` in `main_window.py`, fixed `setupfiles/updater.py` `detect_installed_version()` ignoring `_detect_version()`, scoped `_CrashRateLimiter` ledger keys by `app_version`, and wired opt-in auto-reports for technical updater and active Bridge protocol failures.
+- **Invariants (DO NOT BREAK):**
+  - `# INVARIANT:` On macOS, `SettingsDialog` must close via native Cocoa `[nsWindow close]` + `deleteLater()` and never run `_reset_hidden_maximized_state()` or `_restore_after_unmaximize()` while hidden.
+  - `# INVARIANT:` Never call `setParent(None)` on widgets being destroyed during `rebuild_ui_for_scale()`, and defer off-Space `MainWindow` rebuilds when `SettingsDialog` is fullscreen on macOS.
+  - `# INVARIANT:` On macOS, `_is_popup` windows must drag via clamped manual `win.move()`, never `startSystemMove()`, and consent/export/preview dialogs must use `Qt.ApplicationModal`.
+  - `# INVARIANT:` Lua read-only Bridge handlers must use `find_timeline_by_name()` without `SetCurrentTimeline()`, send `bridge_ack(req.id)` before running handlers, and Python must normalize Bridge fingerprints to Native schema.
+  - `# INVARIANT:` `_populate_editor()` must merge live-streamed manual markings before cloning `chapters[0]` or finalizing streaming.
+  - `# INVARIANT:` `_CrashRateLimiter` ledger keys must stay version-scoped (`"<version>:<fp>"`), and `updater.py` `detect_installed_version()` must validate semantic version strings.
+- **Regression Tests:** `tests/test_macos_bridge_search_fixes.py`, `tests/test_settings_and_version.py`, `tests/test_window_titlebar_vsync.py`, `tests/test_ui_scaling.py`, `tests/test_startup_guard.py`.
+- **Do Not Change Without Product Owner Approval:** macOS native Settings close lifecycle, macOS desktop-maximize default + state persistence keys, macOS `_is_popup` manual titlebar drag, Bridge read-only timeline lookup & fingerprint schema parity, chunked mark merge hook, and version-scoped crash dedup.

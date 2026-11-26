@@ -5073,9 +5073,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             pass
 
     def _finish_close(self, result: int = 0):
-        # On macOS, calling hide() + setWindowState() or mid-animation showNormal() on a reused
-        # QMainWindow leaves an empty gray NSWindow or strands Cocoa on a black Fullscreen Space.
-        # Close the native NSWindow cleanly and recreate a fresh SettingsDialog on next open.
+        # INVARIANT: On macOS, SettingsDialog must close via native Cocoa [nsWindow close]
+        # + deleteLater() (never hide() + setWindowState(), which leaves an empty gray ghost
+        # or strands Cocoa on a black Fullscreen Space).
         if getattr(self, '_is_mac', False):
             if getattr(self, '_mac_closed', False):
                 return
