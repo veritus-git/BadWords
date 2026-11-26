@@ -784,6 +784,8 @@ class FramelessWindowMixin:
         """Enforces exact post-maximize geometry on Unix (btn_max -> pre-max rect; otherwise -> 70% x 70%)."""
         if not getattr(self, '_is_root', False):
             return
+        if getattr(self, '_is_mac', False) and not self.isVisible():
+            return
         if self._is_effectively_maximized():
             return
 
@@ -965,7 +967,7 @@ class FramelessWindowMixin:
                 if getattr(self, '_is_win', False):
                     if via_btn and not getattr(self, '_always_restore_default_size', False):
                         QTimer.singleShot(0, self._verify_win_button_restore)
-                elif not getattr(self, '_restoring_from_max', False):
+                elif not (getattr(self, '_is_mac', False) and not self.isVisible()) and not getattr(self, '_restoring_from_max', False):
                     # Unix enforces exact geometry after WM async settle
                     QTimer.singleShot(0, lambda vb=via_btn: self._restore_after_unmaximize(via_button=vb))
         elif event.type() == QEvent.Type.WinIdChange:

@@ -266,15 +266,71 @@ class TestMacosBridgeSearchFixes(unittest.TestCase):
         cr_dlg.close()
         tel_dlg.close()
 
-        # Verify macOS Settings fullscreen close exits fullscreen before hiding
+        # Verify macOS popup CustomTitleBar drag moves manually without NameError or size stretch
+        from PySide6.QtCore import QPointF, QEvent
+        from PySide6.QtGui import QMouseEvent
+        drag_dlg = CrashReportConsentDialog(eng)
+        drag_dlg._is_mac = True
+        drag_dlg.show()
+        _APP.processEvents()
+        orig_sz = drag_dlg.size()
+        tb = drag_dlg._tb
+        press_ev = QMouseEvent(
+            QEvent.Type.MouseButtonPress,
+            QPointF(80, 12),
+            QPointF(300, 200),
+            Qt.LeftButton,
+            Qt.LeftButton,
+            Qt.NoModifier,
+        )
+        tb.mousePressEvent(press_ev)
+        self.assertIsNotNone(getattr(tb, "_manual_drag_offset", None))
+        move_ev = QMouseEvent(
+            QEvent.Type.MouseMove,
+            QPointF(110, 32),
+            QPointF(330, 220),
+            Qt.NoButton,
+            Qt.LeftButton,
+            Qt.NoModifier,
+        )
+        tb.mouseMoveEvent(move_ev)
+        self.assertTrue(getattr(tb, "_manual_drag_active", False))
+        self.assertEqual(drag_dlg.size(), orig_sz)
+        rel_ev = QMouseEvent(
+            QEvent.Type.MouseButtonRelease,
+            QPointF(110, 32),
+            QPointF(330, 220),
+            Qt.LeftButton,
+            Qt.NoButton,
+            Qt.NoModifier,
+        )
+        tb.mouseReleaseEvent(rel_ev)
+        drag_dlg.close()
+
+        # Verify macOS Settings Close button & closeEvent close native NSWindow cleanly and detach
+        fake_mw = MagicMock()
         dlg = SettingsDialog(eng)
+        dlg._main_window = fake_mw
+        fake_mw._settings_dialog = dlg
         dlg._is_mac = True
-        dlg.isFullScreen = MagicMock(return_value=True)
-        dlg.showNormal = MagicMock()
-        dlg._finish_close(0)
-        dlg.showNormal.assert_called_once()
-        dlg._closing_from_fullscreen = False
-        dlg.close()
+        dlg._macos_close_native_window = MagicMock()
+        finished_results = []
+        dlg.finished.connect(finished_results.append)
+        dlg.show()
+        _APP.processEvents()
+        dlg.btn_close.click()
+        _APP.processEvents()
+        dlg._macos_close_native_window.assert_called_once()
+        self.assertIsNone(fake_mw._settings_dialog)
+        try:
+            self.assertFalse(dlg.isVisible())
+        except RuntimeError:
+            pass  # C++ QMainWindow already deleted cleanly via deleteLater()
+        self.assertEqual(finished_results, [0])
+
+        # Verify macOS default startup maximizes on desktop (without forcing Fullscreen Space)
+        self.assertTrue(config.DEFAULT_SETTINGS.get("mac_window_maximized"))
+        self.assertFalse(config.DEFAULT_SETTINGS.get("mac_window_fullscreen"))
 
         # Verify macOS osdoc behavior restores FullScreenPrimary (1 << 7)
         with open(os.path.join(_REPO_ROOT, "src", "osdoc.py"), "r", encoding="utf-8") as f:

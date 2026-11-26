@@ -532,7 +532,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         self.btn_close.setFixedHeight(config.S(30))
         self.btn_close.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         self.btn_close.setCursor(Qt.PointingHandCursor)
-        self.btn_close.clicked.connect(self.reject)
+        self.btn_close.clicked.connect(self.close)
         btn_bar.addWidget(self.btn_close)
 
         self.btn_apply = QPushButton(self.txt("btn_apply"))
@@ -570,6 +570,25 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                     weight=QFont.Weight.Normal,
                 )
             )
+
+        if getattr(self, '_is_mac', False):
+            # Rebuild active Settings window first so macOS Fullscreen Space keeps focus cleanly
+            was_fs = bool(self.isFullScreen())
+            self.rebuild_ui_for_scale()
+            if main_win is not None and hasattr(main_win, 'rebuild_ui_for_scale'):
+                main_win.rebuild_ui_for_scale()
+            def _keep_mac_settings_focus():
+                try:
+                    if not self.isVisible():
+                        return
+                    if was_fs and not self.isFullScreen():
+                        self.showFullScreen()
+                    self.raise_()
+                    self.activateWindow()
+                except RuntimeError:
+                    pass
+            QTimer.singleShot(0, _keep_mac_settings_focus)
+            return
 
         if main_win is not None and hasattr(main_win, 'rebuild_ui_for_scale'):
             main_win.rebuild_ui_for_scale()
@@ -616,13 +635,15 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             }
 
             old_central = self.takeCentralWidget()
-            if old_central is not None:
-                old_central.hide()
-                old_central.deleteLater()
 
             build_prefs = dict(self.engine.load_preferences() or {})
             build_prefs['settings_view_mode'] = 'basic' if saved_basic else 'advanced'
             self._build_dialog_chrome(build_prefs)
+
+            if old_central is not None:
+                old_central.hide()
+                old_central.setParent(None)
+                old_central.deleteLater()
 
             if hasattr(self, 'category_list'):
                 for i in range(self.category_list.count()):
@@ -1183,7 +1204,7 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
     def _reset_hidden_maximized_state(self):
         """Clears cached Qt/Win32 maximized state while hidden so next maximized open recomputes clean client bounds."""
-        if self.isVisible():
+        if self.isVisible() or getattr(self, '_is_mac', False):
             return
         try:
             if self.windowState() & Qt.WindowMaximized:
@@ -5011,31 +5032,65 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         else:
             self._finish_close(0)
 
-    def _finish_close(self, result: int = 0):
-        # On macOS, hiding an active native Fullscreen NSWindow strands Cocoa on a black Space.
-        # Exit fullscreen back to normal space FIRST, then hide and restore MainWindow focus.
-        if getattr(self, '_is_mac', False) and self.isFullScreen():
-            if getattr(self, '_closing_from_fullscreen', False):
+    def _macos_close_native_window(self):
+        """Closes the underlying Cocoa NSWindow natively so Fullscreen/Stage Manager never leaves a ghost or black Space."""
+        if not getattr(self, '_is_mac', False):
+            return
+        if not self.testAttribute(Qt.WA_WState_Created):
+            return
+        try:
+            import ctypes
+            import ctypes.util
+            objc_path = ctypes.util.find_library('objc')
+            if not objc_path:
                 return
-            self._closing_from_fullscreen = True
-            self.showNormal()
-            from PySide6.QtCore import QTimer
-            attempts = [0]
+            objc = ctypes.cdll.LoadLibrary(objc_path)
+            objc.sel_registerName.restype = ctypes.c_void_p
+            objc.sel_registerName.argtypes = [ctypes.c_char_p]
 
-            def _complete_mac_fs_close():
-                attempts[0] += 1
-                if self.isFullScreen() and attempts[0] < 12:
-                    QTimer.singleShot(45, _complete_mac_fs_close)
-                    return
-                self._closing_from_fullscreen = False
-                self.hide()
-                mw = getattr(self, '_main_window', None)
-                if mw is not None:
-                    mw.raise_()
-                    mw.activateWindow()
-                self.finished.emit(result)
+            win_id = int(self.winId())
+            if not win_id:
+                return
+            view = ctypes.c_void_p(win_id)
+            sel_window = objc.sel_registerName(b"window")
+            msg_window = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p))
+            nswindow = msg_window(view, sel_window) or view
+            if not nswindow:
+                return
 
-            QTimer.singleShot(80, _complete_mac_fs_close)
+            sel_set_rel = objc.sel_registerName(b"setReleasedWhenClosed:")
+            msg_set_rel = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool))
+            msg_set_rel(nswindow, sel_set_rel, False)
+
+            sel_close = objc.sel_registerName(b"close")
+            msg_close = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p))
+            msg_close(nswindow, sel_close)
+        except Exception:
+            pass
+
+    def _finish_close(self, result: int = 0):
+        # On macOS, calling hide() + setWindowState() or mid-animation showNormal() on a reused
+        # QMainWindow leaves an empty gray NSWindow or strands Cocoa on a black Fullscreen Space.
+        # Close the native NSWindow cleanly and recreate a fresh SettingsDialog on next open.
+        if getattr(self, '_is_mac', False):
+            if getattr(self, '_mac_closed', False):
+                return
+            self._mac_closed = True
+            mw = getattr(self, '_main_window', None)
+            if mw is not None and getattr(mw, '_settings_dialog', None) is self:
+                mw._settings_dialog = None
+            self.finished.emit(result)
+            self._macos_close_native_window()
+            self.hide()
+            self.deleteLater()
+            if mw is not None:
+                def _refocus_main(target=mw):
+                    try:
+                        target.raise_()
+                        target.activateWindow()
+                    except RuntimeError:
+                        pass
+                QTimer.singleShot(60, _refocus_main)
             return
 
         was_max = bool(self._is_effectively_maximized())
@@ -5055,16 +5110,19 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             if hasattr(self, 'search_edit') and self.search_edit.text().strip():
                 self.search_edit.clear()
                 return
-            self.reject()
+            self.close()
             return
         super().keyPressEvent(event)
 
     def closeEvent(self, event):
-        self.reject()
-        if self.isVisible():
-            event.ignore()
-        else:
+        if getattr(self, '_mac_closed', False):
             event.accept()
+            return
+        self.reject()
+        if getattr(self, '_mac_closed', False) or not self.isVisible():
+            event.accept()
+        else:
+            event.ignore()
 
     def mousePressEvent(self, event):
         focused = QApplication.focusWidget()

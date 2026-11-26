@@ -842,12 +842,14 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                         old_central.removeEventFilter(self.top_island)
                 except Exception:
                     pass
+
+            # 3. Rebuild workspace UI cleanly at new SCALE_FACTOR before hiding old central widget
+            self._init_workspace_ui(prefs, is_rebuild=True)
+
+            if old_central is not None:
                 old_central.hide()
                 old_central.setParent(None)
                 QTimer.singleShot(50, old_central.deleteLater)
-
-            # 3. Rebuild workspace UI cleanly at new SCALE_FACTOR
-            self._init_workspace_ui(prefs, is_rebuild=True)
 
             # 4. Restore dropdown caches, files, scripts, chapters, canvas & media without Resolve queries
             self.current_source_type = source_type
@@ -4982,12 +4984,12 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         """
         Prepare 70% x 70% default normal geometry on the cursor's monitor,
         and maximize cleanly across Windows, Linux, and macOS.
-        On macOS, first launch uses ~88% centered window geometry (no forced fullscreen),
-        and subsequent launches restore saved window geometry or fullscreen state.
+        On macOS, first launch uses native desktop maximize (showMaximized(), no forced Fullscreen Space),
+        and subsequent launches restore Fullscreen Space, Maximized, or saved custom window geometry.
         """
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         is_mac = (sys.platform == "darwin")
-        default_ratio = 0.88 if is_mac else 0.70
+        default_ratio = 0.80 if is_mac else 0.70
 
         self.init_normal_geometry(
             saved_w=None,
@@ -5004,6 +5006,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             from PySide6.QtCore import QRect
             prefs = self.engine.load_preferences() or {}
             self._mac_saved_fullscreen = bool(prefs.get("mac_window_fullscreen", False))
+            self._mac_saved_maximized = bool(prefs.get("mac_window_maximized", True))
             saved_geo = prefs.get("mac_window_geometry")
             if isinstance(saved_geo, (list, tuple)) and len(saved_geo) == 4:
                 try:
@@ -5036,11 +5039,15 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self.showMaximized()
 
     def show_initial_window(self):
-        """Shows the main window cleanly at startup (restoring macOS fullscreen or 88% window, maximizing elsewhere)."""
+        """Shows the main window cleanly at startup (macOS: Fullscreen / desktop Maximized / saved rect; Win/Linux: Maximized)."""
         if sys.platform == "darwin":
-            self.show()
             if getattr(self, "_mac_saved_fullscreen", False):
+                self.show()
                 QTimer.singleShot(50, self.showFullScreen)
+            elif getattr(self, "_mac_saved_maximized", True):
+                self.showMaximized()
+            else:
+                self.show()
         else:
             self.showMaximized()
 
@@ -5716,12 +5723,28 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         msg_box = CustomMsgBox(self, self.txt('msg_quit_title'), self.txt('msg_quit_desc'), self.txt('btn_yes'), self.txt('btn_no'))
         if msg_box.exec() == QDialog.Accepted:
-            # Persist macOS window fullscreen / normal geometry for next launch
+            # Persist macOS window fullscreen / maximized / normal geometry for next launch
             if sys.platform == "darwin" and hasattr(self, 'engine') and self.engine:
                 try:
                     is_fs = bool(self.isFullScreen())
-                    save_payload = {"mac_window_fullscreen": is_fs}
-                    if not is_fs:
+                    is_max = bool(self.isMaximized())
+                    if not is_fs and not is_max:
+                        scr = self.screen() or QGuiApplication.primaryScreen()
+                        if scr is not None:
+                            avail = scr.availableGeometry()
+                            fg = self.frameGeometry()
+                            if (
+                                avail.height() > 0
+                                and fg.height() >= avail.height() - 12
+                                and fg.width() >= avail.width() - 240
+                                and abs(fg.right() - avail.right()) <= 16
+                            ):
+                                is_max = True
+                    save_payload = {
+                        "mac_window_fullscreen": is_fs,
+                        "mac_window_maximized": (not is_fs) and is_max,
+                    }
+                    if not is_fs and not is_max:
                         g = self.geometry()
                         if g.width() >= config.S(640) and g.height() >= config.S(460):
                             save_payload["mac_window_geometry"] = [g.x(), g.y(), g.width(), g.height()]

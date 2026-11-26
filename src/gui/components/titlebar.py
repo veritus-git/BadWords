@@ -181,6 +181,7 @@ class CustomTitleBar(QWidget):
         self._icon_lbl = QLabel()
         self._icon_lbl.setFixedSize(config.S(18), config.S(32))
         self._icon_lbl.setStyleSheet("background: transparent;")
+        self._icon_lbl.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.update_titlebar_icon()
         lay.addWidget(self._icon_lbl)
         lay.addSpacing(config.S(6))
@@ -618,7 +619,7 @@ class CustomTitleBar(QWidget):
             self._click_pos = event.position().toPoint()
             self._press_global_pos = event.globalPosition().toPoint()
             win = self.window()
-            if getattr(win, '_is_mac', False) and not isinstance(win, QMainWindow):
+            if getattr(win, '_is_mac', False) and getattr(win, '_is_popup', False):
                 self._manual_drag_offset = self._press_global_pos - win.frameGeometry().topLeft()
             event.accept()
             return
@@ -695,7 +696,7 @@ class CustomTitleBar(QWidget):
 
         # On macOS, dragging fixed/frameless popups via startSystemMove() can distort Cocoa bounds;
         # move manually clamped inside the active screen's availableGeometry instead.
-        if getattr(self, '_manual_drag_offset', None) is not None and getattr(win, '_is_mac', False) and not isinstance(win, QMainWindow):
+        if getattr(self, '_manual_drag_offset', None) is not None and getattr(win, '_is_mac', False) and getattr(win, '_is_popup', False):
             self._manual_drag_active = True
             nx = cur_global.x() - self._manual_drag_offset.x()
             ny = cur_global.y() - self._manual_drag_offset.y()

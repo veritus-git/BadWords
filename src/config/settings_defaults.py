@@ -155,6 +155,7 @@ DEFAULT_SETTINGS = {
     "v4_migration_notified": True,
     # ── macOS Window State ───────────────────────────────────────────────────
     "mac_window_fullscreen": False,
+    "mac_window_maximized":  True,
     "mac_window_geometry":   None,
 }
 
