@@ -328,6 +328,22 @@ class TestMacosBridgeSearchFixes(unittest.TestCase):
             pass  # C++ QMainWindow already deleted cleanly via deleteLater()
         self.assertEqual(finished_results, [0])
 
+        # Verify macOS Fullscreen Settings defers off-Space MainWindow scale rebuild (no Space kick)
+        fs_mw = MagicMock()
+        fs_mw.rebuild_ui_for_scale = MagicMock()
+        fs_mw._pending_scale_rebuild = False
+        fs_dlg = SettingsDialog(eng)
+        fs_dlg._main_window = fs_mw
+        fs_dlg._is_mac = True
+        fs_dlg.isFullScreen = MagicMock(return_value=True)
+        fs_dlg._apply_live_ui_scale("manual", 110)
+        fs_mw.rebuild_ui_for_scale.assert_not_called()
+        self.assertTrue(fs_mw._pending_scale_rebuild)
+        fs_dlg._macos_close_native_window = MagicMock()
+        fs_dlg.close()
+        _APP.processEvents()
+        config.apply_ui_scaling(mode="auto", pct=None)
+
         # Verify macOS default startup maximizes on desktop (without forcing Fullscreen Space)
         self.assertTrue(config.DEFAULT_SETTINGS.get("mac_window_maximized"))
         self.assertFalse(config.DEFAULT_SETTINGS.get("mac_window_fullscreen"))

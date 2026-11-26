@@ -394,7 +394,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self.lbl_legend_hint = None
         self.div_legend = None
         self._legend_signature = None
-        self.setMinimumSize(config.S(330), config.S(400))
+        if not (getattr(self, '_is_mac', False) and self.isFullScreen()):
+            self.setMinimumSize(config.S(330), config.S(400))
         if hasattr(self, 'shared_tooltip') and self.shared_tooltip:
             self.shared_tooltip.refresh_scale()
 
@@ -619,6 +620,17 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         self._apply_dynamic_shortcuts()
         if hasattr(self, 'text_canvas') and self.text_canvas:
             self.text_canvas.update()
+        if getattr(self, '_pending_scale_rebuild', False):
+            self._pending_scale_rebuild = False
+            def _run_deferred_scale_rebuild():
+                try:
+                    self.rebuild_ui_for_scale()
+                    self.raise_()
+                    self.activateWindow()
+                except RuntimeError:
+                    pass
+            QTimer.singleShot(120, _run_deferred_scale_rebuild)
+            return
         self.activateWindow()
         self.setFocus()
 
@@ -820,7 +832,6 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                         except Exception:
                             pass
                     act_w.hide()
-                    act_w.setParent(None)
                     act_w.deleteLater()
                 except RuntimeError:
                     pass
@@ -847,8 +858,9 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
             self._init_workspace_ui(prefs, is_rebuild=True)
 
             if old_central is not None:
+                # Never call setParent(None) on old_central (contains QVideoWidget NSView) -
+                # detaching it into a top-level window kicks macOS out of Fullscreen Space.
                 old_central.hide()
-                old_central.setParent(None)
                 QTimer.singleShot(50, old_central.deleteLater)
 
             # 4. Restore dropdown caches, files, scripts, chapters, canvas & media without Resolve queries

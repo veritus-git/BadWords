@@ -315,7 +315,8 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
 
     def _build_dialog_chrome(self, prefs: dict):
         """Constructs or rebuilds the Settings dialog stylesheet, chrome, sidebar, and pages."""
-        self.setMinimumSize(config.S(640), config.S(460))
+        if not (getattr(self, '_is_mac', False) and self.isFullScreen()):
+            self.setMinimumSize(config.S(640), config.S(460))
 
         # ── Global stylesheet (Option 1: Darker Margins + Elevated Cards) ─
         self.setStyleSheet(f"""
@@ -572,17 +573,19 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             )
 
         if getattr(self, '_is_mac', False):
-            # Rebuild active Settings window first so macOS Fullscreen Space keeps focus cleanly
             was_fs = bool(self.isFullScreen())
             self.rebuild_ui_for_scale()
             if main_win is not None and hasattr(main_win, 'rebuild_ui_for_scale'):
-                main_win.rebuild_ui_for_scale()
+                if was_fs:
+                    # Defer off-Space MainWindow rebuild (which recreates native QVideoWidget)
+                    # until Settings closes so macOS never switches Spaces away from Settings.
+                    main_win._pending_scale_rebuild = True
+                else:
+                    main_win.rebuild_ui_for_scale()
             def _keep_mac_settings_focus():
                 try:
                     if not self.isVisible():
                         return
-                    if was_fs and not self.isFullScreen():
-                        self.showFullScreen()
                     self.raise_()
                     self.activateWindow()
                 except RuntimeError:
@@ -641,8 +644,9 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             self._build_dialog_chrome(build_prefs)
 
             if old_central is not None:
+                # Keep old_central hidden & parented until deleteLater() - never call setParent(None),
+                # which converts a child widget into a top-level window on macOS Desktop Space.
                 old_central.hide()
-                old_central.setParent(None)
                 old_central.deleteLater()
 
             if hasattr(self, 'category_list'):
