@@ -1,7 +1,7 @@
 # BadWords Development State & Task Tracking
 
 > **Status**: Active  
-> **Last Updated**: 2026-11-25  
+> **Last Updated**: 2026-11-26  
 > **Active Environment**: Development Workspace (`.dev_workspace/`)  
 
 ---
@@ -16,6 +16,9 @@
   - ✅ **Point 4** (*11-lang i18n parity, vector SVG icons/zero emojis, OS Light-theme QPalette immunity, UI scaling 75%-200%, progress bar rounding & Settings Export/Import/Reset/Update coupling*) - Closed `2026-11-25` (see `docs/CEMENTED.md` Sec. 9 & Sec. 10 and `ROADMAP_CEMENTING.md`).
 - **Next Pending Roadmap Item**:
   - ⬜ **Point 5** (*FFmpeg discovery, audio extraction, loudness normalization, silence detection & speech islands*).
+- **Recent Process / Rules Changes (`2026-11-26`)**:
+  - Updated `.agents/rules/architecture.md` and `.agents/rules/lessons_and_standards.md` (`trigger: always_on`, both strictly `<4,000` chars) plus `docs/PO_STANDARDS.md` to mandate inspecting `raport/open/` on every code change (with a dedicated Polish user-impact/root-cause/fix section) unless PO opts out, and generating English `r/badwordsapp` devlog drafts in gitignored `devlogs/` via `.agents/skills/reddit-devlog/SKILL.md` (`scripts/capture_ui.py` for visual-change English screenshots).
+  - Added `devlogs/` alongside `raport/` in `.gitignore`.
 - **Recent Process / Rules Changes (`2026-11-23`)**:
   - Added continuous self-learning & verification standards (`.agents/rules/lessons_and_standards.md`) and DaVinci Resolve 21.1+ verification skill (`.agents/skills/davinci-resolve-current/SKILL.md`).
   - Upgraded `ROADMAP_CEMENTING.md` with progress tracking (`[x]`/`[ ]`), Point 1 closure status, real user-side scenario reporting requirements, and live verification mandates.

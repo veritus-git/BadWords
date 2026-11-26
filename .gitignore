@@ -38,8 +38,9 @@ target/
 dist/
 installer/target/
 
-# Working directory / scratch reports
+# Working directory / scratch reports & reddit devlogs
 raport/
+devlogs/
 
 #Test video
 test.mov

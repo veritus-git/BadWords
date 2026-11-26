@@ -1,19 +1,21 @@
 ---
 trigger: always_on
-description: Architecture zones, cementing rules, UI quality, verification, and Product Owner workflow.
+description: Architecture zones, cementing rules, UI quality, crash-report workflow, devlogs, and Product Owner rules.
 ---
 
 # BadWords Architecture & Rules
 
 ## 0. Product Owner, Learning & Audit Workflow
-- **Language & Scenarios**: Reply in plain **Polish** using ONLY `-` (NEVER long dashes); code/names/comments/logs/docs/commits in **English** (`src/i18n/*.json` for UI). User is **Product Owner**, not a coder-explain via **real user-side scenarios** (clicks, screen symptoms, option outcomes), never dry slogans, code, symbol names, or tracebacks unless asked.
-- **Audit-First**: Inspect **read-only** first. Never silently delete workarounds-explain real user failures they prevent and ask numbered decisions before editing.
-- **Self-Learning**: Notice PO feedback/expectations in every session and persist generalized rules in `.agents/rules/lessons_and_standards.md` proactively.
-- **Cementing**: Decouple modules for future features. When closed: `# INVARIANT:` comments, regression tests, full docs in `docs/CEMENTED.md`, mark `[x]` in `ROADMAP_CEMENTING.md`, and **3-4 word bullet** in Sec. 3 (keep file **<4,000 chars**).
+- **Language & Scenarios**: Reply in plain **Polish** using `-` only; code/comments/logs/docs/commits in **English** (`src/i18n/*.json` for UI). User is **Product Owner**, not a coder-explain via **real user-side scenarios** (clicks, screen symptoms), never dry slogans, code, or tracebacks unless asked.
+- **Audit-First**: Inspect **read-only** first. Never silently delete workarounds-explain failures they prevent and ask numbered decisions first.
+- **Self-Learning**: Capture PO expectations in `.agents/rules/lessons_and_standards.md` + `docs/PO_STANDARDS.md`.
+- **Crash Reports (`raport/open/`)**: On every code change (unless PO opts out), check `raport/open/` (never edit `resolved/`; warn if unmounted), resolve relevant bugs (`report.json` + move to `resolved/`), and include a Polish section explaining open errors' symptoms, cause, and fix.
+- **Reddit Devlogs (`r/badwordsapp`)**: After every change (unless PO opts out), use `.agents/skills/reddit-devlog/SKILL.md` -> English post in `devlogs/YYYY-MM-DD_<slug>/post.md` (EN UI PNGs ONLY when visuals changed).
+- **Cementing**: Decouple modules. On closure: `# INVARIANT:`, tests, `docs/CEMENTED.md`, `[x]` in `ROADMAP_CEMENTING.md`, 3-4 word bullet in Sec. 3 (`<4,000` chars).
 
 ## 1. 3-Zone Architecture
 - **Red (LOCKED)**: `src/osdoc.py`, `src/gui/components/mixins.py`, `src/api/resolve_bridge.py` - OS paths, stream buffering, hidden subprocesses, Resolve IPC.
-- **Yellow (STRICT)**: `src/algorithms.py`, `src/engine/audio_engine.py`, `src/assembler.py` - `words_data[0]` holds metadata; `manual_status` > `algo_status`; exact frame math (`24000/1001`, `30000/1001`).
+- **Yellow (STRICT)**: `src/algorithms.py`, `src/engine/audio_engine.py`, `src/assembler.py` - `words_data[0]` metadata; `manual_status` > `algo_status`; exact frames (`24000/1001`, `30000/1001`).
 - **Green (DECOUPLED)**: `src/gui/`, `src/handlers/` - Pure PySide6; never block GUI >15ms (`QThread`).
 
 ## 2. Environment Isolation
@@ -33,12 +35,12 @@ description: Architecture zones, cementing rules, UI quality, verification, and 
 
 ## 4. Coding & Verification Rules
 1. **No Monoliths**: Keep subpackages focused; do not bloat `main_window.py`.
-2. **License Header**: New `.py`, `.rs`, `.cpp`, `.sh` (and requested docs) start with `#Copyright (c) 2026 Szymon Wolarz` + MIT license line.
+2. **License Header**: New `.py`, `.rs`, `.cpp`, `.sh` start with `#Copyright (c) 2026 Szymon Wolarz` + MIT license line.
 3. **GitHub CLI**: `gh` is authenticated for issues, PRs, releases.
 4. **UI & Animation**: App QSS/themes; **ZERO system emojis** (SVG/Qt icons only); dim disabled controls (`200-250ms`, `1.0 <-> 0.35`, `Qt.WA_TransparentForMouseEvents`).
-5. **State & Releases**: Read `docs/DEV_STATE.md` at start; update it after changes (focus, roadmap, completed work, tests, next steps). Update `src/config/release_notes.json` on releases.
-6. **Empirical, Resolve & Git**: Test live mechanisms end-to-end (not mocks alone). Check current **DaVinci Resolve 21.1+** docs & Free limits (`davinci-resolve-current` skill). Never commit `.dev_workspace/`, `settings.json`, `user.json`, `*.log`, `saves/`, `temp/`, `models/`, `venv/`, `__pycache__/`, `raport/`.
-7. **Checks**: Run `python3 run_tests.py`, `python3 -m compileall src`, `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`, and in `installer/`: `cargo check && cargo test`.
-8. **Proactive UX & Visuals**: Never ship bare defaults or wait for screenshot requests; render PNGs (`tests/artifacts/`), inspect every PNG, and polish UI/modals/errors first.
-9. **VM Verification**: For Win11/clean-Linux changes, auto-verify inside KVM VMs (`badwords-win11`, `badwords-linux-kde`) first, then give the PO a short Polish manual checklist.
+5. **State & Releases**: Read `docs/DEV_STATE.md` at start; update after changes; update `src/config/release_notes.json` on releases.
+6. **Empirical, Resolve & Git**: Test live end-to-end. Check **Resolve 21.1+** limits (`davinci-resolve-current` skill). Never commit `.dev_workspace/`, `settings.json`, `user.json`, `*.log`, `saves/`, `temp/`, `models/`, `venv/`, `__pycache__/`, `raport/`, `devlogs/`.
+7. **Checks**: Run `python3 run_tests.py`, `python3 -m compileall src`, `_BW_AUTO_HEAL_ATTEMPTED=1 PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 -c "import gui; print('GUI OK')"`, and `cd installer && cargo check && cargo test`.
+8. **Proactive UX**: Render PNGs (`tests/artifacts/`), inspect every PNG, polish UI/modals/errors first.
+9. **VM Verification**: Auto-verify Win11/clean-Linux changes in KVM VMs (`badwords-win11`, `badwords-linux-kde`), then give PO a short Polish checklist.
 10. **Sync & Push**: Sync `src/`, `installer/`, `setupfiles/` to `/mnt/dump/BadWords FILES/`, conventional commit, `git push all <branch>`.
