@@ -19,6 +19,7 @@ _LAZY = {
     "BadWordsGUI": ("gui.main_window", "BadWordsGUI"),
     "SplashScreen": ("gui.components.dialogs", "SplashScreen"),
     "CustomMsgBox": ("gui.components.dialogs", "CustomMsgBox"),
+    "UpdateNotifyDialog": ("gui.dialogs.update_dialog", "UpdateNotifyDialog"),
     "_app_icon": ("gui.utils", "_app_icon"),
     "init_embedded_fonts": ("gui.utils", "init_embedded_fonts"),
     "get_play_icon": ("gui.utils", "get_play_icon"),

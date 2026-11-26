@@ -424,11 +424,12 @@ class ResolveBridgeClient:
                         except Exception as e:
                             raise ValueError(f"Failed to parse bridge response: {e}")
 
-                    # Check for Ack
+                    # Check for Ack and grant full execution budget once Resolve picks up the request
                     if not acked:
                         ack_val = self._extract_pref_value(content, "Ack")
                         if ack_val == req_id:
                             acked = True
+                            deadline = max(deadline, time.time() + max(timeout_secs, 6.0))
 
                 # Timeout expired
                 if acked:

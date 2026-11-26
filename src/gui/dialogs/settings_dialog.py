@@ -913,6 +913,13 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         if container is None or lay is None:
             return
 
+        container.setUpdatesEnabled(False)
+        try:
+            self._render_search_results_inner(query, container, lay)
+        finally:
+            container.setUpdatesEnabled(True)
+
+    def _render_search_results_inner(self, query: str, container, lay):
         while lay.count() > 0:
             item = lay.takeAt(0)
             w = item.widget()
@@ -1141,7 +1148,29 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
         super().setVisible(visible)
 
     def present(self):
-        """Shows SettingsDialog cleanly, preserving true maximized state when previously closed maximized."""
+        """Shows SettingsDialog cleanly, preserving maximized/fullscreen state across platforms."""
+        if getattr(self, '_is_mac', False):
+            main_is_fs = bool(self._main_window and getattr(self._main_window, 'isFullScreen', lambda: False)())
+            is_top = bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
+            if main_is_fs and not is_top:
+                self._reopen_maximized = False
+                self.show()
+                if not self.isFullScreen():
+                    self.showFullScreen()
+            else:
+                if getattr(self, '_reopen_maximized', False) or self.isMaximized():
+                    self._reopen_maximized = False
+                    self.showMaximized()
+                else:
+                    if self.isFullScreen():
+                        self.showNormal()
+                    self.show()
+                    if self.isMinimized():
+                        self.showNormal()
+            self.raise_()
+            self.activateWindow()
+            return
+
         if getattr(self, '_reopen_maximized', False) or self.isMaximized():
             self._reopen_maximized = False
             self.showMaximized()
@@ -1718,6 +1747,16 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
                         self._btn_ver_update.hide()
                     else:
                         log_error(f"[Updater] Card update failed: {err}")
+                        try:
+                            from startup.crash_report import is_technical_update_error, send_nonfatal_technical_report
+                            if is_technical_update_error(err):
+                                send_nonfatal_technical_report(
+                                    "Updater failure (settings)",
+                                    err,
+                                    extra_context={"target_version": latest_ver},
+                                )
+                        except Exception:
+                            pass
                         self._lbl_ver_status.setText(_txt(_card_lang(), 'update_notify_failed'))
                         self._lbl_ver_status.setStyleSheet(f"color: #ed4245; font-size: {config.FS_PX(9)}px; background: transparent;")
                         self._btn_ver_update.setText(_txt(_card_lang(), 'update_notify_win_btn'))
@@ -4973,6 +5012,32 @@ class SettingsDialog(FramelessWindowMixin, _BaseMainWindow):
             self._finish_close(0)
 
     def _finish_close(self, result: int = 0):
+        # On macOS, hiding an active native Fullscreen NSWindow strands Cocoa on a black Space.
+        # Exit fullscreen back to normal space FIRST, then hide and restore MainWindow focus.
+        if getattr(self, '_is_mac', False) and self.isFullScreen():
+            if getattr(self, '_closing_from_fullscreen', False):
+                return
+            self._closing_from_fullscreen = True
+            self.showNormal()
+            from PySide6.QtCore import QTimer
+            attempts = [0]
+
+            def _complete_mac_fs_close():
+                attempts[0] += 1
+                if self.isFullScreen() and attempts[0] < 12:
+                    QTimer.singleShot(45, _complete_mac_fs_close)
+                    return
+                self._closing_from_fullscreen = False
+                self.hide()
+                mw = getattr(self, '_main_window', None)
+                if mw is not None:
+                    mw.raise_()
+                    mw.activateWindow()
+                self.finished.emit(result)
+
+            QTimer.singleShot(80, _complete_mac_fs_close)
+            return
+
         was_max = bool(self._is_effectively_maximized())
         self._reopen_maximized = was_max
         if hasattr(self, '_dwm_cloak'):

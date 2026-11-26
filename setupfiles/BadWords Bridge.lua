@@ -395,7 +395,7 @@ end
 local handlers = rawget(_G, "BadWordsBridgeHandlers") or {}
 _G.BadWordsBridgeHandlers = handlers
 
-local function resolve_and_activate_timeline(proj, timeline_name)
+local function find_timeline_by_name(proj, timeline_name)
     if not proj then return nil end
     local cur = proj:GetCurrentTimeline()
     if not timeline_name or timeline_name == "" then
@@ -408,11 +408,26 @@ local function resolve_and_activate_timeline(proj, timeline_name)
     for i = 1, count do
         local t = proj:GetTimelineByIndex(i)
         if t and t:GetName() == timeline_name then
-            pcall(function() proj:SetCurrentTimeline(t) end)
             return t
         end
     end
     return cur
+end
+
+local function resolve_and_activate_timeline(proj, timeline_name)
+    if not proj then return nil end
+    local cur = proj:GetCurrentTimeline()
+    if not timeline_name or timeline_name == "" then
+        return cur
+    end
+    if cur and cur:GetName() == timeline_name then
+        return cur
+    end
+    local t = find_timeline_by_name(proj, timeline_name)
+    if t and t ~= cur then
+        pcall(function() proj:SetCurrentTimeline(t) end)
+    end
+    return t
 end
 
 handlers.Ping = function()
@@ -476,7 +491,7 @@ handlers.GetAudioTracks = function(req)
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { error = "No project open" } end
 
-    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    local tl = find_timeline_by_name(proj, req and req.timeline_name)
     if not tl then return { error = "Timeline not found" } end
 
     local track_count = tl:GetTrackCount("audio") or 0
@@ -495,7 +510,7 @@ handlers.GetTimelineTracks = function(req)
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { error = "No project open" } end
 
-    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    local tl = find_timeline_by_name(proj, req and req.timeline_name)
     if not tl then return { error = "Timeline not found" } end
 
     local a_count = tl:GetTrackCount("audio") or 0
@@ -521,7 +536,7 @@ handlers.GetDirectAudioInfo = function(req)
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { error = "No project open" } end
 
-    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    local tl = find_timeline_by_name(proj, req and req.timeline_name)
     if not tl then return { error = "Timeline not found" } end
 
     local track_indices = req and req.track_indices
@@ -749,7 +764,7 @@ handlers.CheckComplexVideo = function(req)
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { ok = false, error = "No project open" } end
 
-    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    local tl = find_timeline_by_name(proj, req and req.timeline_name)
     if not tl then return { ok = false, error = "Timeline not found" } end
 
     local v_count = tl:GetTrackCount("video") or 0
@@ -885,7 +900,7 @@ handlers.ExportTimelineDrt = function(req)
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { error = "No project open" } end
 
-    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    local tl = find_timeline_by_name(proj, req and req.timeline_name)
     if not tl then return { error = "Timeline not found" } end
     local out_path = req and req.output_path
     if not out_path or out_path == "" then return { error = "output_path missing" } end
@@ -905,7 +920,7 @@ handlers.ExportTimelineXml = function(req)
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { error = "No project open" } end
 
-    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    local tl = find_timeline_by_name(proj, req and req.timeline_name)
     if not tl then return { error = "Timeline not found" } end
     local out_path = req and req.output_path
     if not out_path or out_path == "" then return { error = "output_path missing" } end
@@ -1579,7 +1594,7 @@ handlers.GetTimelineStructure = function(req)
     local pm = res_app:GetProjectManager()
     local proj = pm and pm:GetCurrentProject()
     if not proj then return { error = "No project open" } end
-    local tl = resolve_and_activate_timeline(proj, req and req.timeline_name)
+    local tl = find_timeline_by_name(proj, req and req.timeline_name)
     if not tl then return { error = "Timeline not found" } end
 
     local fps = tonumber(tl:GetSetting("timelineFrameRate")) or 24.0
@@ -1682,6 +1697,8 @@ while not quitServer do
                 bmd.wait(0.025)
             else
                 last_request_id = req.id
+                -- Acknowledge immediately so Python knows Resolve picked up the request
+                bridge_ack(req.id)
 
                 local data = json.decode(req.body)
                 local result = nil

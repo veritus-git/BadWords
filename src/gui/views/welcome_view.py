@@ -1164,6 +1164,13 @@ class WelcomePageView(QWidget):
 
     def _target_y(self, idx: int, source_type: str = None) -> int:
         vis_h = self.get_visual_height(idx, source_type)
+        active_w = None
+        if hasattr(self.win, 'welcome_stack') and self.win.welcome_stack:
+            active_w = self.win.welcome_stack.widget(idx)
+        if active_w is not None and active_w.layout():
+            ws_needed_h = active_w.layout().sizeHint().height()
+            if ws_needed_h > 0:
+                vis_h = max(vis_h, self.H_HEADER + ws_needed_h)
         avail_h = self.height()
         if avail_h <= 0:
             avail_h = config.S(800)
@@ -1475,13 +1482,31 @@ def build_welcome_view(win) -> QWidget:
             if os.path.isdir(mb_dir):
                 win._bridge_file_watcher.addPath(mb_dir)
 
-        def _on_bridge_event(path):
+        win._bridge_watch_timer = QTimer(win)
+        win._bridge_watch_timer.setSingleShot(True)
+        win._bridge_watch_timer.setInterval(1500)
+
+        def _do_debounced_bridge_refresh():
             if getattr(win, 'current_source_type', 'file') != 'resolve':
                 return
             h = getattr(win.engine, 'resolve_handler', None)
-            if h and not h.is_connected():
+            if h and not h.is_connected() and not getattr(win, '_is_refreshing_resolve', False):
                 if hasattr(win, '_refresh_davinci_connection'):
                     win._refresh_davinci_connection()
+
+        win._bridge_watch_timer.timeout.connect(_do_debounced_bridge_refresh)
+
+        def _on_bridge_event(path):
+            if getattr(win, 'current_source_type', 'file') != 'resolve':
+                return
+            # Ignore request mailbox writes while BadWords itself is querying the bridge
+            norm_p = str(path or "").replace("\\", "/")
+            if norm_p.endswith("/request.lua") or norm_p.endswith("/request.tmp"):
+                return
+            h = getattr(win.engine, 'resolve_handler', None)
+            if h and not h.is_connected():
+                if not win._bridge_watch_timer.isActive():
+                    win._bridge_watch_timer.start()
 
         win._bridge_file_watcher.directoryChanged.connect(_on_bridge_event)
         win._bridge_file_watcher.fileChanged.connect(_on_bridge_event)

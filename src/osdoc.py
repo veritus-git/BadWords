@@ -1474,8 +1474,8 @@ class OSDoctor:
                 # Ensure collection behavior allows floating across desktop spaces
                 sel_setBehavior = objc.sel_registerName(b"setCollectionBehavior:")
                 msgSend_setBehavior = ctypes.cast(objc.objc_msgSend, ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong))
-                # NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0, NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
-                behavior = ctypes.c_ulong((1 << 0) | (1 << 8) if top else 0)
+                # NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0, NSWindowCollectionBehaviorFullScreenPrimary = 1 << 7, FullScreenAuxiliary = 1 << 8
+                behavior = ctypes.c_ulong((1 << 0) | (1 << 8) if top else (1 << 7))
                 msgSend_setBehavior(nswindow, sel_setBehavior, behavior)
                 return True
             except Exception:

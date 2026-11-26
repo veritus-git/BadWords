@@ -502,6 +502,16 @@ class UpdateNotifyDialog(FramelessWindowMixin, _BaseDialog):
             self._btn_dismiss.setEnabled(True)
         else:
             log_error(f"[UpdateCheck] Auto-update failed: {error_msg}")
+            try:
+                from startup.crash_report import is_technical_update_error, send_nonfatal_technical_report
+                if is_technical_update_error(error_msg):
+                    send_nonfatal_technical_report(
+                        "Updater failure (dialog)",
+                        error_msg,
+                        extra_context={"target_version": self._latest_ver, "current_version": self._current_ver},
+                    )
+            except Exception:
+                pass
             self._lbl_status.setText(_txt(self._lang, 'update_notify_failed'))
             self._lbl_status.setStyleSheet(f"color: #ed4245; font-size: {config.FS_PX(10)}px; font-style: normal;")
             self._btn_primary.setText(_txt(self._lang, 'update_notify_win_btn'))

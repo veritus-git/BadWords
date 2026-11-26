@@ -244,16 +244,32 @@ def score_search_entry(query: str, entry: dict, gui_lang: str) -> tuple[int, boo
     if not tokens:
         return 0, False, ""
 
-    t_loc = fold_accents(entry.get("title_loc", ""))
-    c_loc = fold_accents(entry.get("category_loc", ""))
-    d_loc = fold_accents(entry.get("desc_loc", ""))
-    opts_loc = [fold_accents(o) for o in entry.get("options_loc", [])]
+    folded_cache = entry.get("_folded_cache")
+    if not folded_cache or folded_cache.get("_lang") != gui_lang:
+        folded_cache = {
+            "_lang": gui_lang,
+            "t_loc": fold_accents(entry.get("title_loc", "")),
+            "c_loc": fold_accents(entry.get("category_loc", "")),
+            "d_loc": fold_accents(entry.get("desc_loc", "")),
+            "opts_loc": [fold_accents(o) for o in entry.get("options_loc", [])],
+            "t_en": fold_accents(entry.get("title_en", "")),
+            "c_en": fold_accents(entry.get("category_en", "")),
+            "d_en": fold_accents(entry.get("desc_en", "")),
+            "opts_en": [fold_accents(o) for o in entry.get("options_en", [])],
+            "kw_en": fold_accents(entry.get("keywords_en", "")),
+        }
+        entry["_folded_cache"] = folded_cache
 
-    t_en = fold_accents(entry.get("title_en", ""))
-    c_en = fold_accents(entry.get("category_en", ""))
-    d_en = fold_accents(entry.get("desc_en", ""))
-    opts_en = [fold_accents(o) for o in entry.get("options_en", [])]
-    kw_en = fold_accents(entry.get("keywords_en", ""))
+    t_loc = folded_cache["t_loc"]
+    c_loc = folded_cache["c_loc"]
+    d_loc = folded_cache["d_loc"]
+    opts_loc = folded_cache["opts_loc"]
+
+    t_en = folded_cache["t_en"]
+    c_en = folded_cache["c_en"]
+    d_en = folded_cache["d_en"]
+    opts_en = folded_cache["opts_en"]
+    kw_en = folded_cache["kw_en"]
 
     def _score_phrase(q_str: str) -> tuple[int, bool, str]:
         sc = 0
@@ -684,7 +700,9 @@ class SearchResultCard(QFrame):
 
         lbl_arrow = QLabel(self)
         lbl_arrow.setFixedSize(config.S(16), config.S(16))
-        lbl_arrow.setPixmap(get_svg_icon(SVG_CHEVRON_RIGHT, size=14).pixmap(config.S(14), config.S(14)))
+        arrow_px = config.S(14)
+        chevron_pm = _get_cached_chevron_pixmap(arrow_px)
+        lbl_arrow.setPixmap(chevron_pm)
         lbl_arrow.setStyleSheet("background: transparent; border: none;")
         lbl_arrow.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         root.addWidget(lbl_arrow, 0, Qt.AlignVCenter)
@@ -717,6 +735,15 @@ class SearchResultCard(QFrame):
 # ── Support Screenshot Dropzone, Thumbnails & Lightbox ──────────────────────
 
 _IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+_CHEVRON_PIXMAP_CACHE = {}
+
+
+def _get_cached_chevron_pixmap(px_size: int) -> QPixmap:
+    pm = _CHEVRON_PIXMAP_CACHE.get(px_size)
+    if pm is None or pm.isNull():
+        pm = get_svg_icon(SVG_CHEVRON_RIGHT, size=14).pixmap(px_size, px_size)
+        _CHEVRON_PIXMAP_CACHE[px_size] = pm
+    return pm
 
 
 class ScreenshotPreviewDialog(FramelessWindowMixin, _BaseDialog):
@@ -726,7 +753,7 @@ class ScreenshotPreviewDialog(FramelessWindowMixin, _BaseDialog):
         super().__init__(parent)
         self.frameless_init(is_popup=True)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.setWindowModality(Qt.WindowModal)
+        self.setWindowModality(Qt.ApplicationModal)
 
         self.setStyleSheet(
             f"QDialog {{ background-color: {config.BG_COLOR}; }} "

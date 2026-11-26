@@ -610,11 +610,16 @@ class CustomTitleBar(QWidget):
             return
         if event.button() == Qt.LeftButton:
             self._is_dragging = True
+            self._manual_drag_active = False
+            self._manual_drag_offset = None
             self._rip_pending_system_move = False
             self._rip_drag_offset = None
             self._rip_target_size = None
             self._click_pos = event.position().toPoint()
             self._press_global_pos = event.globalPosition().toPoint()
+            win = self.window()
+            if getattr(win, '_is_mac', False) and not isinstance(win, QMainWindow):
+                self._manual_drag_offset = self._press_global_pos - win.frameGeometry().topLeft()
             event.accept()
             return
         super().mousePressEvent(event)
@@ -682,11 +687,27 @@ class CustomTitleBar(QWidget):
             return
 
         press_global = getattr(self, '_press_global_pos', cur_global)
-        if (cur_global - press_global).manhattanLength() < 4:
+        if not getattr(self, '_manual_drag_active', False) and (cur_global - press_global).manhattanLength() < 4:
             event.accept()
             return
 
         win = self.window()
+
+        # On macOS, dragging fixed/frameless popups via startSystemMove() can distort Cocoa bounds;
+        # move manually clamped inside the active screen's availableGeometry instead.
+        if getattr(self, '_manual_drag_offset', None) is not None and getattr(win, '_is_mac', False) and not isinstance(win, QMainWindow):
+            self._manual_drag_active = True
+            nx = cur_global.x() - self._manual_drag_offset.x()
+            ny = cur_global.y() - self._manual_drag_offset.y()
+            scr = QGuiApplication.screenAt(cur_global) or win.screen() or QGuiApplication.primaryScreen()
+            sg = scr.availableGeometry() if scr else None
+            if sg and sg.isValid():
+                nx = max(sg.left() - win.width() + 60, min(nx, sg.right() - 60))
+                ny = max(sg.top(), min(ny, sg.bottom() - 40))
+            win.move(nx, ny)
+            event.accept()
+            return
+
         self._is_dragging = False
 
         # INVARIANT: On Linux/macOS, ripping out of maximized MUST un-maximize & resize to target
@@ -756,6 +777,8 @@ class CustomTitleBar(QWidget):
 
     def mouseReleaseEvent(self, event):
         self._is_dragging = False
+        self._manual_drag_active = False
+        self._manual_drag_offset = None
         self._rip_pending_system_move = False
         super().mouseReleaseEvent(event)
 

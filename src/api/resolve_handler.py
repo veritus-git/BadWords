@@ -269,9 +269,9 @@ class ResolveHandler:
             # ══════════════════════════════════════════════════════════════════════
             # 2. RESOLVE FREE / BRIDGE FALLBACK (PRIORITY 2: EXTERNAL LAUNCH WITH BRIDGE)
             # ══════════════════════════════════════════════════════════════════════
-            if self.bridge_client.is_bridge_alive(timeout_secs=0.25):
+            if self.bridge_client.is_bridge_alive(timeout_secs=0.75):
                 try:
-                    res = self.bridge_client.call("GetTimelineInfo", timeout_secs=2.0)
+                    res = self.bridge_client.call("GetTimelineInfo", timeout_secs=5.0)
                     if res and res.get("ok"):
                         self.backend = 'bridge'
                         self.bridge_project_name = res.get("project", "")
@@ -286,6 +286,7 @@ class ResolveHandler:
                 except Exception as b_err:
                     if not silent:
                         log_warn(f"Bridge connection check: {b_err}")
+                    self._report_bridge_technical_error("GetTimelineInfo", b_err)
 
             self.backend = None
             if not silent:
@@ -840,10 +841,12 @@ class ResolveHandler:
                 if not mpi:
                     return True  # Fusion title, solid color, generator, etc.
 
-                # Check if transitions exist
-                if hasattr(item, "GetLeftTransition") and item.GetLeftTransition():
+                # Check if transitions exist (callable guard avoids NoneType is not callable on partial Resolve bindings)
+                left_tr_fn = getattr(item, "GetLeftTransition", None)
+                if callable(left_tr_fn) and left_tr_fn():
                     return True
-                if hasattr(item, "GetRightTransition") and item.GetRightTransition():
+                right_tr_fn = getattr(item, "GetRightTransition", None)
+                if callable(right_tr_fn) and right_tr_fn():
                     return True
 
             return False
@@ -1113,13 +1116,40 @@ class ResolveHandler:
             log_error(f"delete_clips_by_color error: {e}")
             return {"ok": False, "deleted": 0, "timeline_name": tl_name, "error": str(e)}
 
+    def _report_bridge_technical_error(self, op_name: str, err):
+        """Send an opt-in auto-report only for technical Bridge protocol/handler errors when Bridge is alive."""
+        try:
+            err_str = str(err or "")
+            if not err_str:
+                return
+            from startup.crash_report import is_technical_bridge_error, send_nonfatal_technical_report
+            if not is_technical_bridge_error(err_str):
+                return
+            is_protocol_err = (
+                "was acknowledged by Resolve" in err_str
+                or "Failed to parse bridge response" in err_str
+                or "Handler error" in err_str
+                or "Invalid request" in err_str
+            )
+            if is_protocol_err or self.bridge_client.is_bridge_alive(timeout_secs=0.5):
+                send_nonfatal_technical_report(
+                    f"Resolve Bridge error ({op_name})",
+                    err_str,
+                    extra_context={
+                        "bridge_backend": str(self.backend or ""),
+                        "bridge_version": str(getattr(self, "bridge_version", "")),
+                    },
+                )
+        except Exception:
+            pass
+
     def get_all_timelines(self):
         """
         Returns a list of all timeline names in the current project.
         """
         if self.backend == 'bridge':
             try:
-                res = self.bridge_client.call("GetTimelineInfo", timeout_secs=2.0)
+                res = self.bridge_client.call("GetTimelineInfo", timeout_secs=6.0)
                 if res and res.get("ok"):
                     self.bridge_timelines = res.get("timelines", [])
                     self.bridge_project_name = res.get("project", "")
@@ -1131,7 +1161,8 @@ class ResolveHandler:
                     return self.bridge_timelines
             except Exception as e:
                 log_error(f"get_all_timelines (bridge) error: {e}")
-                if not self.bridge_client.is_bridge_alive(timeout_secs=0.25):
+                self._report_bridge_technical_error("get_all_timelines", e)
+                if not self.bridge_client.is_bridge_alive(timeout_secs=0.8):
                     self.backend = None
                     self.bridge_project_name = ""
                     self.bridge_timeline_name = ""
@@ -1171,7 +1202,7 @@ class ResolveHandler:
                 return self._tracks_cache[cache_key]
 
             try:
-                res = self.bridge_client.call("GetAudioTracks", {"timeline_name": timeline_name}, timeout_secs=2.0)
+                res = self.bridge_client.call("GetAudioTracks", {"timeline_name": timeline_name}, timeout_secs=6.0)
                 if res and res.get("ok"):
                     tracks = res.get("tracks", [])
                     res_tracks = []
@@ -1187,7 +1218,8 @@ class ResolveHandler:
                     return res_tracks
             except Exception as e:
                 log_error(f"get_audio_tracks (bridge) error: {e}")
-                if not self.bridge_client.is_bridge_alive(timeout_secs=0.25):
+                self._report_bridge_technical_error("get_audio_tracks", e)
+                if not self.bridge_client.is_bridge_alive(timeout_secs=0.8):
                     self.backend = None
                     self.bridge_project_name = ""
                     self.bridge_timeline_name = ""
@@ -1814,12 +1846,27 @@ class ResolveHandler:
             try:
                 res = self.bridge_client.call("GetTimelineStructure", {
                     "timeline_name": timeline_name
-                }, timeout_secs=10.0)
+                }, timeout_secs=15.0)
                 if res and res.get("ok"):
+                    norm_tracks = []
+                    for tr in (res.get("tracks") or []):
+                        clips = []
+                        for c in (tr.get("clips") or []):
+                            clips.append({
+                                "start": int(c.get("start") or 0),
+                                "duration": int(c.get("duration") or 0),
+                                "left_offset": int(c.get("left_offset") or 0),
+                            })
+                        if clips:
+                            norm_tracks.append({
+                                "type": tr.get("type", ""),
+                                "index": int(tr.get("index") or 0),
+                                "clips": clips,
+                            })
                     fp_data = {
                         "fps": float(res.get("fps") or self.fps or 24.0),
                         "start_frame": int(res.get("start_frame") or 0),
-                        "tracks": res.get("tracks", [])
+                        "tracks": norm_tracks
                     }
                     canonical = json.dumps(fp_data, sort_keys=True, separators=(',', ':'))
                     fingerprint = hashlib.sha256(canonical.encode()).hexdigest()
@@ -1827,6 +1874,7 @@ class ResolveHandler:
                     return fingerprint
             except Exception as e:
                 log_error(f"compute_timeline_fingerprint (bridge) error: {e}")
+                self._report_bridge_technical_error("compute_timeline_fingerprint", e)
             return None
 
         try:

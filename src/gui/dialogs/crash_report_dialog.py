@@ -40,6 +40,7 @@ class CrashReportConsentDialog(_PrivacyConsentDialogBase):
 
         title_col = QVBoxLayout()
         title_col.setSpacing(config.S(2))
+        title_col.setAlignment(Qt.AlignTop)
         self._lbl_title = QLabel("", container)
         self._lbl_title.setObjectName("lbl_title")
         title_col.addWidget(self._lbl_title)

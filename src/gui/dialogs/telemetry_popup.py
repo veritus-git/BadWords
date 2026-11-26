@@ -12,10 +12,10 @@ Shared consent-dialog base and first-launch privacy & diagnostics dialog for
 new users, covering anonymous telemetry and automatic error reporting.
 """
 
-from PySide6.QtCore import Qt, QTimer, QVariantAnimation, QEasingCurve
+from PySide6.QtCore import Qt, QTimer, QVariantAnimation, QEasingCurve, QRect
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFrame, QSizePolicy
 )
 import config
 from gui.components.mixins import FramelessWindowMixin, _BaseDialog, _HAS_QFRAMELESS
@@ -66,9 +66,12 @@ class _FadeIconLabel(QLabel):
         p = QPainter(self)
         p.setRenderHint(QPainter.SmoothPixmapTransform, True)
         p.setOpacity(self._opacity)
-        x = (self.width() - self._pixmap.width()) // 2
-        y = (self.height() - self._pixmap.height()) // 2
-        p.drawPixmap(x, y, self._pixmap)
+        dev_sz = self._pixmap.deviceIndependentSize()
+        lw = max(1, int(round(dev_sz.width())))
+        lh = max(1, int(round(dev_sz.height())))
+        x = (self.width() - lw) // 2
+        y = (self.height() - lh) // 2
+        p.drawPixmap(QRect(x, y, lw, lh), self._pixmap)
         p.end()
 
 
@@ -101,7 +104,7 @@ class _PrivacyConsentDialogBase(FramelessWindowMixin, _BaseDialog):
 
         self.frameless_init(is_popup=True)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.setWindowModality(Qt.WindowModal)
+        self.setWindowModality(Qt.ApplicationModal)
         self.setWindowIcon(_app_icon())
 
         self.setStyleSheet(f"""
@@ -224,7 +227,8 @@ class _PrivacyConsentDialogBase(FramelessWindowMixin, _BaseDialog):
         self._content_layout = QVBoxLayout(self._container)
         self._content_layout.setContentsMargins(config.S(20), config.S(14), config.S(20), config.S(18))
         self._content_layout.setSpacing(config.S(12))
-        root_layout.addWidget(self._container)
+        self._content_layout.setAlignment(Qt.AlignTop)
+        root_layout.addWidget(self._container, 1)
 
     def _build_lang_button(self, parent) -> QPushButton:
         btn = QPushButton("", parent)
@@ -275,13 +279,15 @@ class _PrivacyConsentDialogBase(FramelessWindowMixin, _BaseDialog):
         text_max_w = dialog_w - config.S(20 + 20 + 28 + 6)
         for lbl in wrapped_labels:
             lbl.ensurePolished()
-            lbl.setFixedWidth(text_max_w)
+            lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            lbl.setMinimumWidth(0)
+            lbl.setMaximumWidth(16777215)
             lbl.setMinimumHeight(0)
             lbl.setMaximumHeight(16777215)
             lbl.updateGeometry()
             req_h = max(lbl.heightForWidth(text_max_w), lbl.sizeHint().height())
             if req_h > 0:
-                lbl.setFixedHeight(req_h + config.S(6))
+                lbl.setMinimumHeight(req_h + config.S(6))
 
         if hasattr(self, '_chk_geo') and hasattr(self, '_geo_container'):
             self._chk_geo.lbl.setWordWrap(False)

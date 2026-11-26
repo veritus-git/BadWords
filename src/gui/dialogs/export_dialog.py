@@ -56,7 +56,7 @@ class ExportDialog(FramelessWindowMixin, _BaseDialog):
 
         self.frameless_init(is_popup=True)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.setWindowModality(Qt.WindowModal)
+        self.setWindowModality(Qt.ApplicationModal)
         self.setWindowIcon(_app_icon())
 
         self._local_tooltip = IDETooltip()

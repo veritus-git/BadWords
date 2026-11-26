@@ -153,6 +153,9 @@ DEFAULT_SETTINGS = {
     "panel_silence_threshold_db": -42.0, # Post-transcript silence threshold in Silence panel (dB)
     # ── Milestone / Migration Notices ─────────────────────────────────────────
     "v4_migration_notified": True,
+    # ── macOS Window State ───────────────────────────────────────────────────
+    "mac_window_fullscreen": False,
+    "mac_window_geometry":   None,
 }
 
 

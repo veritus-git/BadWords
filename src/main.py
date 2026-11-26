@@ -212,7 +212,10 @@ class AppController:
             self.main_win.closeEvent_callback = self._on_close
             osdoc.log_info("Main window constructed. Showing window.")
 
-            self.main_win.showMaximized()
+            if hasattr(self.main_win, "show_initial_window"):
+                self.main_win.show_initial_window()
+            else:
+                self.main_win.showMaximized()
             self.main_win.raise_()
             self.main_win.activateWindow()
 
@@ -252,7 +255,8 @@ class AppController:
         crash_report.wait_for_pending_reports(timeout=2.0)
         app = QApplication.instance()
         if app is not None:
-            app.quit()
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, app.quit)
 
 
 # ==========================================

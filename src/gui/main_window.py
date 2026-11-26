@@ -13,6 +13,7 @@ Main application window managing the entire GUI composition.
 
 import platform
 import os
+import sys
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QDialog, QLabel, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QFrame, QStackedWidget, QRadioButton, QButtonGroup,
@@ -22,8 +23,8 @@ from PySide6.QtCore import (
     Qt, QTimer, Signal, QObject, QEvent, QVariantAnimation, QEasingCurve, QPropertyAnimation, QThread
 )
 from PySide6.QtGui import (
-    QPixmap, QGuiApplication, 
-    QCursor
+    QPixmap, QGuiApplication,
+    QCursor, QFont
 )
 
 import config
@@ -2111,8 +2112,8 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
             recipe = getattr(self, '_assembly_recipe', None)
             xml_path = getattr(self, '_extracted_xml_path', None)
-            is_free_21_1 = bool(getattr(self, 'resolve_handler', None) and hasattr(self.resolve_handler, 'is_free_21_1_or_newer') and self.resolve_handler.is_free_21_1_or_newer())
-            if (not drt_path or is_free_21_1) and getattr(self, 'resolve_handler', None) and getattr(self, '_transcription_source', None):
+            created_temp_xml = False
+            if getattr(self, 'resolve_handler', None) and self.resolve_handler.is_connected() and getattr(self, '_transcription_source', None):
                 tl_name = self._transcription_source.get("timeline_name")
                 if tl_name and (not xml_path or not os.path.exists(xml_path)):
                     try:
@@ -2121,6 +2122,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                         cand_xml = os.path.join(temp_dir, f"bws_source_{safe_name.replace(' ', '_')}.xml")
                         if self.resolve_handler.export_timeline_xml(tl_name, cand_xml):
                             xml_path = cand_xml
+                            created_temp_xml = True
                     except Exception as xe:
                         from osdoc import log_error as _le
                         _le(f"_on_export_project: xml fallback export failed: {xe}")
@@ -2134,7 +2136,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 media_inventory=media_inventory,
                 xml_path=xml_path
             )
-            if xml_path and os.path.exists(xml_path):
+            if created_temp_xml and xml_path and os.path.exists(xml_path):
                 try: os.remove(xml_path)
                 except Exception: pass
             
@@ -2439,20 +2441,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                                 if hasattr(self, '_panel_right'): self._panel_right.hide()
                                 return
                             if res != QDialog.Accepted and cand_import_path:
-                                new_name = f"imported '{target_name}'"
-                                imp_ok = False
-                                actual_name = None
-                                if self._extracted_drt_path and not (self.resolve_handler and hasattr(self.resolve_handler, 'is_free_21_1_or_newer') and self.resolve_handler.is_free_21_1_or_newer()):
-                                    imp_ok, actual_name = self.resolve_handler.import_timeline_drt(self._extracted_drt_path, new_name)
-                                elif getattr(self, '_extracted_xml_path', None):
-                                    imp_ok = self.resolve_handler.import_timeline_xml(self._extracted_xml_path, new_name)
-                                    actual_name = new_name
-
-                                if imp_ok:
-                                    final_name = actual_name or new_name
-                                    self._transcription_source["timeline_name"] = final_name
-                                    if hasattr(self, '_title_bar'):
-                                        self._title_bar.set_source_info(final_name, tracks_str)
+                                self._import_bws_timeline_fallback(target_name, tracks_str)
                         else:
                             if cand_import_path:
                                 msg_box = WorkspaceWarningOverlay(
@@ -2469,20 +2458,7 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                                     if hasattr(self, '_panel_right'): self._panel_right.hide()
                                     return
                                 if res == QDialog.Accepted:
-                                    new_name = f"imported '{target_name}'"
-                                    imp_ok = False
-                                    actual_name = None
-                                    if self._extracted_drt_path and not (self.resolve_handler and hasattr(self.resolve_handler, 'is_free_21_1_or_newer') and self.resolve_handler.is_free_21_1_or_newer()):
-                                        imp_ok, actual_name = self.resolve_handler.import_timeline_drt(self._extracted_drt_path, new_name)
-                                    elif getattr(self, '_extracted_xml_path', None):
-                                        imp_ok = self.resolve_handler.import_timeline_xml(self._extracted_xml_path, new_name)
-                                        actual_name = new_name
-
-                                    if imp_ok:
-                                        final_name = actual_name or new_name
-                                        self._transcription_source["timeline_name"] = final_name
-                                        if hasattr(self, '_title_bar'):
-                                            self._title_bar.set_source_info(final_name, tracks_str)
+                                    self._import_bws_timeline_fallback(target_name, tracks_str)
                     
             # --- Restore SBS Cache ---
             sbs_cache = state.get('sbs_cache')
@@ -4016,8 +3992,53 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
 
 
+    def _import_bws_timeline_fallback(self, target_name: str, tracks_str: str):
+        """Imports bundled XML or DRT timeline during .bws load, preferring XML under Bridge/Free or XML assembly."""
+        if not getattr(self, 'resolve_handler', None):
+            return
+        new_name = f"imported '{target_name}'"
+        prefs = self.engine.load_preferences() or {}
+        force_xml = bool(prefs.get('force_xml_assembly', False) or prefs.get('timeline_assembly_method') == 'xml')
+        is_bridge = bool(getattr(self.resolve_handler, 'is_bridge_connected', lambda: False)())
+        is_free_21_1 = bool(getattr(self.resolve_handler, 'is_free_21_1_or_newer', lambda: False)())
+        prefer_xml = force_xml or is_bridge or is_free_21_1
+
+        xml_p = getattr(self, '_extracted_xml_path', None)
+        drt_p = getattr(self, '_extracted_drt_path', None)
+        imp_ok = False
+        actual_name = None
+
+        if prefer_xml and xml_p and os.path.exists(xml_p):
+            imp_ok = self.resolve_handler.import_timeline_xml(xml_p, new_name)
+            actual_name = new_name
+            if not imp_ok and drt_p and not is_free_21_1:
+                imp_ok, actual_name = self.resolve_handler.import_timeline_drt(drt_p, new_name)
+        elif drt_p and not is_free_21_1:
+            imp_ok, actual_name = self.resolve_handler.import_timeline_drt(drt_p, new_name)
+            if not imp_ok and xml_p and os.path.exists(xml_p):
+                imp_ok = self.resolve_handler.import_timeline_xml(xml_p, new_name)
+                actual_name = new_name
+        elif xml_p and os.path.exists(xml_p):
+            imp_ok = self.resolve_handler.import_timeline_xml(xml_p, new_name)
+            actual_name = new_name
+
+        if imp_ok:
+            final_name = actual_name or new_name
+            self._transcription_source["timeline_name"] = final_name
+            if hasattr(self, '_title_bar'):
+                self._title_bar.set_source_info(final_name, tracks_str)
+
     def _populate_editor(self, words_data, segments_data):
         import copy
+        from gui.components.transcription_canvas import merge_manual_marks_into_words
+        if hasattr(self, 'text_canvas') and getattr(self.text_canvas, '_is_streaming', False):
+            streamed_words = getattr(self.text_canvas, 'words_data', None) or []
+            if streamed_words:
+                merge_manual_marks_into_words(
+                    streamed_words,
+                    words_data,
+                    layer_fn=getattr(self, '_calculate_visual_layer', None),
+                )
         _orig_label = self.txt("titlebar_original")
         self._chapters = [{
             "name": _orig_label,
@@ -4961,21 +4982,66 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         """
         Prepare 70% x 70% default normal geometry on the cursor's monitor,
         and maximize cleanly across Windows, Linux, and macOS.
-        Ripping out of maximized always returns to 70% x 70%; clicking Restore
-        returns to any in-session user geometry (e.g. half-screen snap) or 70% x 70%.
+        On macOS, first launch uses ~88% centered window geometry (no forced fullscreen),
+        and subsequent launches restore saved window geometry or fullscreen state.
         """
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        is_mac = (sys.platform == "darwin")
+        default_ratio = 0.88 if is_mac else 0.70
+
         self.init_normal_geometry(
             saved_w=None,
             saved_h=None,
             screen=screen,
-            ratio=0.70,
+            ratio=default_ratio,
             min_w=config.S(640),
             min_h=config.S(460),
             apply_geometry=True,
             always_restore_default=False,
         )
-        if show:
+
+        if is_mac:
+            from PySide6.QtCore import QRect
+            prefs = self.engine.load_preferences() or {}
+            self._mac_saved_fullscreen = bool(prefs.get("mac_window_fullscreen", False))
+            saved_geo = prefs.get("mac_window_geometry")
+            if isinstance(saved_geo, (list, tuple)) and len(saved_geo) == 4:
+                try:
+                    gx, gy, gw, gh = [int(v) for v in saved_geo]
+                    if gw >= config.S(640) and gh >= config.S(460):
+                        cand = QRect(gx, gy, gw, gh)
+                        target_scr = None
+                        for s in QGuiApplication.screens():
+                            if s.availableGeometry().intersects(cand):
+                                target_scr = s
+                                break
+                        if target_scr is None:
+                            target_scr = screen
+                        if target_scr is not None:
+                            sg = target_scr.availableGeometry()
+                            w_clamped = min(gw, sg.width())
+                            h_clamped = min(gh, sg.height())
+                            x_clamped = max(sg.left(), min(gx, sg.left() + sg.width() - w_clamped))
+                            y_clamped = max(sg.top(), min(gy, sg.top() + sg.height() - h_clamped))
+                            clamped_rect = QRect(x_clamped, y_clamped, w_clamped, h_clamped)
+                            self.setGeometry(clamped_rect)
+                            self._default_normal_rect = clamped_rect
+                            self._default_normal_size = clamped_rect.size()
+                except Exception:
+                    pass
+            if show:
+                self.show_initial_window()
+        else:
+            if show:
+                self.showMaximized()
+
+    def show_initial_window(self):
+        """Shows the main window cleanly at startup (restoring macOS fullscreen or 88% window, maximizing elsewhere)."""
+        if sys.platform == "darwin":
+            self.show()
+            if getattr(self, "_mac_saved_fullscreen", False):
+                QTimer.singleShot(50, self.showFullScreen)
+        else:
             self.showMaximized()
 
     # ------------------------------------------------------------------
@@ -5466,6 +5532,17 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
         except Exception as e:
             from osdoc import log_error
             log_error(f"[UpdateCheck] Failed to start check thread: {e}")
+            try:
+                import traceback as _tb_upd
+                from startup.crash_report import is_technical_update_error, send_nonfatal_technical_report
+                if is_technical_update_error(str(e)):
+                    send_nonfatal_technical_report(
+                        "Updater failure (startup check)",
+                        str(e),
+                        tb_text=_tb_upd.format_exc(),
+                    )
+            except Exception:
+                pass
 
     def _do_silent_auto_update(self, latest_ver: str, gh_url: str, gl_url: str, release_notes: str = ""):
         """
@@ -5496,6 +5573,16 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
                 self._show_auto_update_done(latest_ver)
             else:
                 log_error(f"[AutoUpdate] Silent update failed: {err}")
+                try:
+                    from startup.crash_report import is_technical_update_error, send_nonfatal_technical_report
+                    if is_technical_update_error(err):
+                        send_nonfatal_technical_report(
+                            "Updater failure (silent)",
+                            err,
+                            extra_context={"target_version": latest_ver},
+                        )
+                except Exception:
+                    pass
 
         _bridge.done.connect(_on_done)
 
@@ -5629,6 +5716,29 @@ class BadWordsGUI(FramelessWindowMixin, _BaseMainWindow):
 
         msg_box = CustomMsgBox(self, self.txt('msg_quit_title'), self.txt('msg_quit_desc'), self.txt('btn_yes'), self.txt('btn_no'))
         if msg_box.exec() == QDialog.Accepted:
+            # Persist macOS window fullscreen / normal geometry for next launch
+            if sys.platform == "darwin" and hasattr(self, 'engine') and self.engine:
+                try:
+                    is_fs = bool(self.isFullScreen())
+                    save_payload = {"mac_window_fullscreen": is_fs}
+                    if not is_fs:
+                        g = self.geometry()
+                        if g.width() >= config.S(640) and g.height() >= config.S(460):
+                            save_payload["mac_window_geometry"] = [g.x(), g.y(), g.width(), g.height()]
+                    else:
+                        ng = getattr(self, '_default_normal_rect', None) or self.normalGeometry()
+                        if ng and ng.isValid() and ng.width() >= config.S(640) and ng.height() >= config.S(460):
+                            save_payload["mac_window_geometry"] = [ng.x(), ng.y(), ng.width(), ng.height()]
+                    self.engine.save_preferences(save_payload)
+                except Exception:
+                    pass
+
+            if hasattr(self, '_bridge_watch_timer') and self._bridge_watch_timer is not None:
+                try:
+                    self._bridge_watch_timer.stop()
+                except Exception:
+                    pass
+
             if getattr(self, '_settings_dialog', None) is not None:
                 try:
                     self._settings_dialog.hide()

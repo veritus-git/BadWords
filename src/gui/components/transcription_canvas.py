@@ -28,6 +28,79 @@ import config
 # --- INJECTED WIDGET IMPORTS ---
 # -------------------------------
 
+
+def merge_manual_marks_into_words(source_words: list, target_words: list, layer_fn=None) -> int:
+    """Preserves manual user markings made during live streaming when target_words replaces them."""
+    if not source_words or not target_words:
+        return 0
+
+    from collections import deque
+
+    exact_buckets = {}
+    fuzzy_buckets = {}
+    for sw in source_words:
+        if not isinstance(sw, dict) or sw.get('type') == 'silence':
+            continue
+        has_user_edit = bool(
+            sw.get('overlay_suppressed')
+            or sw.get('manual_status') is not None
+            or sw.get('selected')
+        )
+        if not has_user_edit:
+            continue
+        raw_txt = str(sw.get('text', '')).strip().lower()
+        try:
+            s_val = float(sw.get('start', -1.0))
+            e_val = float(sw.get('end', -1.0))
+        except Exception:
+            s_val, e_val = -1.0, -1.0
+        ex_key = (round(s_val, 2), round(e_val, 2), raw_txt)
+        exact_buckets.setdefault(ex_key, deque()).append(sw)
+        fz_key = (round(s_val, 1), raw_txt.strip('.,!?;:"\' '))
+        fuzzy_buckets.setdefault(fz_key, deque()).append(sw)
+
+    if not exact_buckets:
+        return 0
+
+    merged_count = 0
+    for tw in target_words:
+        if not isinstance(tw, dict) or tw.get('type') == 'silence':
+            continue
+        raw_txt = str(tw.get('text', '')).strip().lower()
+        try:
+            s_val = float(tw.get('start', -1.0))
+            e_val = float(tw.get('end', -1.0))
+        except Exception:
+            s_val, e_val = -1.0, -1.0
+
+        ex_key = (round(s_val, 2), round(e_val, 2), raw_txt)
+        src = None
+        q = exact_buckets.get(ex_key)
+        if q:
+            src = q.popleft()
+        else:
+            fz_key = (round(s_val, 1), raw_txt.strip('.,!?;:"\' '))
+            fq = fuzzy_buckets.get(fz_key)
+            if fq:
+                src = fq.popleft()
+
+        if src is None:
+            continue
+
+        tw['manual_status'] = src.get('manual_status')
+        tw['selected'] = bool(src.get('selected', False))
+        tw['status'] = src.get('status')
+        if 'is_auto' in src:
+            tw['is_auto'] = src.get('is_auto')
+        if src.get('overlay_suppressed'):
+            tw['overlay_suppressed'] = True
+        if callable(layer_fn):
+            layer_fn(tw)
+        merged_count += 1
+
+    return merged_count
+
+
 class TranscriptionCanvas(QWidget):
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
@@ -195,13 +268,21 @@ class TranscriptionCanvas(QWidget):
             if check_idx < target_len:
                 tw = target_words[check_idx]
                 cw = self.words_data[check_idx]
+                user_touched = bool(
+                    cw.get('overlay_suppressed')
+                    or cw.get('manual_status') is not None
+                    or cw.get('selected')
+                )
+                status_diff = False if user_touched else (tw.get('status') != cw.get('status'))
                 if (tw.get('text') != cw.get('text') or
-                    tw.get('status') != cw.get('status') or
+                    status_diff or
                     tw.get('is_segment_start') != cw.get('is_segment_start')):
                     rewind_idx = check_idx
                     break
 
+        rewound_words = []
         if rewind_idx < curr_len:
+            rewound_words = list(self.words_data[rewind_idx:])
             self.words_data = self.words_data[:rewind_idx]
             curr_len = rewind_idx
 
@@ -211,6 +292,12 @@ class TranscriptionCanvas(QWidget):
         tokens_to_add = target_words[curr_len:target_len]
         if not tokens_to_add:
             return
+        if rewound_words:
+            merge_manual_marks_into_words(
+                rewound_words,
+                tokens_to_add,
+                layer_fn=getattr(self.main_window, '_calculate_visual_layer', None),
+            )
 
         # Layout new tokens
         prefs, active_font, metrics, ts_font, ts_metrics, space_w, line_height = self._get_font_and_metrics()

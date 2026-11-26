@@ -2105,6 +2105,10 @@ class SearchableDropdown(QPushButton):
         """)
         self.line_edit.textChanged.connect(self._on_text_changed)
         self.line_edit.installEventFilter(self)
+        self._filter_timer = QTimer(self.popup)
+        self._filter_timer.setSingleShot(True)
+        self._filter_timer.setInterval(160)
+        self._filter_timer.timeout.connect(self._apply_filter)
         layout.addWidget(self.line_edit)
         
         layout.addWidget(self.list_widget)
@@ -2119,28 +2123,49 @@ class SearchableDropdown(QPushButton):
         self.popup.move(global_pos)
 
     def _on_text_changed(self, text):
+        if hasattr(self, '_filter_timer') and self._filter_timer is not None:
+            if not text.strip():
+                self._filter_timer.stop()
+                self._apply_filter()
+                return
+            self._filter_timer.start()
+            return
+        self._apply_filter()
+
+    def _apply_filter(self):
+        if not hasattr(self, 'list_widget') or not hasattr(self, 'line_edit'):
+            return
+        text = self.line_edit.text()
         search_str = text.lower()
         visible_count = 0
         first_visible = None
-        
-        for i in range(self.list_widget.count()):
-            item = self.list_widget.item(i)
-            if search_str in item.text().lower():
-                item.setHidden(False)
-                visible_count += 1
-                if not first_visible:
-                    first_visible = item
-            else:
-                item.setHidden(True)
-                
-        if first_visible:
-            self.list_widget.setCurrentItem(first_visible)
-                
+
+        self.list_widget.setUpdatesEnabled(False)
+        try:
+            for i in range(self.list_widget.count()):
+                item = self.list_widget.item(i)
+                if search_str in item.text().lower():
+                    item.setHidden(False)
+                    visible_count += 1
+                    if not first_visible:
+                        first_visible = item
+                else:
+                    item.setHidden(True)
+
+            if first_visible:
+                self.list_widget.setCurrentItem(first_visible)
+        finally:
+            self.list_widget.setUpdatesEnabled(True)
+
         self._update_height(visible_count, is_searching=bool(text.strip()))
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent, Qt
         if obj == self.line_edit and event.type() == QEvent.KeyPress:
+            if event.key() in (Qt.Key_Up, Qt.Key_Down, Qt.Key_Enter, Qt.Key_Return):
+                if hasattr(self, '_filter_timer') and self._filter_timer.isActive():
+                    self._filter_timer.stop()
+                    self._apply_filter()
             if event.key() == Qt.Key_Up:
                 self._move_selection(-1)
                 return True

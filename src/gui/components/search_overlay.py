@@ -206,9 +206,16 @@ class SearchOverlayWidget(QFrame):
         return super().eventFilter(obj, event)
 
     def _on_text_changed(self, text):
+        if not text.strip():
+            self.search_timer.stop()
+            self._perform_search()
+            return
         self.search_timer.start()
 
     def _on_enter_pressed(self):
+        if self.search_timer.isActive():
+            self.search_timer.stop()
+            self._perform_search()
         from PySide6.QtGui import QGuiApplication
         mods = QGuiApplication.keyboardModifiers()
         from PySide6.QtCore import Qt
@@ -216,6 +223,8 @@ class SearchOverlayWidget(QFrame):
             self.prev_match()
         else:
             self.next_match()
+
+    _CLEAN_WORD_RE = None
 
     def _perform_search(self):
         query = self.search_input.text().strip()
@@ -238,9 +247,12 @@ class SearchOverlayWidget(QFrame):
             return
             
         import re
+        if SearchOverlayWidget._CLEAN_WORD_RE is None:
+            SearchOverlayWidget._CLEAN_WORD_RE = re.compile(r'[^\w\s]')
+        clean_re = SearchOverlayWidget._CLEAN_WORD_RE
         q_lower = query.lower()
         # Break query into words removing special chars for matching
-        q_words = [re.sub(r'[^\w\s]', '', q) for q in q_lower.split() if q]
+        q_words = [clean_re.sub('', q) for q in q_lower.split() if q]
         if not q_words:
             # If all were special chars, just use the raw query tokens
             q_words = [q for q in q_lower.split() if q]
@@ -249,7 +261,7 @@ class SearchOverlayWidget(QFrame):
                 self._update_counter()
                 return
         
-        # Build searchable list
+        # Build searchable list with per-word cached clean/raw strings
         searchable = []
         for idx, w in enumerate(canvas.words_data):
             if w.get('type') == 'silence' or w.get('_hidden'):
@@ -257,9 +269,11 @@ class SearchOverlayWidget(QFrame):
             d_text = w.get('_display_text', w.get('text', ''))
             if not d_text.strip():
                 continue
-            clean_text = re.sub(r'[^\w\s]', '', d_text).lower()
-            raw_text = d_text.lower()
-            searchable.append((idx, clean_text, raw_text))
+            if w.get('_search_cached_src') != d_text:
+                w['_search_cached_src'] = d_text
+                w['_search_clean'] = clean_re.sub('', d_text).lower()
+                w['_search_raw'] = d_text.lower()
+            searchable.append((idx, w['_search_clean'], w['_search_raw']))
             
         # Sliding window
         q_len = len(q_words)

@@ -702,24 +702,47 @@ def download(url, dest):
         return False
 
 def detect_installed_version(install_dir):
+    """Detects the currently installed semantic version string, ignoring dynamic helper calls."""
+    ver_re = re.compile(r"^\d+\.\d+(?:\.\d+)*[a-zA-Z0-9.\-]*$")
+
+    # Prefer explicit .version marker files shipped by modern v4+ builds
+    ver_files = [
+        os.path.join(install_dir, ".version"),
+        os.path.join(os.path.dirname(os.path.abspath(install_dir)), ".version"),
+        os.path.join(install_dir, "config", ".version"),
+    ]
+    for vf in ver_files:
+        if os.path.isfile(vf):
+            try:
+                with open(vf, "r", encoding="utf-8") as f:
+                    val = f.read().strip()
+                    if val and ver_re.match(val):
+                        return val
+            except Exception:
+                pass
+
     candidates = [
         os.path.join(install_dir, "config", "app_constants.py"),
         os.path.join(install_dir, "src", "config", "app_constants.py"),
         os.path.join(install_dir, "config.py"),
         os.path.join(install_dir, "src", "config.py"),
     ]
+    assign_re = re.compile(r'^(?:VERSION|APP_VERSION|_DEFAULT_VERSION)\s*=\s*["\']([^"\']+)["\']')
     for c in candidates:
         if os.path.isfile(c):
             try:
+                fallback_default = None
                 with open(c, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line.startswith("VERSION") or line.startswith("APP_VERSION"):
-                            parts = line.split("=", 1)
-                            if len(parts) == 2:
-                                val = parts[1].strip().strip('"').strip("'")
-                                if val:
-                                    return val
+                    for raw_line in f:
+                        line = raw_line.strip()
+                        m = assign_re.match(line)
+                        if m and ver_re.match(m.group(1)):
+                            if line.startswith("_DEFAULT_VERSION"):
+                                fallback_default = m.group(1)
+                            else:
+                                return m.group(1)
+                if fallback_default:
+                    return fallback_default
             except Exception:
                 pass
 
@@ -730,7 +753,7 @@ def detect_installed_version(install_dir):
                 with open(p, "r", encoding="utf-8") as f:
                     d = json.load(f)
                     val = d.get("settings_version") or d.get("version") or d.get("badwords_version")
-                    if val:
+                    if val and ver_re.match(str(val)):
                         return str(val)
             except Exception:
                 pass

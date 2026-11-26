@@ -365,31 +365,34 @@ class _CrashRateLimiter:
         except Exception:
             pass
 
-    def try_acquire(self, fingerprint, src_dir=None, app_data_dir=None):
+    def try_acquire(self, fingerprint, src_dir=None, app_data_dir=None, app_version=""):
         """Return (allowed: bool, reason: str) and reserve slot if allowed.
 
-        Identical fingerprints are permanently deduplicated (never sent twice).
+        Identical fingerprints are deduplicated per BadWords app_version so that
+        an updated release gets a fresh chance to report recurring issues.
         """
+        ver_str = str(app_version or "").strip()
+        ledger_key = "{0}:{1}".format(ver_str, fingerprint) if ver_str else fingerprint
         now = time.time()
         with self._lock:
             if self._session_count >= _MAX_PER_SESSION:
                 return False, "session_cap"
-            if fingerprint in self._seen_session:
+            if ledger_key in self._seen_session:
                 return False, "session_duplicate"
 
             ledger_path = self._ledger_path(src_dir, app_data_dir)
             state = self._load_ledger(ledger_path, now)
-            if fingerprint in state["fingerprints"]:
-                self._seen_session.add(fingerprint)
+            if ledger_key in state["fingerprints"]:
+                self._seen_session.add(ledger_key)
                 return False, "already_reported"
 
             recent_ts = [t for t in state["timestamps"] if (now - t) < _HOUR_WINDOW_SEC]
             if len(recent_ts) >= _MAX_PER_HOUR:
                 return False, "hourly_cap"
 
-            self._seen_session.add(fingerprint)
+            self._seen_session.add(ledger_key)
             self._session_count += 1
-            state["fingerprints"][fingerprint] = now
+            state["fingerprints"][ledger_key] = now
             if len(state["fingerprints"]) > _MAX_STORED_FINGERPRINTS:
                 keep = sorted(state["fingerprints"].items(), key=lambda kv: kv[1], reverse=True)[:_MAX_STORED_FINGERPRINTS]
                 state["fingerprints"] = dict(keep)
@@ -579,7 +582,12 @@ def send_report(
 
         if not bypass_rate_limit:
             fp = compute_crash_fingerprint(error_text, tb_text=tb_text, category=category)
-            allowed, _ = _RATE_LIMITER.try_acquire(fp, src_dir=base, app_data_dir=app_data_dir)
+            allowed, _ = _RATE_LIMITER.try_acquire(
+                fp,
+                src_dir=base,
+                app_data_dir=app_data_dir,
+                app_version=version,
+            )
             if not allowed:
                 return False
 
@@ -795,3 +803,86 @@ def install_runtime_crash_hooks(src_dir=None, app_data_dir=None, allow_dev=False
 
     _HOOKS_INSTALLED = True
     return True
+
+
+_NET_UPDATE_NOISE_PATTERNS = (
+    "could not download update script",
+    "timed out",
+    "timeout (>10 min)",
+    "connection refused",
+    "connection reset",
+    "name resolution",
+    "temporary failure in name resolution",
+    "getaddrinfo failed",
+    "nodename nor servname",
+    "network is unreachable",
+    "ssl",
+    "urlopen error",
+)
+
+
+def is_technical_update_error(error_msg):
+    """Return True when an in-app updater failure looks like a code/updater bug rather than offline/network noise."""
+    txt = str(error_msg or "").strip().lower()
+    if not txt:
+        return False
+    for pat in _NET_UPDATE_NOISE_PATTERNS:
+        if pat in txt:
+            return False
+    return True
+
+
+_BRIDGE_USER_NOISE_PATTERNS = (
+    "not running",
+    "not connected",
+    "please start davinci",
+    "cannot find davinci",
+    "davinci resolve is not",
+    "cancelled",
+    "canceled",
+    "no timeline",
+)
+
+
+def is_technical_bridge_error(error_msg):
+    """Return True for technical Bridge protocol/handler errors when Bridge is active (excluding offline user prompts)."""
+    txt = str(error_msg or "").strip().lower()
+    if not txt:
+        return False
+    for pat in _BRIDGE_USER_NOISE_PATTERNS:
+        if pat in txt:
+            return False
+    return True
+
+
+def send_nonfatal_technical_report(
+    category,
+    error_text,
+    tb_text="",
+    extra_context=None,
+    src_dir=None,
+    app_data_dir=None,
+    allow_dev=False,
+):
+    """Send an opt-in, version-deduplicated auto-report for caught technical failures (updater, Bridge)."""
+    try:
+        base = os.path.abspath(src_dir) if src_dir else _default_src_dir()
+        if get_auto_crash_report_pref(base, app_data_dir=app_data_dir) is not True:
+            return None
+        if not allow_dev and _is_dev_checkout(base) and os.environ.get("BADWORDS_FORCE_CRASH_SEND") != "1":
+            return None
+        th, _ = send_report_async(
+            str(error_text or "Technical error"),
+            tb_text=str(tb_text or ""),
+            src_dir=base,
+            timeout=15,
+            category=str(category or "Technical error"),
+            app_data_dir=app_data_dir,
+            bypass_rate_limit=False,
+            allow_dev=allow_dev,
+            suppress_in_dev=not allow_dev,
+            extra_context=extra_context,
+        )
+        return th
+    except Exception:
+        return None
