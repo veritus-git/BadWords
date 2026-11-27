@@ -45,37 +45,43 @@
     console.error('OS hint init error:', err);
   }
 
-  // 0b. Subtle 3D Cursor Tilt on Hero App Showcase (pleofon-style)
+  // 0b. Subtle 3D Cursor Tilt on ALL Screenshot Stages (Hero, /features, /davinci-resolve, /docs, /download/*)
   try {
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
     const finePointer = window.matchMedia('(pointer: fine)');
-    const stage = document.querySelector('.hero-showcase');
-    if (stage) {
+    document.querySelectorAll('.tilt-stage').forEach(function (stage) {
+      const isHero = stage.classList.contains('hero-showcase');
+      const restX = isHero ? 1.5 : 0;
+      const restY = isHero ? -2 : 0;
       let frame = 0;
-      let tx = 1.5;
-      let ty = -2;
+      let tx = restX;
+      let ty = restY;
+
       const paintTilt = function () {
         stage.style.setProperty('--tilt-x', tx.toFixed(2) + 'deg');
         stage.style.setProperty('--tilt-y', ty.toFixed(2) + 'deg');
         frame = 0;
       };
+
       stage.addEventListener('pointermove', function (e) {
         if (motion.matches || !finePointer.matches || window.innerWidth <= 760) return;
         const box = stage.getBoundingClientRect();
-        tx = -(e.clientY - box.top - box.height / 2) / box.height * 3.2;
-        ty = (e.clientX - box.left - box.width / 2) / box.width * 4.2;
+        if (!box.width || !box.height) return;
+        tx = -(e.clientY - box.top - box.height / 2) / box.height * (isHero ? 3.2 : 4.2);
+        ty = (e.clientX - box.left - box.width / 2) / box.width * (isHero ? 4.2 : 5.2);
         stage.classList.add('is-moving');
         if (!frame) frame = requestAnimationFrame(paintTilt);
       }, { passive: true });
+
       stage.addEventListener('pointerleave', function () {
-        tx = 1.5;
-        ty = -2;
+        tx = restX;
+        ty = restY;
         stage.classList.remove('is-moving');
         if (!frame) frame = requestAnimationFrame(paintTilt);
       }, { passive: true });
-    }
+    });
   } catch (err) {
-    console.error('Hero tilt init error:', err);
+    console.error('Tilt stage init error:', err);
   }
 
   // 1. Mobile Navigation Toggle
@@ -105,102 +111,146 @@
     console.error('Mobile nav init error:', err);
   }
 
-  // 2. Interactive 5-Tab Feature Tour (Home Page)
+  // 2. Interactive 5-Tab Feature Tour (Fast Text-Only Live Preview)
   try {
     const featureTabs = document.querySelectorAll('.feature-tab');
     const featureTitle = document.getElementById('featureTitle');
-    const featurePreviewImg = document.getElementById('featurePreviewImg');
-    const featureStageBox = document.getElementById('featureStageBox');
-    const featureLightboxBtn = document.getElementById('featureLightboxBtn');
+    const featureBadge = document.getElementById('featureBadge');
+    const featureSummary = document.getElementById('featureSummary');
+    const featureDemoLabel = document.getElementById('featureDemoLabel');
+    const featureDemoBody = document.getElementById('featureDemoBody');
     const featureBullets = document.getElementById('featureBullets');
-    const assemblySubToggle = document.getElementById('assemblySubToggle');
-    const assemblySubtabs = document.querySelectorAll('.assembly-subtab');
+    const featureFootNote = document.getElementById('featureFootNote');
+    const featureDeepLink = document.getElementById('featureDeepLink');
 
-    if (featureTabs.length && featureTitle && featurePreviewImg && featureBullets) {
+    if (featureTabs.length && featureTitle && featureDemoBody && featureBullets) {
+      const makeSpan = function (cls, text) {
+        const s = document.createElement('span');
+        if (cls) s.className = cls;
+        s.textContent = text;
+        return s;
+      };
+
+      const renderDemoRows = function (rows) {
+        featureDemoBody.innerHTML = '';
+        rows.forEach(function (row) {
+          const div = document.createElement('div');
+          div.className = 'feature-demo-row';
+          if (row.type === 'transcript') {
+            const left = document.createElement('div');
+            row.parts.forEach(function (p) {
+              left.appendChild(makeSpan(p.cls, p.text));
+            });
+            div.appendChild(left);
+            if (row.tag) div.appendChild(makeSpan('text-muted', row.tag));
+          } else {
+            div.appendChild(makeSpan('text-muted', row.label));
+            div.appendChild(makeSpan(row.valCls || 'text-bright', row.value));
+          }
+          featureDemoBody.appendChild(div);
+        });
+      };
+
       const FEATURE_DATA = {
         verbatim: {
           title: 'True Verbatim Transcription',
-          src: '/assets/img/transcript-canvas.webp',
-          alt: 'True Verbatim Transcription canvas in BadWords',
-          caption: 'True Verbatim Transcription - Word-level transcript canvas',
-          contain: false,
+          badge: 'Faster-Whisper & MLX',
+          summary: 'Standard subtitles clean up speech and hide mistakes. BadWords preserves every stutter, false start, and filler word with word-level timestamps so nothing slips into the final cut.',
+          demoLabel: 'Live Transcript Canvas Output',
+          rows: [
+            { type: 'transcript', parts: [
+              { cls: 'text-muted', text: '[01:35]  ' },
+              { cls: 'tok-retake', text: 'what do you... but where do you get a template...' }
+            ], tag: 'Blue - Retake' },
+            { type: 'transcript', parts: [
+              { cls: 'text-muted', text: '[02:22]  It lives right here. ' },
+              { cls: 'tok-cut', text: 'And remember this.' }
+            ], tag: 'Red - Mistake' },
+            { type: 'transcript', parts: [
+              { cls: 'text-muted', text: '[02:26]  ...just type the ' },
+              { cls: 'tok-keep', text: 'comment' },
+              { cls: '', text: ' cat in front of that path.' }
+            ], tag: 'Green - Deviation' }
+          ],
           bullets: [
-            'Faster-Whisper & Apple MLX tuned to catch every stutter, "um", and false start instead of smoothing speech.',
-            'Marks completely unintelligible audio as (...) so you can inspect it manually.',
-            'Live chunked streaming with word-level timestamps across ~100 languages for frame-accurate cuts.'
-          ]
+            'Catches every stutter, "um", and false start across ~100 spoken languages.',
+            'Flags unintelligible audio as (...) for quick manual inspection.',
+            'Word-level timestamps sync playback and DaVinci Resolve playhead jumps.'
+          ],
+          foot: 'Supports Large Turbo (default), Large v3, and Medium offline.',
+          href: '/features#verbatim'
         },
         script: {
           title: 'Smart Script Comparison',
-          src: '/assets/img/script-sbs.webp',
-          alt: 'Smart Script Comparison side-by-side view in BadWords',
-          caption: 'Smart Script Comparison - Side-by-side DNA-inspired diff',
-          contain: false,
+          badge: 'DNA-Inspired Alignment',
+          summary: 'Import a .txt, .docx, or .pdf script and let BadWords align every spoken take against your intended lines - clean 1:1 takes stay untouched while mistakes pop out immediately.',
+          demoLabel: 'Script vs Spoken Alignment',
+          rows: [
+            { type: 'kv', label: 'Script line', value: '"...just type cat in front of that path."', valCls: 'text-bright' },
+            { type: 'kv', label: 'Spoken take #1', value: '"...type the comment cat in front..." (flagged)', valCls: 'text-emerald' },
+            { type: 'kv', label: 'Hotword boost', value: 'Auto-extracted tech terms & names -> Whisper prompt', valCls: 'text-body' }
+          ],
           bullets: [
-            'DNA-inspired alignment highlights only deviations, mistakes, and retakes so you skip clean 1:1 matches.',
-            'Automatically extracts technical terms and names from your script to boost AI transcription accuracy.',
-            'Imports .txt, .docx, and .pdf scripts directly, with a side-by-side script comparison view.'
-          ]
+            'Skips clean 1:1 scripted lines so you only review deviations and retakes.',
+            'Extracts technical terms and brand names from your script to improve AI accuracy.',
+            'Includes Side-by-Side Comparison View and script-free Standalone Analysis.'
+          ],
+          foot: 'Works with .txt, .docx, .pdf, or pasted clipboard scripts.',
+          href: '/features#script'
         },
         silence: {
-          title: 'Instant Silence Detection & Fast Silence',
-          src: '/assets/img/fast-silence.webp',
-          alt: 'Instant Silence Detection and Fast Silence controls in BadWords',
-          caption: 'Instant Silence Detection & Fast Silence - Sub-5 ms RAM tuning',
-          contain: false,
+          title: 'Instant Silence & Fast Silence',
+          badge: '<5 ms Live RAM Engine',
+          summary: 'Auto-normalized audio loudness makes the default -42 dB threshold work out of the box across microphones, with live sliders that update cut regions in RAM without re-rendering.',
+          demoLabel: 'Real-Time RAM Parameters',
+          rows: [
+            { type: 'kv', label: 'Auto-Norm Threshold', value: '-42.0 dB (consistent across mics)', valCls: 'text-emerald' },
+            { type: 'kv', label: 'Island Absorption', value: 'Swallows desk bumps, breaths & coughs in pauses', valCls: 'text-bright' },
+            { type: 'kv', label: 'Fast Silence Mode', value: 'Cuts full podcasts/gameplay in seconds (no AI)', valCls: 'text-body' }
+          ],
           bullets: [
-            'Auto-normalized audio makes the -42 dB silence threshold work out of the box across microphones.',
-            'Island absorption swallows random short noises like desk bumps or coughs inside pauses automatically.',
-            'Live sliders recalculate in <5 ms in RAM, and Fast Silence cuts an entire timeline in seconds without transcription.'
-          ]
+            'Tune silence threshold, pause removal %, min clip, and padding in under 5 ms.',
+            'Bottom waveform player skips red and silence cuts live when you press Space.',
+            'Switch to the Fast Silence tab when you only want dead air removed.'
+          ],
+          foot: 'Zero FFmpeg waiting while dragging silence sliders.',
+          href: '/features#silence'
         },
         editor: {
-          title: 'Standalone Mode & Multi-NLE Export',
-          src: '/assets/img/welcome-screen.webp',
-          alt: 'BadWords Standalone File Mode and DaVinci Resolve Welcome screen',
-          caption: 'Standalone Mode - Drag and drop video or audio files without DaVinci Resolve',
-          contain: false,
+          title: 'Standalone Mode & Multi-NLE',
+          badge: 'XML / FCPXML / OTIO / EDL',
+          summary: 'No DaVinci Resolve required. Drop MP4, MOV, MKV, or WAV files straight onto BadWords, cut by dragging across text or boxes, and export frame-accurate timelines to any editor.',
+          demoLabel: 'Supported Input & Export Pipeline',
+          rows: [
+            { type: 'kv', label: 'Drop Queue', value: 'Multi-file video/audio + automatic 360p proxies', valCls: 'text-bright' },
+            { type: 'kv', label: 'Selection Modes', value: 'Text Select (LMB), Marquee Box (RMB), Brush, Keys 1-4', valCls: 'text-body' },
+            { type: 'kv', label: 'Timeline Formats', value: 'FCP7 XML, Apple FCPXML, OpenTimelineIO, CMX 3600 EDL', valCls: 'text-emerald' }
+          ],
           bullets: [
-            'Drop MP4, MOV, MKV, or WAV files directly from disk with smooth automatic background 360p proxies.',
-            'Marquee box or brush selection with live strikethrough on cut words and Spacebar cut skipping.',
-            'Export clean cut timelines to FCP7 XML, Apple FCPXML, OpenTimelineIO (.otio), or CMX 3600 EDL.'
-          ]
+            'Works independently on Windows, macOS, and Linux (Wayland & X11).',
+            'Exact rational NTSC framerates (24000/1001, 30000/1001, 60000/1001) with zero drift.',
+            'Project saves (.bws) include background autosave and crash recovery.'
+          ],
+          foot: 'Ready for DaVinci Resolve, Premiere Pro, Final Cut Pro & Kdenlive.',
+          href: '/features#standalone'
         },
         assembly: {
-          title: 'Assembly Panel & Timeline Heatmap',
-          views: {
-            panel: {
-              src: '/assets/img/assembly-panel.webp',
-              alt: 'BadWords Assembly Options panel showing per-color cut and marker toggles',
-              caption: 'Assembly Panel - Per-color cut or timeline marker rules',
-              contain: true
-            },
-            heatmap: {
-              src: '/assets/img/heatmap-preview.webp',
-              alt: 'DaVinci Resolve timeline heatmap with linked color-coded clips generated by BadWords',
-              caption: 'Resolve Timeline Heatmap - Linked clips with color markers',
-              contain: false
-            }
-          },
+          title: 'Assembly Panel & Heatmap',
+          badge: 'Non-Destructive Rules',
+          summary: 'Decide per marker color whether BadWords cuts a clip out automatically or keeps it as a colored timeline marker for manual timing tweaks inside DaVinci Resolve.',
+          demoLabel: 'Per-Color Assembly Matrix',
+          rows: [
+            { type: 'kv', label: 'Red (Errors) & Silence', value: 'Auto-cut on Assemble (linked A/V clips)', valCls: 'text-rose' },
+            { type: 'kv', label: 'Blue (Retakes) / Green (Typos)', value: 'Cut or keep as Resolve colored clip markers', valCls: 'text-sky' },
+            { type: 'kv', label: 'Resolve Free 21.1+ & Studio', value: 'Lua Bridge + linked FCP7 XML or Studio .drt', valCls: 'text-emerald' }
+          ],
           bullets: [
-            'Decide per color whether to auto-cut or leave as colored clip markers on a brand-new non-destructive timeline.',
-            'Frame-accurate cuts on 23.976 / 29.97 / 59.94 fps, with optional Studio .drt pipeline to preserve Color, Fusion, and Fairlight.',
-            'Project saves (.bws) include autosave and crash recovery, plus FCPXML fallback on Resolve Free 21.1+.'
-          ]
-        }
-      };
-
-      let currentAssemblyView = 'panel';
-
-      const setMedia = function (src, alt, caption, contain) {
-        featurePreviewImg.src = src;
-        featurePreviewImg.alt = alt;
-        if (featureStageBox) {
-          featureStageBox.classList.toggle('is-contain', Boolean(contain));
-        }
-        if (featureLightboxBtn) {
-          featureLightboxBtn.setAttribute('data-lightbox-src', src);
-          featureLightboxBtn.setAttribute('data-lightbox-caption', caption);
+            'Creates a brand-new timeline copy so original footage and edits stay untouched.',
+            'Timeline Heatmap lets you preserve comedic timing and inspect edge cases visually.',
+            'Optional Studio .drt mode retains Color node grades, Fusion comps, and Fairlight FX.'
+          ],
+          foot: 'Custom color markers can also be pinned with dedicated shortcuts.',
+          href: '/davinci-resolve'
         }
       };
 
@@ -209,14 +259,12 @@
         if (!data) return;
 
         featureTitle.textContent = data.title;
-        if (key === 'assembly' && data.views) {
-          if (assemblySubToggle) assemblySubToggle.classList.remove('hidden');
-          const v = data.views[currentAssemblyView] || data.views.panel;
-          setMedia(v.src, v.alt, v.caption, v.contain);
-        } else {
-          if (assemblySubToggle) assemblySubToggle.classList.add('hidden');
-          setMedia(data.src, data.alt, data.caption, data.contain);
-        }
+        if (featureBadge) featureBadge.textContent = data.badge;
+        if (featureSummary) featureSummary.textContent = data.summary;
+        if (featureDemoLabel) featureDemoLabel.textContent = data.demoLabel;
+        renderDemoRows(data.rows);
+        if (featureFootNote) featureFootNote.textContent = data.foot;
+        if (featureDeepLink) featureDeepLink.setAttribute('href', data.href);
 
         featureBullets.innerHTML = '';
         data.bullets.forEach(function (text) {
@@ -240,18 +288,6 @@
       featureTabs.forEach(function (btn) {
         btn.addEventListener('click', function () {
           renderFeature(btn.getAttribute('data-feature-tab'));
-        });
-      });
-
-      assemblySubtabs.forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          currentAssemblyView = btn.getAttribute('data-assembly-view') || 'panel';
-          assemblySubtabs.forEach(function (sub) {
-            const active = sub === btn;
-            sub.classList.toggle('is-active', active);
-            sub.setAttribute('aria-selected', String(active));
-          });
-          renderFeature('assembly');
         });
       });
     }
