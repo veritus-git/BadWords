@@ -34,7 +34,7 @@
   }
   </script>
 </head>
-<body data-default-os="macos">
+<body>
   <header class="site-header">
     <div class="container header-inner">
       <a href="/" class="brand-link"><img src="/assets/img/banner.svg" alt="BadWords" width="142" height="28" class="brand-logo" /></a>
@@ -46,8 +46,11 @@
         <a href="/changelog">Changelog</a>
       </nav>
       <div class="header-actions">
-        <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary">GitHub</a>
-        <a href="/download" class="btn btn-sm btn-primary">All Platforms</a>
+        <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" /></svg>
+          <span>GitHub</span>
+        </a>
+        <a href="/download" class="btn btn-sm btn-primary">Switch OS</a>
       </div>
       <button id="mobileMenuBtn" type="button" aria-label="Toggle navigation menu" aria-expanded="false" class="mobile-menu-btn">
         <svg id="menuIconOpen" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
@@ -60,13 +63,15 @@
         <a href="/compare" class="mobile-link">Compare</a>
         <a href="/davinci-resolve" class="mobile-link">DaVinci Resolve</a>
         <a href="/docs" class="mobile-link">Documentation</a>
-        <a href="/download" class="mobile-link is-active">Download</a>
+        <a href="/changelog" class="mobile-link">Changelog</a>
+        <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <div class="mt-3"><a href="/download" class="btn btn-md btn-primary" style="width:100%;">Choose OS</a></div>
       </div>
     </div>
   </header>
 
   <main>
-    <section class="section-hero section-glow-tl" style="padding-bottom:3.5rem;">
+    <section class="section-subhero glow-top-center">
       <div class="container">
         <nav class="breadcrumb" aria-label="Breadcrumb">
           <a href="/">Home</a><span>/</span><a href="/download">Download</a><span>/</span><span>macOS</span>
@@ -74,54 +79,71 @@
         <p class="eyebrow">macOS (Apple Silicon M1-M5 &amp; Intel)</p>
         <h1 class="h1-page">Install BadWords on macOS</h1>
         <p class="lead">
-          Open <strong>Terminal</strong> (<code class="kbd">Cmd + Space</code> -&gt; Terminal), paste the command below, and press Enter. Zero sudo or Homebrew required.
+          Open <strong>Terminal</strong> (<code class="kbd">Cmd + Space</code> -&gt; Terminal), paste the command below, and press Enter. Zero sudo or Homebrew needed.
         </p>
         <div class="mt-5 flex flex-wrap gap-2">
-          <a href="/download/windows" class="pill-link">Windows</a>
+          <a href="/download/windows" class="pill-link">Switch to Windows</a>
           <a href="/download/mac" class="pill-link is-active">macOS</a>
-          <a href="/download/linux" class="pill-link">Linux</a>
+          <a href="/download/linux" class="pill-link">Switch to Linux</a>
         </div>
       </div>
     </section>
 
     <section class="section">
-      <div class="container" style="max-width:54rem;">
-        <div class="terminal-card">
-          <div class="terminal-head">
-            <div class="os-tabs" role="tablist">
-              <button type="button" role="tab" data-os="windows" aria-selected="false" class="os-tab">Windows</button>
-              <button type="button" role="tab" data-os="macos" aria-selected="true" class="os-tab is-active">macOS</button>
-              <button type="button" role="tab" data-os="linux" aria-selected="false" class="os-tab">Linux</button>
+      <div class="container" style="display:flex; flex-direction:column; gap:3rem;">
+        <div>
+          <p class="eyebrow">Step 1 - Launch Setup</p>
+          <h2 class="h2-section" style="font-size:1.55rem;">Paste into macOS Terminal</h2>
+          <div class="terminal-card mt-4" style="max-width:52rem;">
+            <div class="terminal-head">
+              <span class="mono-meta text-bright">Terminal (zsh / bash) - Native Apple MLX + Portable Python 3.12</span>
+              <a href="https://github.com/veritus-git/BadWords/blob/main/setupfiles/mac-setup.sh" target="_blank" rel="noopener noreferrer" class="mono-meta" style="text-decoration:underline;">View script source</a>
             </div>
-            <a id="viewScriptLink" href="https://github.com/veritus-git/BadWords/blob/main/setupfiles/mac-setup.sh" target="_blank" rel="noopener noreferrer" class="mono-meta" style="text-decoration:underline;">View script source</a>
-          </div>
-          <div style="padding:1.25rem;">
-            <div class="flex items-center justify-between mono-meta" style="font-size:0.7rem; margin-bottom:0.5rem;">
-              <span id="osShellLabel">Terminal (zsh / bash)</span>
-              <span>Native Apple MLX + Portable Python 3.12</span>
-            </div>
-            <div class="cmd-box">
-              <div class="cmd-scroll">
-                <span id="osPrompt" class="font-mono text-xs font-semibold text-emerald">$</span>
-                <code id="osCommand" class="cmd-code">curl -fsSL "https://badwords.dev/raw/mac" | bash</code>
+            <div style="padding:1.25rem;">
+              <div class="cmd-box">
+                <div class="cmd-scroll">
+                  <span class="font-mono text-xs font-semibold text-emerald" style="user-select:none;">$</span>
+                  <code id="osCommand" class="cmd-code">curl -fsSL "https://badwords.dev/raw/mac" | bash</code>
+                </div>
+                <button id="copyCommandBtn" type="button" class="copy-btn">Copy</button>
               </div>
-              <button id="copyCommandBtn" type="button" class="copy-btn">Copy</button>
             </div>
           </div>
         </div>
 
-        <div class="grid grid-2 mt-8">
-          <div class="card">
-            <h2 class="h3-card" style="font-size:1rem;">Manual Binary &amp; Gatekeeper</h2>
+        <div class="grid grid-12" style="align-items:center;">
+          <div class="col-span-6">
+            <p class="eyebrow">Step 2 - Inside the Setup Window</p>
+            <h2 class="h2-section" style="font-size:1.55rem;">Pick option <span class="text-emerald">1</span> to install</h2>
+            <p class="mt-3 text-sm text-muted">
+              The setup wizard has 5 options so you can install, update, or troubleshoot anytime with the same command:
+            </p>
+            <ul class="bullet-list">
+              <li><span class="badge-green">1 - Fresh Install / Update</span> <span><strong>Pick this first!</strong> Deploys BadWords, portable Python 3.12, MLX/Whisper, FFmpeg, and Resolve scripts.</span></li>
+              <li><span class="kbd">2 - Repair</span> <span>Verifies dependencies and repairs broken files without deleting models or saves.</span></li>
+              <li><span class="kbd">3 - Move</span> <span>Relocates your BadWords directory cleanly to a different drive or folder.</span></li>
+              <li><span class="kbd">4 - Reset</span> / <span class="kbd">5 - Uninstall</span> <span>Wipes app data or uninstalls BadWords completely.</span></li>
+            </ul>
+          </div>
+          <div class="col-span-6 tilt-stage">
+            <button type="button" data-lightbox-src="/assets/img/gui-setup-preview.webp" data-lightbox-caption="BadWords Setup Window - Press 1 for Fresh Install / Update" class="lightbox-trigger tilt-shot">
+              <img src="/assets/img/gui-setup-preview.webp" alt="BadWords Setup window showing options 1 through 5" width="706" height="606" loading="lazy" />
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="card card-lg">
+            <h3 class="h3-card" style="font-size:1rem;">Gatekeeper &amp; Manual Binary</h3>
             <p class="mt-2 text-sm text-muted">
-              If downloading <code class="kbd">badwords-setup-macos</code> manually from <a href="https://github.com/veritus-git/BadWords/releases/latest" target="_blank" rel="noopener noreferrer" class="text-emerald">GitHub Releases</a>, strip the quarantine flag in Terminal first:
+              If macOS Gatekeeper flags the unsigned GUI binary, the script automatically offers the identical Terminal Setup fallback. For manual <code class="kbd">badwords-setup-macos</code> downloads from <a href="https://github.com/veritus-git/BadWords/releases/latest" target="_blank" rel="noopener noreferrer" class="text-emerald">GitHub Releases</a>:
             </p>
             <pre class="mt-3 text-xs font-mono" style="background:var(--bg); padding:0.75rem; border-radius:0.5rem; border:1px solid var(--border); overflow-x:auto;">xattr -d com.apple.quarantine badwords-setup-macos &amp;&amp; chmod +x badwords-setup-macos &amp;&amp; ./badwords-setup-macos</pre>
           </div>
-          <div class="card">
-            <h2 class="h3-card" style="font-size:1rem;">Apple Silicon MLX &amp; Resolve App Store</h2>
+          <div class="card card-lg">
+            <h3 class="h3-card" style="font-size:1rem;">Apple Silicon MLX &amp; Mac App Store Resolve</h3>
             <p class="mt-2 text-sm text-muted">
-              On M1-M5 Macs, BadWords uses Apple's native Metal GPU engine (<code class="kbd">mlx-whisper</code>) up to ~11x faster than CPU. It also auto-detects both standard and Mac App Store DaVinci Resolve script containers.
+              On M1-M5 Macs, BadWords runs Whisper natively on Apple GPU via <code class="kbd">mlx-whisper</code> (up to ~11x faster than CPU). Both standard and sandboxed Mac App Store DaVinci Resolve script containers are detected automatically.
             </p>
           </div>
         </div>
@@ -131,12 +153,57 @@
 
   <footer class="site-footer">
     <div class="container">
-      <div class="footer-bottom" style="margin-top:0; border-top:none; padding-top:0;">
+      <div class="footer-grid">
+        <div>
+          <a href="/" class="brand-link"><img src="/assets/img/banner.svg" alt="BadWords" width="132" height="26" class="brand-logo" /></a>
+          <p class="mt-3 text-sm text-muted" style="max-width:20rem;">Free, 100% local open-source AI rough cut studio for DaVinci Resolve, Premiere Pro, and Final Cut Pro.</p>
+        </div>
+        <div>
+          <h3 class="footer-heading">Product</h3>
+          <ul class="footer-links">
+            <li><a href="/features">Features</a></li>
+            <li><a href="/compare">Compare Alternatives</a></li>
+            <li><a href="/davinci-resolve">DaVinci Resolve Guide</a></li>
+            <li><a href="/changelog">Changelog (v1 - v4)</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="footer-heading">Download &amp; Docs</h3>
+          <ul class="footer-links">
+            <li><a href="/download">Download (Choose OS)</a></li>
+            <li><a href="/download/windows">Windows Setup</a></li>
+            <li><a href="/download/mac">macOS Setup</a></li>
+            <li><a href="/download/linux">Linux Setup</a></li>
+            <li><a href="/docs">Documentation (v4.1.2)</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="footer-heading">Community &amp; Contact</h3>
+          <ul class="footer-links">
+            <li><a href="https://www.reddit.com/r/badwordsapp" target="_blank" rel="noopener noreferrer">Reddit (r/badwordsapp)</a></li>
+            <li><a href="https://buymeacoffee.com/badwords" target="_blank" rel="noopener noreferrer">Support - Buy Me a Coffee</a></li>
+            <li><a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer">GitHub &amp; Issues</a></li>
+            <li><a href="mailto:badwords.git@gmail.com">badwords.git@gmail.com</a></li>
+            <li><a href="/privacy">Privacy Policy</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
         <span>BadWords v4.1.2 - MIT Open Source (c) 2026 Szymon Wolarz</span>
-        <span><a href="/download">All Downloads</a> - <a href="/docs">Docs</a> - <a href="/davinci-resolve">DaVinci Resolve</a></span>
+        <span>Not affiliated with Blackmagic Design.</span>
       </div>
     </div>
   </footer>
+
+  <div id="lightboxModal" class="lightbox-modal" role="dialog" aria-modal="true" aria-labelledby="lightboxCaption">
+    <div class="lightbox-inner">
+      <div class="lightbox-top">
+        <p id="lightboxCaption" class="mono-meta" style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></p>
+        <button id="lightboxCloseBtn" type="button" aria-label="Close fullscreen preview" class="btn btn-sm btn-surface font-mono">Esc</button>
+      </div>
+      <div class="lightbox-frame"><img id="lightboxImg" src="" alt="" /></div>
+    </div>
+  </div>
   <script src="/assets/js/main.js" defer></script>
 </body>
 </html>

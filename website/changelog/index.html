@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Changelog - BadWords Release History (v4.1.2)</title>
-  <meta name="description" content="BadWords release notes and version history: v4.1.2 macOS &amp; Resolve Bridge stability, v4.1.1 Windows 11 startup hardening, v4.1.0 UI scaling &amp; Rust static binaries, and v4.0 standalone mode." />
+  <title>Changelog (v1.0.0 - v4.1.2) - BadWords Release History</title>
+  <meta name="description" content="Complete BadWords release history from v1.0.0 to v4.1.2: v4 standalone workstation &amp; live waveform, v3 PySide6 GUI &amp; .drt/.bws saves, v2 faster-whisper Windows launch, and v1 proof-of-concept." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://badwords.dev/changelog" />
 
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Changelog - BadWords Release History" />
-  <meta property="og:description" content="Track every release and improvement in BadWords v4." />
+  <meta property="og:title" content="Changelog (v1.0.0 - v4.1.2) - BadWords" />
+  <meta property="og:description" content="Full release timeline of BadWords across v4, v3, v2, and v1." />
   <meta property="og:url" content="https://badwords.dev/changelog" />
   <meta property="og:image" content="https://badwords.dev/assets/img/og-image.png" />
 
@@ -45,7 +45,10 @@
         <a href="/changelog" class="is-active">Changelog</a>
       </nav>
       <div class="header-actions">
-        <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary">GitHub</a>
+        <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" /></svg>
+          <span>GitHub</span>
+        </a>
         <a href="/download" class="btn btn-sm btn-primary">Download Free</a>
       </div>
       <button id="mobileMenuBtn" type="button" aria-label="Toggle navigation menu" aria-expanded="false" class="mobile-menu-btn">
@@ -60,84 +63,200 @@
         <a href="/davinci-resolve" class="mobile-link">DaVinci Resolve</a>
         <a href="/docs" class="mobile-link">Documentation</a>
         <a href="/changelog" class="mobile-link is-active">Changelog</a>
+        <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer">GitHub</a>
         <div class="mt-3"><a href="/download" class="btn btn-md btn-primary" style="width:100%;">Download Free</a></div>
       </div>
     </div>
   </header>
 
   <main>
-    <section class="section-hero section-glow-tl" style="padding-bottom:3rem;">
+    <section class="section-subhero glow-top-center">
       <div class="container">
         <nav class="breadcrumb" aria-label="Breadcrumb">
           <a href="/">Home</a><span>/</span><span>Changelog</span>
         </nav>
-        <p class="eyebrow">Release Notes</p>
+        <p class="eyebrow">Complete Release History (2026)</p>
         <h1 class="h1-page">BadWords Changelog</h1>
         <p class="lead">
-          Version history for BadWords v4. Full commit details are always public on <a href="https://github.com/veritus-git/BadWords/releases" target="_blank" rel="noopener noreferrer" class="text-emerald">GitHub Releases</a>.
+          Every major release from v1.0.0 to v4.1.2. All tags and binaries are archived on <a href="https://github.com/veritus-git/BadWords/releases" target="_blank" rel="noopener noreferrer" class="text-emerald">GitHub Releases</a>.
         </p>
+
+        <div class="mt-6 flex flex-wrap gap-2" role="group" aria-label="Filter releases by version">
+          <button type="button" data-changelog-filter="all" class="pill-link is-active">All Versions</button>
+          <button type="button" data-changelog-filter="4" class="pill-link">v4.x (Current)</button>
+          <button type="button" data-changelog-filter="3" class="pill-link">v3.x (PySide6 Era)</button>
+          <button type="button" data-changelog-filter="older" class="pill-link">v2.x &amp; v1.x (Legacy)</button>
+        </div>
       </div>
     </section>
 
     <section class="section">
-      <div class="container" style="max-width:54rem; display:flex; flex-direction:column; gap:1.5rem;">
-        <article class="card card-lg card-accent">
+      <div class="container">
+        <div style="max-width:56rem; display:flex; flex-direction:column; gap:1.35rem;">
+        <article class="card card-lg card-accent" data-release-major="4">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <h2 class="h3-card" style="font-size:1.35rem;">v4.1.2 - macOS UX, Resolve Bridge &amp; Search</h2>
             <span class="mono-meta text-emerald">2026-11-26</span>
           </div>
           <ul class="bullet-list">
-            <li><span class="bullet-dot"></span><span><strong>macOS Window &amp; Fullscreen Polish:</strong> Opens cleanly maximized to the desktop on first launch, closes Settings cleanly from Fullscreen Spaces without black flashes or ghost frames, and keeps popups smoothly draggable on Retina displays.</span></li>
-            <li><span class="bullet-dot"></span><span><strong>DaVinci Resolve Bridge &amp; .bws Import:</strong> Read-only Lua timeline queries never switch your active timeline, Native and Bridge timeline fingerprints now match 1:1, and <code class="kbd">.bws</code> exports bundle FCPXML fallback for Resolve Free 21.1+.</span></li>
-            <li><span class="bullet-dot"></span><span><strong>Live Chunked Manual Marks:</strong> Manual color markings made while words stream in are preserved when transcription finishes.</span></li>
-            <li><span class="bullet-dot"></span><span><strong>Faster Search &amp; Auto-Updater Fixes:</strong> Precompiled <code class="kbd">Ctrl+F</code> transcript search, faster Settings search, fixed in-app Update button, and opt-in Bridge/updater crash reporting.</span></li>
+            <li><span class="bullet-dot"></span><span><strong>macOS Window &amp; Fullscreen Polish:</strong> First launch opens maximized to the desktop; closing Settings from Fullscreen Spaces leaves zero ghost frames or black screens; popups drag smoothly on Retina.</span></li>
+            <li><span class="bullet-dot"></span><span><strong>DaVinci Resolve Bridge &amp; .bws Import:</strong> Read-only Lua queries never switch active timelines; Native and Bridge timeline fingerprints match 1:1; <code class="kbd">.bws</code> files bundle FCPXML fallback for Resolve Free 21.1+.</span></li>
+            <li><span class="bullet-dot"></span><span><strong>Chunked Marks &amp; Faster Search:</strong> Manual color markings stay intact after live chunk streaming completes; precompiled <code class="kbd">Ctrl+F</code> and Settings search; fixed in-app Update button.</span></li>
           </ul>
         </article>
 
-        <article class="card card-lg">
+        <article class="card card-lg" data-release-major="4">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <h2 class="h3-card" style="font-size:1.35rem;">v4.1.1 - Windows 11 Hardening &amp; Transactional Updates</h2>
+            <h2 class="h3-card" style="font-size:1.25rem;">v4.1.1 - Windows 11 Hardening &amp; Transactional Updates</h2>
             <span class="mono-meta">2026-11-25</span>
           </div>
           <ul class="bullet-list">
-            <li><span class="bullet-dot"></span><span><strong>Windows 11 Dark Surfaces &amp; Safe Boot:</strong> Eliminated white taskbar preview rings and startup bars, added automatic <code class="kbd">BADWORDS_SAFE_BOOT=1</code> fallback on GPU-less PCs, and deferred Resolve DLL loading until Resolve is active.</span></li>
-            <li><span class="bullet-dot"></span><span><strong>Windows Whisper Symlink &amp; Model Integrity Fix:</strong> Avoids unprivileged <code class="kbd">WinError 1314</code> and verifies partial model caches before loading.</span></li>
-            <li><span class="bullet-dot"></span><span><strong>Transactional Installer Updates:</strong> Existing files are replaced only after a valid release package downloads and extracts cleanly.</span></li>
+            <li><span class="bullet-dot"></span><span>Eliminated Win11 white taskbar preview rings/startup bars, added automatic <code class="kbd">BADWORDS_SAFE_BOOT=1</code> on GPU-less PCs, and deferred Resolve DLL loading until Resolve runs.</span></li>
+            <li><span class="bullet-dot"></span><span>Fixed Windows Whisper symlink failure (<code class="kbd">WinError 1314</code>), partial model cache validation, and transactional package replacement in the Rust installer.</span></li>
           </ul>
         </article>
 
-        <article class="card card-lg">
+        <article class="card card-lg" data-release-major="4">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <h2 class="h3-card" style="font-size:1.35rem;">v4.1.0 - Unified Scaling, Zero-Sudo Setup &amp; 11 Languages</h2>
+            <h2 class="h3-card" style="font-size:1.25rem;">v4.1.0 - Unified Scaling, Zero-Sudo Setup &amp; 11 Languages</h2>
             <span class="mono-meta">2026-11-25</span>
           </div>
           <ul class="bullet-list">
-            <li><span class="bullet-dot"></span><span><strong>Unified Cross-Platform UI Scaling (75%-200%):</strong> True Auto OS DPI mode without double-scaling across Windows 11, Linux Wayland/X11, and macOS Retina.</span></li>
-            <li><span class="bullet-dot"></span><span><strong>Zero-Sudo Portable Python 3.12 &amp; Static CRT:</strong> Removed root password prompts on Linux/macOS and eliminated missing <code class="kbd">VCRUNTIME140.dll</code> errors on fresh Windows 11 installs.</span></li>
-            <li><span class="bullet-dot"></span><span><strong>Redesigned 9-Tab Settings &amp; 11-Language Parity:</strong> Added live debounced Settings search, vector SVG icons across all themes, and synced 631 translation keys across all 11 languages.</span></li>
-            <li><span class="bullet-dot"></span><span><strong>Playback End Guard &amp; Proxy Audio:</strong> Clean end-of-timeline playback stop and audio muxing into 360p Resolve video proxies.</span></li>
+            <li><span class="bullet-dot"></span><span>True Auto OS DPI scaling (<code class="kbd">75%-200%</code>) across Windows 11, Wayland/X11, and macOS Retina without double multiplication.</span></li>
+            <li><span class="bullet-dot"></span><span>Zero-sudo portable Python 3.12 on Linux/macOS, static-CRT Windows binaries (no missing <code class="kbd">VCRUNTIME140.dll</code>), redesigned 9-tab Settings, and 631 synced keys across all 11 languages.</span></li>
+            <li><span class="bullet-dot"></span><span>Added hard end-of-timeline playback stops, audio muxing into 360p Resolve video proxies, and whitelist safe updates.</span></li>
           </ul>
         </article>
 
-        <article class="card card-lg">
+        <article class="card card-lg" data-release-major="4">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <h2 class="h3-card" style="font-size:1.35rem;">v4.0.0 - Standalone Workstation &amp; Live Waveform</h2>
-            <span class="mono-meta">2026-11-06</span>
+            <h2 class="h3-card" style="font-size:1.25rem;">v4.0.1 &amp; v4.0.0 - Standalone Workstation &amp; Live Waveform</h2>
+            <span class="mono-meta">2026-11-06 - 2026-11-11</span>
           </div>
           <ul class="bullet-list">
-            <li><span class="bullet-dot"></span><span>Launched full Standalone Mode (no Resolve required) with FCP7 XML, FCPXML, OTIO, and EDL export.</span></li>
-            <li><span class="bullet-dot"></span><span>Added interactive waveform timeline with real-time cut skipping, sub-5 ms RAM silence sliders, Apple Silicon MLX acceleration (~11x), marquee box selection, and Rust GUI installer.</span></li>
+            <li><span class="bullet-dot"></span><span>Full Standalone Mode (no Resolve required) with FCP7 XML, FCPXML, OTIO, and EDL export + 360p video proxies.</span></li>
+            <li><span class="bullet-dot"></span><span>Interactive waveform timeline with real-time cut skipping, sub-5 ms RAM silence tuning, Apple Silicon MLX (~11x), marquee box selection, FCP7 XML default for Resolve Free 21.1+, and Rust GUI installer.</span></li>
           </ul>
         </article>
+
+        <article class="card card-lg" data-release-major="3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="h3-card" style="font-size:1.2rem;">v3.2.4 &amp; v3.2.3 - Engine Precision &amp; WAV Assembly Hardening</h2>
+            <span class="mono-meta">2026-07-31</span>
+          </div>
+          <ul class="bullet-list">
+            <li><span class="bullet-dot"></span><span>Fixed speech boundary offset alignment, word selection drift during audio preview seeking, and safe PCM decoding in <code class="kbd">WavAssemblyThread</code>.</span></li>
+          </ul>
+        </article>
+
+        <article class="card card-lg" data-release-major="3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="h3-card" style="font-size:1.2rem;">v3.2.2 - Pure Faster-Whisper Engine &amp; 1.7x CPU Speedup</h2>
+            <span class="mono-meta">2026-07-30</span>
+          </div>
+          <ul class="bullet-list">
+            <li><span class="bullet-dot"></span><span>Removed heavy <code class="kbd">stable-ts</code>/PyTorch dependency, relying directly on <code class="kbd">faster-whisper</code> for native word-level timestamps and lighter installs.</span></li>
+            <li><span class="bullet-dot"></span><span>Made Ultra Precise (chunking) default and enabled cutting any selected marker color dynamically.</span></li>
+          </ul>
+        </article>
+
+        <article class="card card-lg" data-release-major="3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="h3-card" style="font-size:1.2rem;">v3.2.0 - Built-in Audio Preview, .bws Saves &amp; AutoSave</h2>
+            <span class="mono-meta">2026-07-27</span>
+          </div>
+          <ul class="bullet-list">
+            <li><span class="bullet-dot"></span><span>Integrated built-in audio preview player inside the transcript, introduced the <code class="kbd">.bws</code> project format with background AutoSave and crash recovery, and added the Track Selection drawer.</span></li>
+          </ul>
+        </article>
+
+        <article class="card card-lg" data-release-major="3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="h3-card" style="font-size:1.2rem;">v3.1.1 &amp; v3.1.0 - Standalone Analysis &amp; Side-by-Side Diff</h2>
+            <span class="mono-meta">2026-06-21 - 2026-06-24</span>
+          </div>
+          <ul class="bullet-list">
+            <li><span class="bullet-dot"></span><span>Introduced script-free Standalone Analysis to detect stutters/retakes automatically, Side-by-Side script comparison view, and Dynamic Programming diffing.</span></li>
+            <li><span class="bullet-dot"></span><span>Added Technical Hotwords scraping from scripts into Whisper prompts and fixed Apple M4 initialization.</span></li>
+          </ul>
+        </article>
+
+        <article class="card card-lg" data-release-major="3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="h3-card" style="font-size:1.2rem;">v3.0.0 - v3.0.5 - PySide6 GUI Rewrite</h2>
+            <span class="mono-meta">2026-05-03 - 2026-06-09</span>
+          </div>
+          <ul class="bullet-list">
+            <li><span class="bullet-dot"></span><span>Complete UI migration from tkinter to PySide6 with custom frameless titlebar, dockable panels, <code class="kbd">Ctrl+F</code> search widget, JSON settings, and 10 UI languages.</span></li>
+            <li><span class="bullet-dot"></span><span>Added Fast Silence ("Simple Silence") workspace, Windows 11/macOS setup refinements, and audio-only timeline assembly fixes.</span></li>
+          </ul>
+        </article>
+
+        <article class="card card-lg" data-release-major="2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="h3-card" style="font-size:1.2rem;">v2.0.0 - v2.0.3 - Windows Support &amp; Faster-Whisper Migration</h2>
+            <span class="mono-meta">2026-02-01 - 2026-02-28</span>
+          </div>
+          <ul class="bullet-list">
+            <li><span class="bullet-dot"></span><span>First Windows installer release alongside Linux/macOS, switching from <code class="kbd">openai-whisper</code> to <code class="kbd">faster-whisper</code> for dramatic RAM and speed improvements.</span></li>
+            <li><span class="bullet-dot"></span><span>Added compute type selection (float16/int8), Lazy-Assemble background generation, RTL language support, and percentage progress tracking.</span></li>
+          </ul>
+        </article>
+
+        <article class="card card-lg" data-release-major="1">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="h3-card" style="font-size:1.2rem;">v1.0.0 - v1.0.3 - Initial Open-Source Release</h2>
+            <span class="mono-meta">2026-01-05 - 2026-01-20</span>
+          </div>
+          <ul class="bullet-list">
+            <li><span class="bullet-dot"></span><span>First local proof-of-concept for DaVinci Resolve rough cutting with PDF/DOCX script import and modular <code class="kbd">algorithms.py</code> / <code class="kbd">engine.py</code> split.</span></li>
+          </ul>
+        </article>
+        </div>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
     <div class="container">
-      <div class="footer-bottom" style="margin-top:0; border-top:none; padding-top:0;">
+      <div class="footer-grid">
+        <div>
+          <a href="/" class="brand-link"><img src="/assets/img/banner.svg" alt="BadWords" width="132" height="26" class="brand-logo" /></a>
+          <p class="mt-3 text-sm text-muted" style="max-width:20rem;">Free, 100% local open-source AI rough cut studio for DaVinci Resolve, Premiere Pro, and Final Cut Pro.</p>
+        </div>
+        <div>
+          <h3 class="footer-heading">Product</h3>
+          <ul class="footer-links">
+            <li><a href="/features">Features</a></li>
+            <li><a href="/compare">Compare Alternatives</a></li>
+            <li><a href="/davinci-resolve">DaVinci Resolve Guide</a></li>
+            <li><a href="/changelog">Changelog (v1 - v4)</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="footer-heading">Download &amp; Docs</h3>
+          <ul class="footer-links">
+            <li><a href="/download">Download (Choose OS)</a></li>
+            <li><a href="/download/windows">Windows Setup</a></li>
+            <li><a href="/download/mac">macOS Setup</a></li>
+            <li><a href="/download/linux">Linux Setup</a></li>
+            <li><a href="/docs">Documentation (v4.1.2)</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="footer-heading">Community &amp; Contact</h3>
+          <ul class="footer-links">
+            <li><a href="https://www.reddit.com/r/badwordsapp" target="_blank" rel="noopener noreferrer">Reddit (r/badwordsapp)</a></li>
+            <li><a href="https://buymeacoffee.com/badwords" target="_blank" rel="noopener noreferrer">Support - Buy Me a Coffee</a></li>
+            <li><a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer">GitHub &amp; Issues</a></li>
+            <li><a href="mailto:badwords.git@gmail.com">badwords.git@gmail.com</a></li>
+            <li><a href="/privacy">Privacy Policy</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
         <span>BadWords v4.1.2 - MIT Open Source (c) 2026 Szymon Wolarz</span>
-        <span><a href="/">Home</a> - <a href="/features">Features</a> - <a href="/docs">Docs</a> - <a href="/download">Download</a></span>
+        <span>Not affiliated with Blackmagic Design.</span>
       </div>
     </div>
   </footer>

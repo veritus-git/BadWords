@@ -11,7 +11,7 @@
   <meta property="og:type" content="article" />
   <meta property="og:site_name" content="BadWords" />
   <meta property="og:title" content="BadWords v4.1.2 Documentation &amp; User Manual" />
-  <meta property="og:description" content="Up-to-date manual for BadWords v4: Standalone Mode, DaVinci Resolve 21.1+ Bridge, Silence Tuning, Script Diff, and XML/OTIO/EDL export." />
+  <meta property="og:description" content="Official manual for BadWords v4: Standalone Mode, DaVinci Resolve 21.1+ Bridge, Silence Tuning, Script Diff, and XML/OTIO/EDL export." />
   <meta property="og:url" content="https://badwords.dev/docs" />
   <meta property="og:image" content="https://badwords.dev/assets/img/og-image.png" />
 
@@ -52,7 +52,10 @@
         <a href="/changelog">Changelog</a>
       </nav>
       <div class="header-actions">
-        <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary">GitHub</a>
+        <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" /></svg>
+          <span>GitHub</span>
+        </a>
         <a href="/download" class="btn btn-sm btn-primary">Download Free</a>
       </div>
       <button id="mobileMenuBtn" type="button" aria-label="Toggle navigation menu" aria-expanded="false" class="mobile-menu-btn">
@@ -67,13 +70,14 @@
         <a href="/davinci-resolve" class="mobile-link">DaVinci Resolve</a>
         <a href="/docs" class="mobile-link is-active">Documentation</a>
         <a href="/changelog" class="mobile-link">Changelog</a>
+        <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer">GitHub</a>
         <div class="mt-3"><a href="/download" class="btn btn-md btn-primary" style="width:100%;">Download Free</a></div>
       </div>
     </div>
   </header>
 
   <main>
-    <section class="section-hero section-glow-tl" style="padding:3rem 0 2.75rem;">
+    <section class="section-subhero glow-top-center">
       <div class="container">
         <nav class="breadcrumb" aria-label="Breadcrumb">
           <a href="/">Home</a><span>/</span><span>Documentation</span>
@@ -81,7 +85,7 @@
         <p class="eyebrow">Official Manual - v4.1.2</p>
         <h1 class="h1-page">BadWords Documentation</h1>
         <p class="lead">
-          Everything you need to install BadWords, connect DaVinci Resolve (including Free 21.1+ Bridge) or Standalone files, tune silence removal, edit transcripts, and export clean timelines.
+          Complete reference for BadWords v4.1.2: installation, Standalone File Mode, DaVinci Resolve Free 21.1+ Lua Bridge, local AI models, live silence tuning, script diffing, and multi-NLE XML export.
         </p>
       </div>
     </section>
@@ -90,192 +94,209 @@
       <div class="container">
         <div class="docs-layout">
           <aside class="docs-sidebar" aria-label="Documentation Navigation">
-            <label for="docsSearchInput" class="sr-only">Filter documentation sections</label>
-            <input id="docsSearchInput" type="search" placeholder="Filter docs (e.g. Bridge, XML, shortcuts)..." class="docs-search-input" />
+            <label for="docsSearchInput" class="sr-only">Search documentation</label>
+            <div class="docs-search-wrap">
+              <input id="docsSearchInput" type="search" placeholder="Search docs (e.g. Bridge, XML, CUDA)..." class="docs-search-input" />
+              <button id="docsSearchClear" type="button" aria-label="Clear search" class="docs-search-clear hidden">x</button>
+            </div>
+            <div id="docsSearchMeta" class="docs-search-meta">All 12 sections - press / to search</div>
+
             <nav class="docs-nav">
               <a href="#quickstart" class="is-active">1. Quickstart Overview</a>
-              <a href="#installation">2. Installation &amp; Repair</a>
-              <a href="#davinci-resolve">3. DaVinci Resolve Setup</a>
-              <a href="#welcome-workspaces">4. Welcome &amp; Standalone Mode</a>
-              <a href="#ai-models">5. AI Models &amp; Hardware</a>
-              <a href="#transcript-editor">6. Transcript Editor &amp; Colors</a>
+              <a href="#installation">2. Installation &amp; Setup Options</a>
+              <a href="#davinci-resolve">3. DaVinci Resolve (Free 21.1+ &amp; Studio)</a>
+              <a href="#welcome-workspaces">4. Welcome Screen &amp; Standalone Files</a>
+              <a href="#ai-models">5. AI Models &amp; Hardware (CUDA/MLX)</a>
+              <a href="#transcript-editor">6. Transcript Editor &amp; Color Marking</a>
               <a href="#script-analysis">7. Script Comparison &amp; Auto-Analyze</a>
-              <a href="#silence-fillers">8. Silence Tuning &amp; Fillers</a>
-              <a href="#waveform-preview">9. Waveform &amp; Cut Skipping</a>
-              <a href="#assembly-export">10. Assembly &amp; Multi-NLE Export</a>
-              <a href="#settings-reference">11. Settings &amp; Shortcuts</a>
-              <a href="#troubleshooting">12. Troubleshooting</a>
+              <a href="#silence-fillers">8. Real-Time Silence Tuning &amp; Fillers</a>
+              <a href="#waveform-preview">9. Waveform Preview &amp; Cut Skipping</a>
+              <a href="#assembly-export">10. Assembly Rules &amp; Multi-NLE Export</a>
+              <a href="#settings-reference">11. Settings &amp; Keyboard Shortcuts</a>
+              <a href="#troubleshooting">12. Troubleshooting &amp; Support</a>
             </nav>
           </aside>
 
           <article class="docs-article">
-            <section id="quickstart">
+            <div id="docsEmptyState" class="card card-lg hidden" style="margin-bottom:2rem;">
+              <p class="text-bright font-semibold">No documentation sections matched your search.</p>
+              <p class="mt-1 text-sm text-muted">Try keywords like <code class="kbd">Bridge</code>, <code class="kbd">XML</code>, <code class="kbd">silence</code>, <code class="kbd">MLX</code>, or <code class="kbd">shortcuts</code>.</p>
+            </div>
+
+            <section id="quickstart" data-keywords="start overview workflow rough cut how it works">
               <h2>1. Quickstart Overview</h2>
               <p>
-                BadWords is a local AI rough cut studio that turns raw dialogue footage into a clean, cut timeline without uploading files to the cloud. A typical session takes four steps:
+                BadWords automates roughly 80% of repetitive dialogue rough cutting on your own computer. Instead of scrubbing hours of audio waveforms, you work in four clean stages:
               </p>
               <ol>
-                <li><strong>Pick a Source:</strong> Drop local video/audio files in Standalone Mode, or pick an open DaVinci Resolve timeline and audio tracks.</li>
-                <li><strong>Transcribe or Fast Silence:</strong> Click <strong>Analyze</strong> to run local Faster-Whisper / Apple MLX transcription, or switch to the <strong>Silence Detection</strong> tab to cut dead air immediately without AI.</li>
-                <li><strong>Review &amp; Tune:</strong> Mark mistakes or retakes by highlighting text (keys <span class="kbd">1</span>-<span class="kbd">4</span>), compare against a script, and adjust silence sliders live in RAM.</li>
-                <li><strong>Assemble or Export:</strong> Generate a brand-new non-destructive timeline inside Resolve, or export FCP7 XML, FCPXML, OTIO, or EDL for Premiere Pro, Final Cut Pro, and other editors.</li>
+                <li><strong>Pick a Source:</strong> Drop local video/audio files in Standalone Mode, or connect to an open DaVinci Resolve timeline and choose audio tracks.</li>
+                <li><strong>Transcribe or Fast Silence:</strong> Click <strong>Analyze</strong> to run local Whisper / MLX transcription, or switch to the <strong>Silence Detection</strong> tab to strip dead air without transcription.</li>
+                <li><strong>Review &amp; Tune:</strong> Mark mistakes or retakes by selecting words (<span class="kbd">1</span>-<span class="kbd">4</span>), compare against a script (<code class="kbd">.txt</code>/<code class="kbd">.docx</code>/<code class="kbd">.pdf</code>), and tune silence sliders live in RAM.</li>
+                <li><strong>Assemble or Export:</strong> Build a brand-new Resolve timeline with linked clips, or export FCP7 XML, FCPXML, OTIO, or EDL for Premiere Pro and Final Cut Pro.</li>
               </ol>
               <div class="docs-callout">
-                <strong>Non-destructive by design:</strong> BadWords never modifies your source media or original Resolve timeline. Every Assemble creates a new timeline copy.
+                <strong>Non-destructive by design:</strong> BadWords never overwrites your source media or original timeline. Every Assemble creates a fresh timeline copy.
+              </div>
+              <div class="tilt-stage mt-6">
+                <button type="button" data-lightbox-src="/assets/img/hero-workspace.webp" data-lightbox-caption="BadWords v4.1.2 Main Workspace" class="lightbox-trigger tilt-shot">
+                  <img src="/assets/img/hero-workspace.webp" alt="BadWords v4 workspace showing silence panel, verbatim transcript, workspace markers, and waveform" width="1460" height="860" loading="lazy" />
+                </button>
               </div>
             </section>
 
-            <section id="installation">
-              <h2>2. Installation &amp; Maintenance</h2>
+            <section id="installation" data-keywords="install setup repair move reset uninstall windows macos linux">
+              <h2>2. Installation &amp; Setup Options</h2>
               <p>
-                BadWords uses a lightweight Rust GUI installer that works without administrator or <code class="kbd">sudo</code> rights on Windows, macOS, and Linux. See the <a href="/download" class="text-emerald font-semibold">Download page</a> for copyable commands.
+                Visit the <a href="/download" class="text-emerald font-semibold">Download page</a>, choose Windows, macOS, or Linux, and paste the one-line terminal command. No admin or <code class="kbd">sudo</code> permissions are needed.
               </p>
               <ul>
-                <li><strong>Option 1 (Fresh Install / Update):</strong> Downloads BadWords code, creates an isolated Python 3.12 virtual environment, installs portable FFmpeg, and registers DaVinci Resolve scripts.</li>
-                <li><strong>Option 2 (Repair):</strong> Re-verifies ABI imports (<code class="kbd">PySide6</code>, <code class="kbd">faster_whisper</code>, <code class="kbd">av&lt;19</code>, <code class="kbd">pypdf</code>) and restores missing files without touching your saves or downloaded Whisper models.</li>
-                <li><strong>Option 3-5 (Move / Reset / Uninstall):</strong> Safely relocate your install folder, wipe cleanly, or remove all files and shortcuts.</li>
-              </ul>
-              <p>
-                BadWords checks for updates automatically on startup (configurable in <strong>Settings -&gt; General</strong>) and supports one-click in-app updates.
-              </p>
-            </section>
-
-            <section id="davinci-resolve">
-              <h2>3. DaVinci Resolve Setup (Free 21.1+ &amp; Studio)</h2>
-              <p>
-                Depending on your DaVinci Resolve edition, BadWords connects in one of three ways:
-              </p>
-              <ul>
-                <li><strong>DaVinci Resolve Free 21.1+ / 22+ (Bridge Mode):</strong> Blackmagic disabled external Python scripting and <code class="kbd">.drt</code> exports in Free 21.1+. Open your project in Resolve, click <strong>Workspace -&gt; Scripts -&gt; BadWords Bridge</strong> once per session, then launch BadWords from your Desktop or Start Menu. BadWords connects automatically over the Lua mailbox bridge and assembles timelines via linked <strong>FCP7 XML</strong>.</li>
-                <li><strong>DaVinci Resolve Studio (Any Version):</strong> Launch inside Resolve (<strong>Workspace -&gt; Scripts -&gt; BadWords</strong>) or from your Desktop (set <em>Preferences -&gt; System -&gt; General -&gt; External scripting using: Local</em>). Studio supports both <strong>FCP7 XML</strong> (default, keeps audio and video linked) and <strong>Native .drt</strong> (preserves Fusion comps and Color grades).</li>
-                <li><strong>DaVinci Resolve Free 21.0 and Older:</strong> Launch via <strong>Workspace -&gt; Scripts -&gt; BadWords</strong> or Bridge Mode.</li>
+                <li><strong>[1] Fresh Install / Update:</strong> Pick <strong>1</strong> to install BadWords, portable Python 3.12, FFmpeg, Whisper/MLX dependencies, and DaVinci Resolve scripts (or update an existing install while preserving saves/models).</li>
+                <li><strong>[2] Repair Installation:</strong> Re-checks ABI packages (<code class="kbd">PySide6</code>, <code class="kbd">faster_whisper</code>, <code class="kbd">av&lt;19</code>, <code class="kbd">pypdf</code>, <code class="kbd">certifi</code>) and fixes missing files without deleting models or saves.</li>
+                <li><strong>[3] Move Installation:</strong> Relocates your BadWords folder to another drive safely.</li>
+                <li><strong>[4] Reset / [5] Uninstall:</strong> Cleanly wipes config/caches or removes BadWords and shortcuts completely.</li>
               </ul>
             </section>
 
-            <section id="welcome-workspaces">
-              <h2>4. Welcome Screen &amp; Standalone Mode</h2>
+            <section id="davinci-resolve" data-keywords="davinci resolve free 21.1 bridge lua studio drt xml ipc">
+              <h2>3. DaVinci Resolve (Free 21.1+ &amp; Studio)</h2>
               <p>
-                The Welcome Screen offers two workspaces at the top tabs:
+                BadWords adapts automatically to every edition of DaVinci Resolve:
               </p>
               <ul>
-                <li><strong>Transcript:</strong> Full speech-to-text rough cutting with script diffing, filler detection, silence sliders, and cut/marker assembly.</li>
-                <li><strong>Silence Detection (Fast Silence):</strong> Instant FFmpeg silence cutting or color marking with zero AI transcription - ideal for gameplay, music, or already-clean recordings.</li>
+                <li><strong>DaVinci Resolve Free 21.1+ / 22+ (Bridge Mode):</strong> Blackmagic disabled external Python scripting and <code class="kbd">.drt</code> exports in Free 21.1+. Open your project in Resolve, click <strong>Workspace -&gt; Scripts -&gt; BadWords Bridge</strong> once per session, then launch BadWords from your Desktop or Start Menu. BadWords communicates over a fast Lua mailbox bridge and imports timelines as linked <strong>FCP7 XML</strong>.</li>
+                <li><strong>DaVinci Resolve Studio (Any Version):</strong> Launch inside Resolve (<strong>Workspace -&gt; Scripts -&gt; BadWords</strong>) or from Desktop (enable <em>Preferences -&gt; System -&gt; General -&gt; External scripting using: Local</em>). Defaults to FCP7 XML (linked video+audio), with optional <strong>.drt</strong> in Settings if you need Fusion comps or Color node trees preserved.</li>
+                <li><strong>DaVinci Resolve Free 21.0 and Older:</strong> Embedded script or Bridge Mode both work cleanly.</li>
               </ul>
-              <p>
-                When Source is set to <strong>File</strong> (Standalone Mode), drag and drop one or multiple video/audio files into the File Drop Zone. BadWords probes clip frame rates and audio tracks automatically and supports queued multi-file processing.
-              </p>
-              <button type="button" data-lightbox-src="/assets/img/feature-welcome-standalone.webp" data-lightbox-caption="BadWords v4 Standalone File Drop Zone" class="lightbox-trigger preview-frame mt-3" style="max-width:640px;">
-                <div class="preview-box"><img src="/assets/img/feature-welcome-standalone.webp" alt="BadWords v4 welcome screen with File Drop Zone" width="1360" height="820" loading="lazy" /><span class="preview-badge">Enlarge</span></div>
-              </button>
             </section>
 
-            <section id="ai-models">
-              <h2>5. AI Models &amp; Hardware Acceleration</h2>
+            <section id="welcome-workspaces" data-keywords="welcome screen standalone file drop zone queue fast silence">
+              <h2>4. Welcome Screen &amp; Standalone Files</h2>
               <p>
-                BadWords downloads AI models on first run and stores them locally so all future sessions work 100% offline (~1-5 GB depending on model):
+                The Welcome Screen includes two tabs at the top:
               </p>
               <ul>
-                <li><strong>Large Turbo (Default, ~2.5 GB):</strong> Best balance of transcription speed and verbatim accuracy across ~100 languages.</li>
-                <li><strong>Large v3:</strong> Maximum accuracy for complex accents or heavy technical jargon.</li>
+                <li><strong>Transcript:</strong> Speech-to-text rough cutting with script diffing, filler flagging, and per-color cut rules.</li>
+                <li><strong>Silence Detection (Fast Silence):</strong> Instant silence cutting or marker generation via FFmpeg with zero AI transcription - great for podcasts, gameplay, or music tracks.</li>
+              </ul>
+              <p>
+                Set Source to <strong>File</strong> to drag and drop multiple MP4, MOV, MKV, WAV, or MP3 clips into the queue without opening DaVinci Resolve.
+              </p>
+              <div class="tilt-stage mt-5" style="max-width:780px;">
+                <button type="button" data-lightbox-src="/assets/img/feature-welcome-standalone.webp" data-lightbox-caption="BadWords v4 Standalone File Drop Zone" class="lightbox-trigger tilt-shot">
+                  <img src="/assets/img/feature-welcome-standalone.webp" alt="BadWords Welcome screen with local File Drop Zone" width="1460" height="860" loading="lazy" />
+                </button>
+              </div>
+            </section>
+
+            <section id="ai-models" data-keywords="whisper faster-whisper mlx cuda gpu cpu nvidia apple silicon offline models turbo v3 medium">
+              <h2>5. AI Models &amp; Hardware (CUDA / MLX)</h2>
+              <p>
+                Models download once (~1-5 GB) and run 100% offline forever:
+              </p>
+              <ul>
+                <li><strong>Large Turbo (Default, ~2.5 GB):</strong> Best speed/accuracy balance across ~100 languages.</li>
+                <li><strong>Large v3:</strong> Maximum accuracy for complex accents and domain vocabulary.</li>
                 <li><strong>Medium:</strong> Lighter option for lower-VRAM GPUs or CPU-only laptops.</li>
               </ul>
               <p>
-                <strong>Hardware backends:</strong> NVIDIA GPUs use CUDA automatically (driver 525+ required; older GPUs safely fall back to CPU). Apple Silicon M1-M5 Macs use native Metal via <code class="kbd">mlx-whisper</code> (up to ~11x faster than CPU).
-              </p>
-              <p>
-                Enable <strong>More accurate transcription</strong> on the Welcome Screen for chunked precision mode when audio contains frequent rapid retakes.
+                <strong>Acceleration:</strong> NVIDIA CUDA (driver 525+ required; legacy GPUs automatically fall back to CPU safely), Apple Silicon M1-M5 native Metal via <code class="kbd">mlx-whisper</code> (up to ~11x faster than CPU), plus CPU fallback. Enable <strong>More accurate transcription</strong> on the Welcome Screen for tighter chunking on rapid retakes.
               </p>
             </section>
 
-            <section id="transcript-editor">
+            <section id="transcript-editor" data-keywords="editor colors red blue green eraser marquee brush text select inaudible search ctrl+f custom markers">
               <h2>6. Transcript Editor &amp; Color Marking</h2>
               <p>
-                Your dialogue streams into the central transcript canvas with timestamps (nearest second or millisecond precision in Settings) and strikethrough styling on words scheduled for cutting.
+                Words stream into the transcript canvas with timestamps and continuous strikethrough previews on words scheduled for removal:
               </p>
               <ul>
-                <li><span class="badge-red">1 - Red</span>: Mistakes, stutters, filler words (cut by default).</li>
-                <li><span class="badge-blue">2 - Blue</span>: Repeated takes / duplicates (cut or marked per Assembly settings).</li>
-                <li><span class="badge-green">3 - Green</span>: Script deviations / close matches (marked by default for manual check).</li>
+                <li><span class="badge-red">1 - Red</span>: Filler words, stutters, obvious mistakes (cut by default).</li>
+                <li><span class="badge-blue">2 - Blue</span>: Repeated takes and false starts.</li>
+                <li><span class="badge-green">3 - Green</span>: Close script deviations / typos (marked by default for quick review).</li>
                 <li><span class="kbd">4</span>: <strong>Eraser</strong> - clears any manual or algorithm mark to keep the word.</li>
               </ul>
               <p>
-                <strong>Selection modes (Settings -&gt; Editor &amp; Canvas):</strong> Choose how Left Mouse Button and Right Mouse Button behave: <strong>Text Selection</strong> (Notepad-style drag, default LMB), <strong>Marquee Box Selection</strong> (desktop-style rectangle, default RMB), or <strong>Brush</strong>. Manual marks always override automatic algorithm passes.
-              </p>
-              <p>
-                <strong>Search (<span class="kbd">Ctrl+F</span>):</strong> Opens the debounced transcript search overlay to jump directly to any phrase. Fragments marked as <code class="kbd">(...)</code> indicate unintelligible audio for quick manual review.
+                Configure LMB/RMB selection modes in <strong>Settings -&gt; Editor &amp; Canvas</strong>: <strong>Text Selection</strong> (Notepad-style drag, default LMB), <strong>Marquee Box</strong> (rectangular drag, default RMB), or <strong>Brush</strong>. Manual marks always take priority over automatic passes. Unintelligible sections are marked <code class="kbd">(...)</code> and <span class="kbd">Ctrl+F</span> opens live transcript search.
               </p>
             </section>
 
-            <section id="script-analysis">
-              <h2>7. Script Comparison &amp; Standalone Analysis</h2>
+            <section id="script-analysis" data-keywords="script compare diff docx pdf txt technical terms hotwords side by side standalone analysis">
+              <h2>7. Script Comparison &amp; Auto-Analyze</h2>
               <p>
                 Open the <strong>Script Comparison</strong> panel on the left sidebar:
               </p>
               <ul>
-                <li><strong>With a Script:</strong> Paste text or click <strong>Import Script</strong> (<code class="kbd">.txt</code>, <code class="kbd">.docx</code>, <code class="kbd">.pdf</code>), then click <strong>Analyze (Compare)</strong>. A DNA-inspired sequence aligner matches your recording against the script, flagging retakes and off-script words while letting you skip clean 1:1 takes. Technical words and names from your script are also fed to Whisper to reduce typos.</li>
-                <li><strong>Side-by-Side View:</strong> Click <strong>Side-by-Side View</strong> to inspect your original script lines aligned next to your spoken transcript.</li>
-                <li><strong>Without a Script:</strong> Click <strong>Analyze (Standalone)</strong> to auto-detect repeated phrases, stutters, and false starts directly from the transcript.</li>
+                <li><strong>Compare against a Script:</strong> Paste text or import <code class="kbd">.txt</code>, <code class="kbd">.docx</code>, or <code class="kbd">.pdf</code>, then click <strong>Analyze (Compare)</strong>. BadWords aligns your script against the recording so clean 1:1 lines stay untouched while deviations and retakes pop out visually. Technical terms from your script are automatically fed as hints to Whisper.</li>
+                <li><strong>Side-by-Side View:</strong> Inspect your original script lines right next to your spoken transcript.</li>
+                <li><strong>Standalone Analysis (No Script):</strong> Click <strong>Analyze (Standalone)</strong> to auto-detect stutters, false starts, and repeated phrases directly from audio.</li>
               </ul>
+              <div class="tilt-stage mt-5" style="max-width:780px;">
+                <button type="button" data-lightbox-src="/assets/img/feature-script-diff.webp" data-lightbox-caption="BadWords Script Comparison Panel" class="lightbox-trigger tilt-shot">
+                  <img src="/assets/img/feature-script-diff.webp" alt="BadWords Script Comparison panel with pasted script and highlighted transcript" width="1460" height="860" loading="lazy" />
+                </button>
+              </div>
             </section>
 
-            <section id="silence-fillers">
-              <h2>8. Real-Time Silence Tuning &amp; Filler Words</h2>
+            <section id="silence-fillers" data-keywords="silence detection -42db padding keep pause island absorption filler words dictionary">
+              <h2>8. Real-Time Silence Tuning &amp; Fillers</h2>
               <p>
-                Open the <strong>Silence Detection</strong> panel on the left sidebar to toggle <strong>Detect and cut silence</strong> or <strong>Detect and mark silence</strong>:
+                Open <strong>Silence Detection</strong> on the left sidebar and enable <strong>Detect and cut silence</strong> or <strong>Detect and mark silence</strong>:
               </p>
               <ul>
-                <li><strong>Auto-Normalization:</strong> Audio is normalized before analysis so <code class="kbd">-42.0 dB</code> works consistently across quiet and loud microphones.</li>
-                <li><strong>Island Absorption:</strong> Short non-speech sounds (breaths, mouse clicks, desk bumps) trapped inside a pause are absorbed cleanly into the silence cut.</li>
-                <li><strong>Live RAM Sliders (&lt;5 ms):</strong> Adjust <em>Silence threshold (dB)</em>, <em>Pauses to remove (%)</em>, <em>Min silence duration (s)</em>, <em>Min clip duration (s)</em>, and <em>Keep pause (s)</em> with zero FFmpeg waiting.</li>
+                <li><strong>Auto-Normalization:</strong> Audio loudness is normalized automatically so the default <code class="kbd">-42.0 dB</code> threshold fits most mics immediately.</li>
+                <li><strong>Island Absorption:</strong> Short noises like breaths, desk bumps, or coughs trapped inside dead air are absorbed cleanly.</li>
+                <li><strong>Sub-5 ms RAM Sliders:</strong> Adjust <em>Silence threshold (dB)</em>, <em>Pauses to remove (%)</em>, <em>Min silence duration (s)</em>, <em>Min clip duration (s)</em>, and <em>Keep pause (s)</em> with zero FFmpeg waiting.</li>
               </ul>
               <p>
-                Open the <strong>Filler Words</strong> panel to customize your comma-separated filler dictionary (e.g., <code class="kbd">um, uh, ah, like</code>) and auto-flag matching words in one click.
+                In the <strong>Filler Words</strong> panel, edit your comma-separated filler dictionary (<code class="kbd">um, uh, like...</code>) and toggle auto-flagging.
               </p>
             </section>
 
-            <section id="waveform-preview">
-              <h2>9. Waveform Preview &amp; Live Cut Skipping</h2>
+            <section id="waveform-preview" data-keywords="waveform playback cut skipping proxy 360p sync playhead">
+              <h2>9. Waveform Preview &amp; Cut Skipping</h2>
               <p>
-                The bottom player renders your audio waveform with green (kept) and red (cut) zones synchronized with every word and silence cut:
+                The bottom player visualizes audio peaks alongside green (kept) and dimmed/hatched (cut) zones:
               </p>
               <ul>
-                <li><strong>Live Cut Skipping:</strong> Press <span class="kbd">Space</span> to play - BadWords automatically skips over cut zones in real time so you can audition the pacing before exporting.</li>
-                <li><strong>360p Video Proxy:</strong> In Standalone or complex Resolve timelines, a lightweight 360p background proxy lets you scrub video smoothly alongside the waveform.</li>
-                <li><strong>Resolve Sync:</strong> <span class="kbd">Ctrl+Click</span> (configurable) any word to move the DaVinci Resolve playhead to that exact frame.</li>
+                <li><strong>Real-Time Cut Skipping:</strong> Press <span class="kbd">Space</span> - playback jumps straight over cut sections so you hear the final pacing before assembling.</li>
+                <li><strong>360p Video Proxies:</strong> Generated cleanly in background after transcription so heavy 4K/8K timelines scrub smoothly.</li>
+                <li><strong>Playhead Sync:</strong> <span class="kbd">Ctrl+Click</span> any word to jump the DaVinci Resolve playhead to that exact frame.</li>
               </ul>
             </section>
 
-            <section id="assembly-export">
+            <section id="assembly-export" data-keywords="assemble export xml fcp7 fcpxml otio edl bws save autosave drop frame 23.976">
               <h2>10. Assembly Rules &amp; Multi-NLE Export</h2>
               <p>
-                Open the right-hand <strong>Assembly Options</strong> panel (and favorite star shortcuts to pin your most-used toggles to the bottom-right Workspace panel):
+                Open <strong>Assembly Options</strong> on the right sidebar (or pin favorite toggles to the Workspace panel using star icons):
               </p>
               <ul>
-                <li><strong>Per-Color Rules:</strong> Click the scissors icon to auto-cut a color on Assemble, or leave it off to emit colored timeline markers instead (Timeline Heatmap).</li>
-                <li><strong>Linked A/V Clips:</strong> FCP7 XML assembly preserves audio-video linking in DaVinci Resolve. Studio users can optionally enable <strong>.drt</strong> in Settings -&gt; DaVinci Resolve to retain Fusion/Color nodes.</li>
-                <li><strong>Standalone Export Formats:</strong> Click <strong>Export</strong> to generate <strong>Final Cut Pro 7 XML (.xml)</strong>, <strong>Apple FCPXML (.fcpxml)</strong>, <strong>OpenTimelineIO (.otio)</strong>, or <strong>CMX 3600 EDL (.edl)</strong> with exact drop-frame timebases (<code class="kbd">24000/1001</code>, <code class="kbd">30000/1001</code>).</li>
-                <li><strong>Project Saves (.bws):</strong> Save and reopen editing sessions anytime with autosave and crash recovery.</li>
+                <li><strong>Per-Color Rules:</strong> Toggle scissors on any color to auto-cut on Assemble, or leave off to create native timeline markers (Timeline Heatmap).</li>
+                <li><strong>Standalone Export:</strong> Click <strong>Export</strong> to write <strong>Final Cut Pro 7 XML (.xml)</strong>, <strong>Apple FCPXML (.fcpxml)</strong>, <strong>OpenTimelineIO (.otio)</strong>, or <strong>CMX 3600 EDL (.edl)</strong> with exact NTSC rational framerates (<code class="kbd">24000/1001</code>, <code class="kbd">30000/1001</code>).</li>
+                <li><strong>Project Saves (.bws):</strong> Includes background autosave and crash recovery (plus embedded FCPXML fallback for Resolve Free 21.1+).</li>
               </ul>
+              <div class="tilt-stage mt-5" style="max-width:520px;">
+                <button type="button" data-lightbox-src="/assets/img/feature-export-dialog.webp" data-lightbox-caption="Standalone Timeline Export Dialog" class="lightbox-trigger tilt-shot">
+                  <img src="/assets/img/feature-export-dialog.webp" alt="BadWords Export Timeline dialog with format, framerate, and resolution options" width="560" height="394" loading="lazy" />
+                </button>
+              </div>
             </section>
 
-            <section id="settings-reference">
+            <section id="settings-reference" data-keywords="settings scaling 75% 200% dpi shortcuts custom markers language export import reset">
               <h2>11. Settings &amp; Keyboard Shortcuts</h2>
               <p>
-                Press <span class="kbd">Escape</span> or click the gear icon to open the 9-tab Settings window (includes live debounced search and Basic / Advanced views):
+                Press <span class="kbd">Escape</span> to open the 9-tab Settings window (with debounced search and Basic / Advanced views):
               </p>
               <ul>
-                <li><strong>General:</strong> UI language (11 languages), App Icon theme, auto-update check, Export/Import/Reset settings, and direct log folder access.</li>
-                <li><strong>Appearance:</strong> Unified UI Scaling slider (<code class="kbd">75%-200%</code>) with Auto OS DPI mode.</li>
-                <li><strong>Editor &amp; Canvas:</strong> Segmented vs Continuous flow, font family/size, line spacing, millisecond timestamps, and LMB/RMB selection modes.</li>
-                <li><strong>DaVinci Resolve:</strong> Switch between FCP7 XML and Studio <code class="kbd">.drt</code>, track linking, and 360p timeline proxy toggle.</li>
-                <li><strong>Shortcuts &amp; Custom Markers:</strong> Rebind keys and define custom marker colors with dedicated shortcuts.</li>
-                <li><strong>Support &amp; About / Privacy:</strong> Built-in bug report form with screenshot drag/paste and automatic scrubbed log attachment, plus telemetry &amp; crash-report toggles.</li>
+                <li><strong>General:</strong> UI language (11 languages), App Icon style, update check, Settings Export/Import/Reset, and direct log opener.</li>
+                <li><strong>Appearance:</strong> Unified UI Scaling (<code class="kbd">75%-200%</code>) with Auto OS DPI mode.</li>
+                <li><strong>Editor &amp; Canvas:</strong> Segmented vs Continuous layout, fonts, millisecond timestamps, and LMB/RMB selection modes.</li>
+                <li><strong>DaVinci Resolve:</strong> Switch FCP7 XML vs Studio <code class="kbd">.drt</code>, A/V linking, and 360p timeline proxies.</li>
+                <li><strong>Shortcuts &amp; Custom Markers:</strong> Rebind keys and create custom color markers with dedicated hotkeys.</li>
+                <li><strong>Support &amp; About / Privacy:</strong> Built-in bug report form with screenshot attachments and scrubbed logs, plus telemetry/crash-report toggles.</li>
               </ul>
 
-              <h3>Default Keyboard Shortcuts</h3>
-              <div class="table-wrap mt-3">
+              <div class="table-wrap mt-4">
                 <table class="compare-table" style="min-width:460px;">
-                  <thead><tr><th>Action</th><th>Default Key</th></tr></thead>
+                  <thead><tr><th>Action</th><th>Default Shortcut</th></tr></thead>
                   <tbody>
                     <tr><td>Mark Red / Blue / Green / Eraser</td><td class="font-mono">1 / 2 / 3 / 4</td></tr>
                     <tr><td>Play / Pause preview</td><td class="font-mono">Space</td></tr>
@@ -286,16 +307,25 @@
                   </tbody>
                 </table>
               </div>
+
+              <div class="tilt-stage mt-6" style="max-width:680px;">
+                <button type="button" data-lightbox-src="/assets/img/feature-settings-dialog.webp" data-lightbox-caption="BadWords v4.1.2 Settings Window" class="lightbox-trigger tilt-shot">
+                  <img src="/assets/img/feature-settings-dialog.webp" alt="BadWords v4.1.2 Settings window with 9 tabs and live search" width="750" height="580" loading="lazy" />
+                </button>
+              </div>
             </section>
 
-            <section id="troubleshooting">
-              <h2>12. Troubleshooting</h2>
+            <section id="troubleshooting" data-keywords="troubleshooting bug support reddit buy me a coffee contact email issues cuda cublas bridge">
+              <h2>12. Troubleshooting &amp; Support</h2>
               <ul>
-                <li><strong>Resolve Free 21.1+ says "No connection":</strong> Make sure you launched <strong>Workspace -&gt; Scripts -&gt; BadWords Bridge</strong> inside DaVinci Resolve first for the current project session.</li>
-                <li><strong>Model download fails or stalls:</strong> Check firewall/antivirus exclusions, free disk space (~5 GB), and folder write permissions.</li>
-                <li><strong>GPU error / falling back to CPU:</strong> Update NVIDIA drivers to 525+ for CUDA 12. Older GPUs automatically switch to safe CPU mode without crashing.</li>
-                <li><strong>Need help or found a bug?</strong> Use <strong>Settings -&gt; Support &amp; Feedback</strong> inside BadWords, open a <a href="https://github.com/veritus-git/BadWords/issues" target="_blank" rel="noopener noreferrer" class="text-emerald">GitHub Issue</a>, or post on <a href="https://www.reddit.com/r/badwordsapp" target="_blank" rel="noopener noreferrer" class="text-emerald">r/badwordsapp</a>.</li>
+                <li><strong>Resolve Free 21.1+ shows "No connection":</strong> Run <strong>Workspace -&gt; Scripts -&gt; BadWords Bridge</strong> inside Resolve once for your open project session.</li>
+                <li><strong>Model download fails:</strong> Check firewall/antivirus exclusions, free space (~5 GB), and folder write permissions.</li>
+                <li><strong>Older GPU / Missing CUDA DLLs:</strong> Update NVIDIA drivers to 525+. If CUDA isn't supported on your hardware, BadWords switches safely to CPU automatically.</li>
               </ul>
+              <div class="docs-callout">
+                <strong>Need help or want to support BadWords?</strong><br />
+                Use <strong>Settings -&gt; Support &amp; Feedback</strong> inside the app, post on <a href="https://www.reddit.com/r/badwordsapp" target="_blank" rel="noopener noreferrer" class="text-emerald font-semibold">r/badwordsapp</a>, open a <a href="https://github.com/veritus-git/BadWords/issues" target="_blank" rel="noopener noreferrer" class="text-emerald font-semibold">GitHub Issue</a>, email <a href="mailto:badwords.git@gmail.com" class="text-emerald font-semibold">badwords.git@gmail.com</a>, or fuel development on <a href="https://buymeacoffee.com/badwords" target="_blank" rel="noopener noreferrer" class="text-emerald font-semibold">Buy Me a Coffee</a>.
+              </div>
             </section>
           </article>
         </div>
@@ -305,9 +335,44 @@
 
   <footer class="site-footer">
     <div class="container">
-      <div class="footer-bottom" style="margin-top:0; border-top:none; padding-top:0;">
-        <span>BadWords v4.1.2 Documentation - MIT Open Source</span>
-        <span><a href="/">Home</a> - <a href="/features">Features</a> - <a href="/download">Download</a> - <a href="/changelog">Changelog</a> - <a href="/privacy">Privacy</a></span>
+      <div class="footer-grid">
+        <div>
+          <a href="/" class="brand-link"><img src="/assets/img/banner.svg" alt="BadWords" width="132" height="26" class="brand-logo" /></a>
+          <p class="mt-3 text-sm text-muted" style="max-width:20rem;">Free, 100% local open-source AI rough cut studio for DaVinci Resolve, Premiere Pro, and Final Cut Pro.</p>
+        </div>
+        <div>
+          <h3 class="footer-heading">Product</h3>
+          <ul class="footer-links">
+            <li><a href="/features">Features</a></li>
+            <li><a href="/compare">Compare Alternatives</a></li>
+            <li><a href="/davinci-resolve">DaVinci Resolve Guide</a></li>
+            <li><a href="/changelog">Changelog (v1 - v4)</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="footer-heading">Download &amp; Docs</h3>
+          <ul class="footer-links">
+            <li><a href="/download">Download (Choose OS)</a></li>
+            <li><a href="/download/windows">Windows Setup</a></li>
+            <li><a href="/download/mac">macOS Setup</a></li>
+            <li><a href="/download/linux">Linux Setup</a></li>
+            <li><a href="/docs">Documentation (v4.1.2)</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="footer-heading">Community &amp; Contact</h3>
+          <ul class="footer-links">
+            <li><a href="https://www.reddit.com/r/badwordsapp" target="_blank" rel="noopener noreferrer">Reddit (r/badwordsapp)</a></li>
+            <li><a href="https://buymeacoffee.com/badwords" target="_blank" rel="noopener noreferrer">Support - Buy Me a Coffee</a></li>
+            <li><a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer">GitHub &amp; Issues</a></li>
+            <li><a href="mailto:badwords.git@gmail.com">badwords.git@gmail.com</a></li>
+            <li><a href="/privacy">Privacy Policy</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>BadWords v4.1.2 - MIT Open Source (c) 2026 Szymon Wolarz</span>
+        <span>Not affiliated with Blackmagic Design.</span>
       </div>
     </div>
   </footer>
