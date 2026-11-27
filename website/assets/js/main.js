@@ -45,17 +45,16 @@
     console.error('OS hint init error:', err);
   }
 
-  // 0b. Subtle 3D Cursor Tilt on ALL Screenshot Stages (Hero, /features, /davinci-resolve, /docs, /download/*)
+  // 0b. Crisp Resting + Subtle 3D Cursor Tilt on ALL Screenshot Stages (sharp text at rest, tilts on hover)
   try {
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
     const finePointer = window.matchMedia('(pointer: fine)');
     document.querySelectorAll('.tilt-stage').forEach(function (stage) {
-      const isHero = stage.classList.contains('hero-showcase');
-      const restX = isHero ? 1.5 : 0;
-      const restY = isHero ? -2 : 0;
+      const shot = stage.querySelector('.tilt-shot');
       let frame = 0;
-      let tx = restX;
-      let ty = restY;
+      let settleTimer = 0;
+      let tx = 0;
+      let ty = 0;
 
       const paintTilt = function () {
         stage.style.setProperty('--tilt-x', tx.toFixed(2) + 'deg');
@@ -65,19 +64,26 @@
 
       stage.addEventListener('pointermove', function (e) {
         if (motion.matches || !finePointer.matches || window.innerWidth <= 760) return;
+        if (settleTimer) { clearTimeout(settleTimer); settleTimer = 0; }
         const box = stage.getBoundingClientRect();
         if (!box.width || !box.height) return;
-        tx = -(e.clientY - box.top - box.height / 2) / box.height * (isHero ? 3.2 : 4.2);
-        ty = (e.clientX - box.left - box.width / 2) / box.width * (isHero ? 4.2 : 5.2);
-        stage.classList.add('is-moving');
+        const maxX = stage.classList.contains('hero-showcase') ? 2.2 : 3.2;
+        const maxY = stage.classList.contains('hero-showcase') ? 2.8 : 4.0;
+        tx = -(e.clientY - box.top - box.height / 2) / box.height * maxX;
+        ty = (e.clientX - box.left - box.width / 2) / box.width * maxY;
+        stage.classList.add('is-tilting', 'is-moving');
         if (!frame) frame = requestAnimationFrame(paintTilt);
       }, { passive: true });
 
       stage.addEventListener('pointerleave', function () {
-        tx = restX;
-        ty = restY;
+        tx = 0;
+        ty = 0;
         stage.classList.remove('is-moving');
         if (!frame) frame = requestAnimationFrame(paintTilt);
+        settleTimer = setTimeout(function () {
+          stage.classList.remove('is-tilting');
+          if (shot) shot.style.willChange = 'auto';
+        }, 520);
       }, { passive: true });
     });
   } catch (err) {
@@ -474,5 +480,174 @@
     }
   } catch (err) {
     console.error('Docs helper error:', err);
+  }
+
+  // 7. Live GitHub Release Sync (non-blocking, 15-min sessionStorage cache)
+  try {
+    const CACHE_KEY = 'bw_latest_release_v1';
+    const CACHE_TTL_MS = 15 * 60 * 1000;
+    const API_URL = 'https://api.github.com/repos/veritus-git/BadWords/releases/latest';
+
+    const parseVer = function (v) {
+      return String(v || '').replace(/^v/i, '').split('.').map(function (n) {
+        return parseInt(n, 10) || 0;
+      });
+    };
+
+    const isNewerVer = function (a, b) {
+      const pa = parseVer(a);
+      const pb = parseVer(b);
+      for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const va = pa[i] || 0;
+        const vb = pb[i] || 0;
+        if (va > vb) return true;
+        if (va < vb) return false;
+      }
+      return false;
+    };
+
+    const formatMB = function (bytes) {
+      if (!bytes || bytes <= 0) return null;
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    };
+
+    const formatDateDot = function (iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      const dd = String(d.getUTCDate()).padStart(2, '0');
+      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      return dd + '.' + mm + '.' + d.getUTCFullYear();
+    };
+
+    const summarizeNotes = function (body) {
+      if (!body) return '';
+      const lines = String(body).split(/\r?\n/).map(function (l) {
+        return l.replace(/^[-*•#\s]+/, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').trim();
+      }).filter(function (l) {
+        return l.length > 15 && !/^full changelog/i.test(l) && !/^checksum/i.test(l);
+      });
+      if (!lines.length) return '';
+      return lines.slice(0, 3);
+    };
+
+    const applyReleaseData = function (rel) {
+      if (!rel || !rel.tag_name) return;
+      const latestVer = String(rel.tag_name).replace(/^v/i, '').trim();
+      if (!latestVer) return;
+
+      // Update live installer sizes even on matching version
+      if (Array.isArray(rel.assets)) {
+        const sizeMap = {
+          'badwords-setup-windows.exe': '[data-bw-size="windows"]',
+          'badwords-setup-macos': '[data-bw-size="mac"]',
+          'badwords-setup-linux': '[data-bw-size="linux"]'
+        };
+        rel.assets.forEach(function (asset) {
+          const sel = sizeMap[asset.name];
+          const mb = formatMB(asset.size);
+          if (sel && mb) {
+            document.querySelectorAll(sel).forEach(function (el) {
+              const arch = el.getAttribute('data-bw-arch') ? (' ' + el.getAttribute('data-bw-arch')) : '';
+              el.textContent = 'v' + latestVer + ' - ' + mb + arch;
+            });
+          }
+        });
+      }
+
+      const currentAttrEl = document.querySelector('[data-bw-version]');
+      const currentVer = currentAttrEl ? currentAttrEl.getAttribute('data-bw-version') : '4.1.2';
+      if (!isNewerVer(latestVer, currentVer)) return;
+
+      // Update version labels anywhere marked with data-bw-version
+      document.querySelectorAll('[data-bw-version]').forEach(function (el) {
+        const tpl = el.getAttribute('data-bw-tpl');
+        if (tpl) {
+          el.textContent = tpl.replace(/\{ver\}/g, latestVer);
+        } else {
+          el.textContent = el.textContent.replace(currentVer, latestVer);
+        }
+        el.setAttribute('data-bw-version', latestVer);
+      });
+
+      const dateDot = formatDateDot(rel.published_at);
+      const dateEl = document.querySelector('[data-bw-release-date]');
+      if (dateEl && dateDot) {
+        dateEl.textContent = dateDot;
+      }
+
+      const notes = summarizeNotes(rel.body);
+      const summaryEl = document.querySelector('[data-bw-release-summary]');
+      if (summaryEl && notes && notes.length) {
+        summaryEl.textContent = 'Released ' + (dateDot || 'recently') + ' - ' + notes[0];
+      }
+
+      // Inject newest release card on /changelog if not yet present in static HTML
+      const changelogList = document.getElementById('changelogList');
+      if (changelogList && !changelogList.querySelector('[data-release-version="' + latestVer + '"]')) {
+        const card = document.createElement('article');
+        card.className = 'card card-lg card-accent';
+        card.setAttribute('data-release-major', String(parseVer(latestVer)[0] || 4));
+        card.setAttribute('data-release-version', latestVer);
+
+        const head = document.createElement('div');
+        head.className = 'flex flex-wrap items-center justify-between gap-2';
+        const h2 = document.createElement('h2');
+        h2.className = 'h3-card';
+        h2.style.fontSize = '1.35rem';
+        h2.textContent = 'v' + latestVer + (rel.name && rel.name !== rel.tag_name ? (' - ' + rel.name.replace(/^v?\d+\.\d+\.\d+\s*[-:]?\s*/i, '')) : ' - Latest Release');
+        const dateSpan = document.createElement('span');
+        dateSpan.className = 'mono-meta text-emerald';
+        dateSpan.textContent = (rel.published_at || '').slice(0, 10);
+        head.appendChild(h2);
+        head.appendChild(dateSpan);
+        card.appendChild(head);
+
+        if (notes && notes.length) {
+          const ul = document.createElement('ul');
+          ul.className = 'bullet-list';
+          notes.forEach(function (line) {
+            const li = document.createElement('li');
+            const dot = document.createElement('span');
+            dot.className = 'bullet-dot';
+            const txt = document.createElement('span');
+            txt.textContent = line;
+            li.appendChild(dot);
+            li.appendChild(txt);
+            ul.appendChild(li);
+          });
+          card.appendChild(ul);
+        }
+        changelogList.insertBefore(card, changelogList.firstChild);
+      }
+    };
+
+    let cached = null;
+    try {
+      const raw = sessionStorage.getItem(CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.ts && (Date.now() - parsed.ts < CACHE_TTL_MS)) {
+          cached = parsed.data;
+        }
+      }
+    } catch (_) {}
+
+    if (cached) {
+      applyReleaseData(cached);
+    } else if (window.fetch) {
+      fetch(API_URL, { headers: { Accept: 'application/vnd.github+json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data || !data.tag_name) return;
+          try {
+            sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: data }));
+          } catch (_) {}
+          applyReleaseData(data);
+        })
+        .catch(function () {});
+    }
+  } catch (err) {
+    console.error('Live release sync skipped:', err);
   }
 })();

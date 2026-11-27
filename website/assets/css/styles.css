@@ -616,25 +616,28 @@ code, pre { font-family: var(--font-mono); }
   overflow: hidden;
   box-shadow: var(--shadow-window);
   cursor: zoom-in;
+  transform: none;
+  backface-visibility: hidden;
+  transition: transform 0.5s var(--ease-out-expo), border-color 0.18s ease-out;
+}
+.tilt-stage.is-tilting .tilt-shot {
   transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
-  transition: transform 0.65s var(--ease-out-expo), border-color 0.18s ease-out;
   will-change: transform;
 }
-.hero-showcase .tilt-shot {
-  transform: rotateX(var(--tilt-x, 1.5deg)) rotateY(var(--tilt-y, -2deg));
-}
 .tilt-stage.is-moving .tilt-shot {
-  transition-duration: 0.12s, 0.18s;
+  transition-duration: 0.1s, 0.18s;
 }
 .tilt-shot:hover {
   border-color: var(--border-hover);
 }
 @media (max-width: 760px) {
   .hero-showcase { margin-top: 2.75rem; }
-  .tilt-stage .tilt-shot { transform: none; }
+  .tilt-stage .tilt-shot,
+  .tilt-stage.is-tilting .tilt-shot { transform: none; will-change: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .tilt-stage .tilt-shot { transform: none; transition: border-color 0.18s ease-out; }
+  .tilt-stage .tilt-shot,
+  .tilt-stage.is-tilting .tilt-shot { transform: none; will-change: auto; transition: border-color 0.18s ease-out; }
 }
 .tilt-shot:hover {
   border-color: rgba(255, 255, 255, 0.24);

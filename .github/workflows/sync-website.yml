@@ -1,0 +1,52 @@
+name: Sync Website With Release
+
+on:
+  release:
+    types: [published]
+  workflow_run:
+    workflows: ["Build Installer Binaries"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional version override (e.g. 4.2.0)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  sync-website:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Sync website HTML, changelog, and binary sizes
+        run: |
+          CACHE_VER="$(date -u +%Y%m%d%H%M)"
+          VER_ARG=""
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VER_ARG="--version ${{ github.event.inputs.version }}"
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            VER_ARG="--version ${{ github.event.release.tag_name }}"
+          fi
+          python3 scripts/sync_website_release.py $VER_ARG --fetch-sizes --bump-cache "$CACHE_VER"
+
+      - name: Commit and push website updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet website/; then
+            git add website/
+            git commit -m "website: auto-sync release version, changelog, and binary sizes"
+            git push origin main
+          else
+            echo "Website already up to date."
+          fi
