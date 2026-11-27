@@ -4,23 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Download BadWords for macOS (Apple Silicon &amp; Intel) - Local AI Rough Cut</title>
-  <meta name="description" content="Install BadWords v4.1.2 on macOS (Apple Silicon M1-M5 MLX and Intel) in one Terminal command with zero sudo or Homebrew required." />
+  <meta name="description" content="Download BadWords v4.1.2 for macOS (badwords-setup-macos) or install in one Terminal command with zero sudo or Homebrew required." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://badwords.dev/download/mac" />
 
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Download BadWords for macOS (Apple Silicon MLX &amp; Intel)" />
-  <meta property="og:description" content="One-command Terminal install with native Apple Silicon MLX acceleration (~11x faster than CPU). Zero sudo needed." />
+  <meta property="og:description" content="Direct macOS installer binary or one-command Terminal install with native Apple Silicon MLX (~11x faster than CPU). Zero sudo needed." />
   <meta property="og:url" content="https://badwords.dev/download/mac" />
   <meta property="og:image" content="https://badwords.dev/assets/img/og-image.png" />
 
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" sizes="180x180" href="/assets/img/apple-touch-icon.png" />
-  <meta name="theme-color" content="#08080a" />
+  <meta name="theme-color" content="#111215" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/assets/css/styles.css?v=20261127d" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/styles.css?v=20261127f" />
 
   <script type="application/ld+json">
   {
@@ -77,22 +77,55 @@
           <a href="/">Home</a><span>/</span><a href="/download">Download</a><span>/</span><span>macOS</span>
         </nav>
         <p class="eyebrow">macOS (Apple Silicon M1-M5 &amp; Intel)</p>
-        <h1 class="h1-page">Install BadWords on macOS</h1>
+        <h1 class="h1-page">Download BadWords for macOS</h1>
         <p class="lead">
-          Open <strong>Terminal</strong> (<code class="kbd">Cmd + Space</code> -&gt; Terminal), paste the command below, and press Enter. Zero sudo or Homebrew needed.
+          Free MIT open source with native Apple Silicon MLX acceleration (up to ~11x faster than CPU). Zero sudo or Homebrew required.
         </p>
       </div>
     </section>
 
     <section class="section" style="padding-top:1.5rem;">
-      <div class="container" style="display:flex; flex-direction:column; gap:3.5rem;">
-        <div class="grid grid-12" style="align-items:stretch;">
-          <div class="col-span-7 terminal-card">
-            <div class="terminal-head">
-              <span class="mono-meta text-bright">Step 1 - Paste into Terminal (zsh / bash)</span>
-              <a href="https://github.com/veritus-git/BadWords/blob/main/setupfiles/mac-setup.sh" target="_blank" rel="noopener noreferrer" class="mono-meta" style="text-decoration:underline;">View script source</a>
+      <div class="container">
+        <div class="grid grid-12" style="align-items:center;">
+          <div class="col-span-6 card card-lg">
+            <a href="/dl/mac" class="btn btn-lg btn-primary" style="width:100%;">
+              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16" />
+              </svg>
+              <span>Download macOS Installer</span>
+            </a>
+            <p class="mono-meta text-center mt-2">
+              v4.1.2 - 6.1 MB (Universal) - Requires ~4 GB app + AI model
+            </p>
+
+            <div class="dl-steps">
+              <div class="dl-step">
+                <span class="dl-step-num">1</span>
+                <div>
+                  <div class="dl-step-title">Run the installer</div>
+                  <div class="dl-step-desc">If macOS warns about unsigned apps, use the 1-line Terminal command below (skips Gatekeeper cleanly), or allow <code class="kbd">badwords-setup-macos</code> via <code class="kbd">xattr -d com.apple.quarantine</code> first.</div>
+                </div>
+              </div>
+              <div class="dl-step">
+                <span class="dl-step-num">2</span>
+                <div>
+                  <div class="dl-step-title">Choose option 1 (Fresh Install / Update)</div>
+                  <div class="dl-step-desc">Deploys BadWords, portable Python 3.12, MLX/Whisper, FFmpeg, and DaVinci Resolve scripts (both standard and Mac App Store). Options 2-5 Repair, Move, Reset, or Uninstall anytime later.</div>
+                </div>
+              </div>
+              <div class="dl-step">
+                <span class="dl-step-num">3</span>
+                <div>
+                  <div class="dl-step-title">Open BadWords from Applications</div>
+                  <div class="dl-step-desc">Drop video files directly or link DaVinci Resolve in seconds.</div>
+                </div>
+              </div>
             </div>
-            <div style="padding:1.35rem; display:flex; flex-direction:column; justify-content:space-between; gap:1rem; flex:1;">
+
+            <div class="dl-alt-box">
+              <p class="text-xs text-muted" style="margin:0 0 0.5rem;">
+                Easiest 1-line Terminal install (<code class="kbd">Cmd + Space</code> -&gt; Terminal, handles Gatekeeper automatically):
+              </p>
               <div class="cmd-box">
                 <div class="cmd-scroll">
                   <span class="font-mono text-xs font-semibold text-emerald" style="user-select:none;">$</span>
@@ -100,67 +133,18 @@
                 </div>
                 <button id="copyCommandBtn" type="button" class="copy-btn">Copy</button>
               </div>
-              <p class="text-sm text-muted" style="margin:0;">
-                Automatically installs portable Python 3.12, native Apple Silicon MLX (<code class="kbd">mlx-whisper</code>, up to ~11x faster than CPU), FFmpeg, and Resolve script paths (standard &amp; Mac App Store containers).
-              </p>
             </div>
           </div>
 
-          <div class="col-span-5 card" style="display:flex; flex-direction:column; justify-content:space-between; gap:0.85rem;">
-            <div>
-              <p class="eyebrow">Gatekeeper &amp; Manual Binary</p>
-              <h2 class="h3-card mt-2">Unsigned Universal Setup</h2>
-              <p class="mt-2 text-sm text-muted">
-                If macOS Gatekeeper flags the unsigned GUI binary, the script opens Terminal Setup automatically. For manual downloads from <a href="https://github.com/veritus-git/BadWords/releases/latest" target="_blank" rel="noopener noreferrer" class="text-emerald">GitHub Releases</a>:
-              </p>
+          <div class="col-span-6" style="display:flex; flex-direction:column; gap:1.25rem;">
+            <div class="tilt-stage">
+              <button type="button" data-lightbox-src="/assets/img/gui-setup-preview.webp" data-lightbox-caption="BadWords Setup Window - Press 1 for Fresh Install / Update" class="lightbox-trigger tilt-shot">
+                <img src="/assets/img/gui-setup-preview.webp" alt="BadWords Setup window showing options 1 through 5" width="648" height="548" loading="lazy" />
+              </button>
             </div>
-            <pre class="text-xs font-mono" style="margin:0; background:var(--bg); padding:0.75rem; border-radius:0.5rem; border:1px solid var(--border); white-space:pre-wrap; word-break:break-word; line-height:1.5;">xattr -d com.apple.quarantine badwords-setup-macos &amp;&amp; chmod +x badwords-setup-macos &amp;&amp; ./badwords-setup-macos</pre>
-          </div>
-        </div>
-
-        <div class="grid grid-12" style="align-items:center;">
-          <div class="col-span-6">
-            <p class="eyebrow">Step 2 - Inside the Setup Window</p>
-            <h2 class="h2-section" style="font-size:1.65rem;">Pick option <span class="text-emerald">1</span> to install</h2>
-            <p class="mt-2 text-sm text-muted">
-              All 5 maintenance tools live in the same wizard so you can update or repair anytime using the same command:
+            <p class="mono-meta text-center" style="margin:0;">
+              Click preview to enlarge - All versions archived on <a href="https://github.com/veritus-git/BadWords/releases/latest" target="_blank" rel="noopener noreferrer" class="text-emerald">GitHub Releases</a>
             </p>
-            <div class="setup-opts">
-              <div class="setup-opt is-recommended">
-                <span class="setup-num">1</span>
-                <div>
-                  <div class="setup-opt-title">Fresh Install / Update <span class="setup-tag">Pick this first</span></div>
-                  <div class="setup-opt-desc">Deploys BadWords, portable Python 3.12, MLX/Whisper, FFmpeg, and DaVinci Resolve scripts cleanly.</div>
-                </div>
-              </div>
-              <div class="setup-opt">
-                <span class="setup-num">2</span>
-                <div>
-                  <div class="setup-opt-title">Repair Installation</div>
-                  <div class="setup-opt-desc">Verifies dependencies and fixes missing files without deleting models or project saves.</div>
-                </div>
-              </div>
-              <div class="setup-opt">
-                <span class="setup-num">3</span>
-                <div>
-                  <div class="setup-opt-title">Move Installation</div>
-                  <div class="setup-opt-desc">Relocates your BadWords directory cleanly to a different folder or drive.</div>
-                </div>
-              </div>
-              <div class="setup-opt">
-                <span class="setup-num">4</span>
-                <div>
-                  <div class="setup-opt-title">Reset / 5. Uninstall</div>
-                  <div class="setup-opt-desc">Option 4 wipes app caches and starts clean; option 5 removes BadWords completely.</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="col-span-6 tilt-stage">
-            <button type="button" data-lightbox-src="/assets/img/gui-setup-preview.webp" data-lightbox-caption="BadWords Setup Window - Press 1 for Fresh Install / Update" class="lightbox-trigger tilt-shot">
-              <img src="/assets/img/gui-setup-preview.webp" alt="BadWords Setup window showing options 1 through 5" width="648" height="548" loading="lazy" />
-            </button>
           </div>
         </div>
       </div>
@@ -219,6 +203,6 @@
       <div class="lightbox-frame"><img id="lightboxImg" src="" alt="" /></div>
     </div>
   </div>
-  <script src="/assets/js/main.js?v=20261127d" defer></script>
+  <script src="/assets/js/main.js?v=20261127f" defer></script>
 </body>
 </html>
