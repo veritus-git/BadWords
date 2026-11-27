@@ -16,11 +16,11 @@
 
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" sizes="180x180" href="/assets/img/apple-touch-icon.png" />
-  <meta name="theme-color" content="#09090b" />
+  <meta name="theme-color" content="#08080a" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/assets/css/styles.css?v=20261127c" />
+  <link rel="stylesheet" href="/assets/css/styles.css?v=20261127d" />
 
   <script type="application/ld+json">
   {
@@ -50,7 +50,7 @@
           <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" /></svg>
           <span>GitHub</span>
         </a>
-        <a href="/download" class="btn btn-sm btn-primary">Switch OS</a>
+        <a href="/download" class="btn btn-sm btn-primary">Download Free</a>
       </div>
       <button id="mobileMenuBtn" type="button" aria-label="Toggle navigation menu" aria-expanded="false" class="mobile-menu-btn">
         <svg id="menuIconOpen" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
@@ -65,7 +65,7 @@
         <a href="/docs" class="mobile-link">Documentation</a>
         <a href="/changelog" class="mobile-link">Changelog</a>
         <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer">GitHub</a>
-        <div class="mt-3"><a href="/download" class="btn btn-md btn-primary" style="width:100%;">Choose OS</a></div>
+        <div class="mt-3"><a href="/download" class="btn btn-md btn-primary" style="width:100%;">Download Free</a></div>
       </div>
     </div>
   </header>
@@ -81,25 +81,18 @@
         <p class="lead">
           Open <strong>PowerShell</strong> from the Start Menu, paste the command below, and press Enter. Installs cleanly into your user folder without Administrator permissions.
         </p>
-        <div class="mt-5 flex flex-wrap gap-2">
-          <a href="/download/windows" class="pill-link is-active">Windows</a>
-          <a href="/download/mac" class="pill-link">Switch to macOS</a>
-          <a href="/download/linux" class="pill-link">Switch to Linux</a>
-        </div>
       </div>
     </section>
 
-    <section class="section">
-      <div class="container" style="display:flex; flex-direction:column; gap:3rem;">
-        <div>
-          <p class="eyebrow">Step 1 - Launch Setup</p>
-          <h2 class="h2-section" style="font-size:1.55rem;">Paste into Windows PowerShell</h2>
-          <div class="terminal-card mt-4" style="max-width:52rem;">
+    <section class="section" style="padding-top:1.5rem;">
+      <div class="container" style="display:flex; flex-direction:column; gap:3.5rem;">
+        <div class="grid grid-12" style="align-items:stretch;">
+          <div class="col-span-7 terminal-card">
             <div class="terminal-head">
-              <span class="mono-meta text-bright">PowerShell (No Admin Required)</span>
+              <span class="mono-meta text-bright">Step 1 - Paste into PowerShell (No Admin Required)</span>
               <a href="https://github.com/veritus-git/BadWords/blob/main/setupfiles/windows-setup.ps1" target="_blank" rel="noopener noreferrer" class="mono-meta" style="text-decoration:underline;">View script source</a>
             </div>
-            <div style="padding:1.25rem;">
+            <div style="padding:1.35rem; display:flex; flex-direction:column; justify-content:space-between; gap:1rem; flex:1;">
               <div class="cmd-box">
                 <div class="cmd-scroll">
                   <span class="font-mono text-xs font-semibold text-emerald" style="user-select:none;">PS&gt;</span>
@@ -107,43 +100,69 @@
                 </div>
                 <button id="copyCommandBtn" type="button" class="copy-btn">Copy</button>
               </div>
+              <p class="text-sm text-muted" style="margin:0;">
+                Downloads the BadWords Setup wizard (~4 GB installed app + 1-5 GB AI model) and falls back cleanly to an identical terminal setup if Windows Smart App Control blocks unsigned binaries.
+              </p>
             </div>
+          </div>
+
+          <div class="col-span-5 card" style="display:flex; flex-direction:column; justify-content:space-between; gap:0.85rem;">
+            <div>
+              <p class="eyebrow">Requirements &amp; Direct Binary</p>
+              <h2 class="h3-card mt-2">CUDA GPU &amp; Smart App Control</h2>
+              <p class="mt-2 text-sm text-muted">
+                NVIDIA driver 525+ unlocks fast CUDA transcription; GPU-less PCs automatically fall back to CPU with static-CRT binaries (zero <code class="kbd">VCRUNTIME140.dll</code> errors).
+              </p>
+            </div>
+            <p class="text-sm text-muted" style="margin:0;">
+              Prefer a standalone binary? Grab <code class="kbd">badwords-setup-windows.exe</code> from <a href="https://github.com/veritus-git/BadWords/releases/latest" target="_blank" rel="noopener noreferrer" class="text-emerald">GitHub Releases</a> (right-click -&gt; Properties -&gt; Unblock).
+            </p>
           </div>
         </div>
 
         <div class="grid grid-12" style="align-items:center;">
           <div class="col-span-6">
             <p class="eyebrow">Step 2 - Inside the Setup Window</p>
-            <h2 class="h2-section" style="font-size:1.55rem;">Pick option <span class="text-emerald">1</span> to install</h2>
-            <p class="mt-3 text-sm text-muted">
-              The BadWords Setup wizard includes 5 tools in one window so you can also update or repair later using the same command:
+            <h2 class="h2-section" style="font-size:1.65rem;">Pick option <span class="text-emerald">1</span> to install</h2>
+            <p class="mt-2 text-sm text-muted">
+              All 5 maintenance tools live in the same wizard so you can update or repair anytime using the same command:
             </p>
-            <ul class="bullet-list">
-              <li><span class="badge-green">1 - Fresh Install / Update</span> <span><strong>Pick this first!</strong> Downloads BadWords, sets up isolated Python + FFmpeg, and links DaVinci Resolve.</span></li>
-              <li><span class="kbd">2 - Repair</span> <span>Fixes broken dependencies or missing files without wiping your saves or AI models.</span></li>
-              <li><span class="kbd">3 - Move</span> <span>Relocates the entire BadWords installation to another drive or folder.</span></li>
-              <li><span class="kbd">4 - Reset</span> / <span class="kbd">5 - Uninstall</span> <span>Cleanly wipes app state or removes BadWords and shortcuts completely.</span></li>
-            </ul>
+            <div class="setup-opts">
+              <div class="setup-opt is-recommended">
+                <span class="setup-num">1</span>
+                <div>
+                  <div class="setup-opt-title">Fresh Install / Update <span class="setup-tag">Pick this first</span></div>
+                  <div class="setup-opt-desc">Installs BadWords, isolated Python 3.12 + FFmpeg, shortcuts, and DaVinci Resolve scripts while keeping saves.</div>
+                </div>
+              </div>
+              <div class="setup-opt">
+                <span class="setup-num">2</span>
+                <div>
+                  <div class="setup-opt-title">Repair Installation</div>
+                  <div class="setup-opt-desc">Verifies dependencies and fixes missing files without deleting models or project saves.</div>
+                </div>
+              </div>
+              <div class="setup-opt">
+                <span class="setup-num">3</span>
+                <div>
+                  <div class="setup-opt-title">Move Installation</div>
+                  <div class="setup-opt-desc">Relocates the entire BadWords directory cleanly to another drive or folder.</div>
+                </div>
+              </div>
+              <div class="setup-opt">
+                <span class="setup-num">4</span>
+                <div>
+                  <div class="setup-opt-title">Reset / 5. Uninstall</div>
+                  <div class="setup-opt-desc">Option 4 wipes app caches and starts clean; option 5 removes BadWords and shortcuts completely.</div>
+                </div>
+              </div>
+            </div>
           </div>
+
           <div class="col-span-6 tilt-stage">
             <button type="button" data-lightbox-src="/assets/img/gui-setup-preview.webp" data-lightbox-caption="BadWords Setup Window - Press 1 for Fresh Install / Update" class="lightbox-trigger tilt-shot">
-              <img src="/assets/img/gui-setup-preview.webp" alt="BadWords Setup window showing options 1 through 5" width="706" height="606" loading="lazy" />
+              <img src="/assets/img/gui-setup-preview.webp" alt="BadWords Setup window showing options 1 through 5" width="648" height="548" loading="lazy" />
             </button>
-          </div>
-        </div>
-
-        <div class="grid grid-2">
-          <div class="card card-lg">
-            <h3 class="h3-card" style="font-size:1rem;">Smart App Control &amp; Manual Binary</h3>
-            <p class="mt-2 text-sm text-muted">
-              If Windows Smart App Control blocks the GUI binary (no $400/yr code-signing certificate), the PowerShell script detects it automatically and offers the identical Terminal Setup fallback. Prefer manual download? Grab <code class="kbd">badwords-setup-windows.exe</code> from <a href="https://github.com/veritus-git/BadWords/releases/latest" target="_blank" rel="noopener noreferrer" class="text-emerald">GitHub Releases</a> (right-click -&gt; Properties -&gt; Unblock).
-            </p>
-          </div>
-          <div class="card card-lg">
-            <h3 class="h3-card" style="font-size:1rem;">NVIDIA CUDA &amp; School/Office PCs</h3>
-            <p class="mt-2 text-sm text-muted">
-              NVIDIA driver 525+ enables automatic CUDA acceleration. On laptops without NVIDIA GPUs or older drivers, BadWords safely switches to CPU mode and static-CRT binaries so <code class="kbd">VCRUNTIME140.dll</code> errors never block startup.
-            </p>
           </div>
         </div>
       </div>
@@ -169,7 +188,6 @@
         <div>
           <h3 class="footer-heading">Download &amp; Docs</h3>
           <ul class="footer-links">
-            <li><a href="/download">Download (Choose OS)</a></li>
             <li><a href="/download/windows">Windows Setup</a></li>
             <li><a href="/download/mac">macOS Setup</a></li>
             <li><a href="/download/linux">Linux Setup</a></li>
@@ -203,6 +221,6 @@
       <div class="lightbox-frame"><img id="lightboxImg" src="" alt="" /></div>
     </div>
   </div>
-  <script src="/assets/js/main.js?v=20261127c" defer></script>
+  <script src="/assets/js/main.js?v=20261127d" defer></script>
 </body>
 </html>

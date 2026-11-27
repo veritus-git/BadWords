@@ -28,7 +28,7 @@
     console.error('Mobile nav init error:', err);
   }
 
-  // 2. Pleofon-Style Frameless 3D Pointer Tilt on Showcase Windows
+  // 2. Smooth 3D Pointer Tilt on Showcase Windows (No Glow / No Shadow)
   try {
     const motionReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const finePointer = !window.matchMedia || window.matchMedia('(pointer: fine)').matches;
@@ -36,8 +36,8 @@
     if (!motionReduced && finePointer) {
       document.querySelectorAll('.tilt-stage').forEach(function (stage) {
         let rafId = 0;
-        let tiltX = 1.2;
-        let tiltY = -1.4;
+        let tiltX = 0.8;
+        let tiltY = -1.0;
 
         const paint = function () {
           stage.style.setProperty('--tilt-x', tiltX.toFixed(2) + 'deg');
@@ -48,15 +48,15 @@
         stage.addEventListener('pointermove', function (e) {
           if (window.innerWidth <= 768) return;
           const rect = stage.getBoundingClientRect();
-          tiltX = -((e.clientY - rect.top - rect.height / 2) / rect.height) * 4.0;
-          tiltY = ((e.clientX - rect.left - rect.width / 2) / rect.width) * 5.0;
+          tiltX = -((e.clientY - rect.top - rect.height / 2) / rect.height) * 3.5;
+          tiltY = ((e.clientX - rect.left - rect.width / 2) / rect.width) * 4.5;
           stage.classList.add('is-moving');
           if (!rafId) rafId = window.requestAnimationFrame(paint);
         }, { passive: true });
 
         stage.addEventListener('pointerleave', function () {
-          tiltX = 1.2;
-          tiltY = -1.4;
+          tiltX = 0.8;
+          tiltY = -1.0;
           stage.classList.remove('is-moving');
           if (!rafId) rafId = window.requestAnimationFrame(paint);
         }, { passive: true });
@@ -66,129 +66,148 @@
     console.error('Tilt init error:', err);
   }
 
-  // 3. Home Interactive 4-Step Live Rough Cut Demo (StoryCraft-inspired)
+  // 3. Interactive 5-Tab Feature Tour (Home Page)
   try {
-    const stepBtns = document.querySelectorAll('.demo-step');
-    const stageLabel = document.getElementById('demoStageLabel');
-    const stageBody = document.getElementById('demoTranscript');
-    const stageMetricLeft = document.getElementById('demoMetricLeft');
-    const stageMetricRight = document.getElementById('demoMetricRight');
-    const pauseBtn = document.getElementById('demoPauseBtn');
+    const featureTabs = document.querySelectorAll('.feature-tab');
+    const featureTitle = document.getElementById('featureTitle');
+    const featurePreviewImg = document.getElementById('featurePreviewImg');
+    const featureLightboxBtn = document.getElementById('featureLightboxBtn');
+    const featureBullets = document.getElementById('featureBullets');
+    const assemblySubToggle = document.getElementById('assemblySubToggle');
+    const assemblySubtabs = document.querySelectorAll('.assembly-subtab');
 
-    if (stepBtns.length && stageBody && stageMetricLeft && stageMetricRight) {
-      const SCENES = [
-        {
-          label: 'Step 01 - Local Faster-Whisper / MLX',
-          metricLeft: 'Processing locally on GPU - 0 bytes uploaded',
-          metricRight: 'Verbatim words + timestamps captured',
-          lines: [
-            { t: '00:00', html: 'Um, hey everyone, welcome back to the channel.' },
-            { t: '00:04', html: 'Today we are gonna... Today I am showing you how to automate rough cuts.' },
-            { t: '00:13', html: '<span class="tok-sil">[ silence 1.6s ]</span> Uh, wait, let me restart that.' },
-            { t: '00:18', html: 'Everything runs offline on your hardware and exports linked XML.' }
+    if (featureTabs.length && featureTitle && featurePreviewImg && featureBullets) {
+      const FEATURE_DATA = {
+        verbatim: {
+          title: 'True Verbatim Transcription',
+          src: '/assets/img/hero-workspace.webp',
+          alt: 'BadWords v4.1.2 desktop editor displaying verbatim transcript, silence sliders, and cut regions',
+          caption: 'True Verbatim Transcription - Every word, stutter, and silence live on one screen',
+          bullets: [
+            'Faster-Whisper & Apple MLX tuned to preserve stutters, "ums", and false starts instead of hiding mistakes.',
+            'Marks unintelligible mumbling as (...) and lets you audition every edit by pressing Space.',
+            'Streams word-level timestamps in ~100 languages completely offline on your GPU or CPU.'
           ]
         },
-        {
-          label: 'Step 02 - Mistakes, Retakes & Silences Flagged',
-          metricLeft: 'Red: 2 fillers  |  Blue: 1 retake  |  Silences: -42 dB',
-          metricRight: '18:40 raw -> 11:05 after auto-cuts',
-          lines: [
-            { t: '00:00', html: '<span class="tok-red">Um,</span> hey everyone, welcome back to the channel.' },
-            { t: '00:04', html: '<span class="tok-blue">Today we are gonna...</span> Today I am showing you how to automate rough cuts.' },
-            { t: '00:13', html: '<span class="tok-sil">-1.6s cut</span> <span class="tok-red">Uh, wait, let me restart that.</span>' },
-            { t: '00:18', html: 'Everything runs offline on your hardware and exports <span class="tok-green">linked</span> XML.' }
+        script: {
+          title: 'Smart Script Comparison',
+          src: '/assets/img/feature-script-diff.webp',
+          alt: 'BadWords v4.1.2 Script Comparison panel comparing pasted text against spoken dialogue',
+          caption: 'Smart Script Comparison - Highlight only deviations from your script',
+          bullets: [
+            'DNA-inspired alignment skips clean 1:1 takes and isolates off-script lines or repeated takes.',
+            'Extracts technical terms, acronyms, and brand names from .txt, .docx, and .pdf files before transcription.',
+            'Includes Side-by-Side Comparison View and Standalone Auto-Analyze for unscripted recordings.'
           ]
         },
-        {
-          label: 'Step 03 - Edit Text & Tune Silence Live (<5 ms)',
-          metricLeft: 'Keep pause: 0.10s  |  Pauses removed: 90%',
-          metricRight: 'Spacebar skips cuts live in playback',
-          lines: [
-            { t: '00:00', html: '<span class="tok-red">Um,</span> hey everyone, welcome back to the channel.' },
-            { t: '00:04', html: '<span class="tok-blue">Today we are gonna...</span> Today I am showing you how to automate rough cuts.' },
-            { t: '00:13', html: '<span class="tok-sil">keep 0.10s</span> <span class="tok-red">Uh, wait, let me restart that.</span>' },
-            { t: '00:18', html: 'Everything runs offline on your hardware and exports linked XML.' }
+        silence: {
+          title: 'Instant Silence & Fast Silence',
+          src: '/assets/img/feature-fast-silence.webp',
+          alt: 'BadWords v4.1.2 Silence Detection tab with real-time dB sliders and waveform cut regions',
+          caption: 'Fast Silence & Waveform - Instant in-RAM recalculation under 5 ms',
+          bullets: [
+            'Automatic loudness normalization keeps the -42 dB threshold reliable across quiet or loud mics.',
+            'Island absorption merges tiny coughs or desk bumps back into silence cuts automatically.',
+            'Adjust threshold, pause ratio, and padding live in RAM - or cut pauses without transcribing via Fast Silence.'
           ]
         },
-        {
-          label: 'Step 04 - New Non-Destructive Timeline Ready',
-          metricLeft: 'DaVinci Resolve (Free 21.1+ / Studio) or Premiere / FCP',
-          metricRight: 'Source media untouched - linked A/V clips',
-          lines: [
-            { t: '00:00', html: 'Hey everyone, welcome back to the channel.' },
-            { t: '00:02', html: 'Today I am showing you how to automate rough cuts.' },
-            { t: '00:05', html: 'Everything runs offline on your hardware and exports linked XML.' },
-            { t: '00:09', html: '<strong class="text-emerald">Assembled: Podcast_EP42_BadWords_Cut (.xml / Resolve Timeline)</strong>' }
+        editor: {
+          title: 'Standalone Mode & Multi-NLE Export',
+          src: '/assets/img/feature-welcome-standalone.webp',
+          alt: 'BadWords v4.1.2 Standalone File Mode welcome workspace with multi-file drop zone',
+          caption: 'Standalone Mode - Work directly from local video/audio files without Resolve',
+          bullets: [
+            'Drop MP4, MOV, MKV, or WAV files directly from disk with smooth background 360p preview proxies.',
+            'Edit visually via Notepad text selection, Marquee drag box, or brush keys 1-4.',
+            'Export frame-accurate cut timelines to FCP7 XML, Apple FCPXML, OpenTimelineIO (.otio), or CMX 3600 EDL.'
+          ]
+        },
+        assembly: {
+          title: 'Assembly Panel & Timeline Heatmap',
+          views: {
+            panel: {
+              src: '/assets/img/feature-assembly.webp',
+              alt: 'BadWords v4.1.2 Assembly Options panel showing per-color cut and marker toggles',
+              caption: 'Assembly Panel - Per-color cut or timeline marker rules'
+            },
+            heatmap: {
+              src: '/assets/img/heatmap-preview.webp',
+              alt: 'DaVinci Resolve timeline heatmap with linked color-coded clips generated by BadWords',
+              caption: 'Resolve Timeline Heatmap - Non-destructive linked clips with markers'
+            }
+          },
+          bullets: [
+            'Choose per marker color whether BadWords cuts a clip or leaves colored Resolve markers as an editing heatmap.',
+            'Exact drop-frame timing (23.976 / 29.97 / 59.94 fps) with linked FCP7 XML default or Studio .drt preservation.',
+            'Every Assemble generates a brand-new timeline copy so your original sequence and source files are untouched.'
           ]
         }
-      ];
+      };
 
-      let activeIdx = 0;
-      let paused = false;
-      let elapsedMs = 0;
-      const STEP_MS = 4500;
+      let currentAssemblyView = 'panel';
 
-      const renderScene = function (idx) {
-        activeIdx = idx;
-        elapsedMs = 0;
-        const sc = SCENES[idx];
-        if (stageLabel) stageLabel.textContent = sc.label;
-        stageMetricLeft.textContent = sc.metricLeft;
-        stageMetricRight.textContent = sc.metricRight;
+      const setMedia = function (src, alt, caption) {
+        featurePreviewImg.src = src;
+        featurePreviewImg.alt = alt;
+        if (featureLightboxBtn) {
+          featureLightboxBtn.setAttribute('data-lightbox-src', src);
+          featureLightboxBtn.setAttribute('data-lightbox-caption', caption);
+        }
+      };
 
-        stageBody.innerHTML = '';
-        sc.lines.forEach(function (line) {
-          const row = document.createElement('div');
-          row.className = 'demo-line';
-          const tm = document.createElement('span');
-          tm.className = 'demo-time';
-          tm.textContent = '[' + line.t + ']';
-          const txt = document.createElement('span');
-          txt.innerHTML = line.html;
-          row.appendChild(tm);
-          row.appendChild(txt);
-          stageBody.appendChild(row);
+      const renderFeature = function (key) {
+        const data = FEATURE_DATA[key];
+        if (!data) return;
+
+        featureTitle.textContent = data.title;
+        if (key === 'assembly' && data.views) {
+          if (assemblySubToggle) assemblySubToggle.classList.remove('hidden');
+          const v = data.views[currentAssemblyView] || data.views.panel;
+          setMedia(v.src, v.alt, v.caption);
+        } else {
+          if (assemblySubToggle) assemblySubToggle.classList.add('hidden');
+          setMedia(data.src, data.alt, data.caption);
+        }
+
+        featureBullets.innerHTML = '';
+        data.bullets.forEach(function (text) {
+          const li = document.createElement('li');
+          const dot = document.createElement('span');
+          dot.className = 'bullet-dot';
+          const span = document.createElement('span');
+          span.textContent = text;
+          li.appendChild(dot);
+          li.appendChild(span);
+          featureBullets.appendChild(li);
         });
 
-        stepBtns.forEach(function (btn, i) {
-          const isAct = i === idx;
-          btn.classList.toggle('is-active', isAct);
-          btn.setAttribute('aria-selected', String(isAct));
-          const bar = btn.querySelector('.demo-progress');
-          if (bar) bar.style.width = '0%';
+        featureTabs.forEach(function (btn) {
+          const active = btn.getAttribute('data-feature-tab') === key;
+          btn.classList.toggle('is-active', active);
+          btn.setAttribute('aria-selected', String(active));
         });
       };
 
-      stepBtns.forEach(function (btn, i) {
+      featureTabs.forEach(function (btn) {
         btn.addEventListener('click', function () {
-          renderScene(i);
+          renderFeature(btn.getAttribute('data-feature-tab'));
         });
       });
 
-      if (pauseBtn) {
-        pauseBtn.addEventListener('click', function () {
-          paused = !paused;
-          pauseBtn.textContent = paused ? 'Play' : 'Pause';
-          pauseBtn.setAttribute('aria-pressed', String(paused));
+      assemblySubtabs.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          currentAssemblyView = btn.getAttribute('data-assembly-view') || 'panel';
+          assemblySubtabs.forEach(function (sub) {
+            const active = sub === btn;
+            sub.classList.toggle('is-active', active);
+            sub.setAttribute('aria-selected', String(active));
+          });
+          renderFeature('assembly');
         });
-      }
-
-      renderScene(0);
-      window.setInterval(function () {
-        if (paused) return;
-        elapsedMs += 100;
-        const activeBtn = stepBtns[activeIdx];
-        if (activeBtn) {
-          const bar = activeBtn.querySelector('.demo-progress');
-          if (bar) bar.style.width = Math.min(100, (elapsedMs / STEP_MS) * 100).toFixed(1) + '%';
-        }
-        if (elapsedMs >= STEP_MS) {
-          renderScene((activeIdx + 1) % SCENES.length);
-        }
-      }, 100);
+      });
     }
   } catch (err) {
-    console.error('Demo showcase error:', err);
+    console.error('Feature showcase error:', err);
   }
 
   // 4. Clipboard Copy Button on Download Pages
@@ -299,7 +318,7 @@
     console.error('Changelog filter error:', err);
   }
 
-  // 7. Enhanced Docs Search + Match Counter + Active TOC Highlighter
+  // 7. Docs Search + Match Counter + Active TOC Highlighter
   try {
     const searchInput = document.getElementById('docsSearchInput');
     const clearBtn = document.getElementById('docsSearchClear');

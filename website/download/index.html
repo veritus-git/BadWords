@@ -23,12 +23,12 @@
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/assets/img/apple-touch-icon.png" />
-  <meta name="theme-color" content="#09090b" />
+  <meta name="theme-color" content="#08080a" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/assets/css/styles.css?v=20261127c" />
+  <link rel="stylesheet" href="/assets/css/styles.css?v=20261127d" />
 
   <script type="application/ld+json">
   {
@@ -78,19 +78,22 @@
   </header>
 
   <main>
-    <section class="section-hero glow-top-center" style="min-height:74vh; display:flex; align-items:center;">
-      <div class="container text-center">
-        <nav class="breadcrumb justify-center" aria-label="Breadcrumb">
+    <section class="section-subhero glow-top-center">
+      <div class="container">
+        <nav class="breadcrumb" aria-label="Breadcrumb">
           <a href="/">Home</a><span>/</span><span>Download</span>
         </nav>
-
         <p class="eyebrow">BadWords v4.1.2 - Free &amp; Open Source (MIT)</p>
         <h1 class="h1-page">Choose your operating system</h1>
-        <p class="lead mx-auto">
-          Select your platform below to get your dedicated installer command, standalone binary link, and quick setup walkthrough. No admin or sudo permissions required.
+        <p class="lead">
+          Select your platform to get the one-command installer, standalone binary link, and quick setup walkthrough. No admin or sudo permissions required.
         </p>
+      </div>
+    </section>
 
-        <div class="os-picker-grid mt-12">
+    <section class="section" style="padding-top:1.5rem; padding-bottom:5.5rem;">
+      <div class="container">
+        <div class="os-picker-grid">
           <a href="/download/windows" class="os-big-card">
             <div class="os-big-icon" aria-hidden="true">
               <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
@@ -99,7 +102,7 @@
             </div>
             <h2 class="os-big-title">Windows</h2>
             <p class="os-big-sub">Windows 10 &amp; 11 (64-bit)<br>CUDA GPU or CPU</p>
-            <span class="btn btn-md btn-primary" style="width:100%;">Get for Windows</span>
+            <span class="btn btn-md btn-primary">Get for Windows</span>
           </a>
 
           <a href="/download/mac" class="os-big-card">
@@ -110,7 +113,7 @@
             </div>
             <h2 class="os-big-title">macOS</h2>
             <p class="os-big-sub">Apple Silicon (M1-M5 MLX)<br>&amp; Intel Macs</p>
-            <span class="btn btn-md btn-primary" style="width:100%;">Get for macOS</span>
+            <span class="btn btn-md btn-primary">Get for macOS</span>
           </a>
 
           <a href="/download/linux" class="os-big-card">
@@ -122,11 +125,11 @@
             </div>
             <h2 class="os-big-title">Linux</h2>
             <p class="os-big-sub">Any Distro (Wayland &amp; X11)<br>Zero sudo required</p>
-            <span class="btn btn-md btn-primary" style="width:100%;">Get for Linux</span>
+            <span class="btn btn-md btn-primary">Get for Linux</span>
           </a>
         </div>
 
-        <p class="mono-meta mt-10">
+        <p class="mono-meta text-center mt-10">
           Requires ~4 GB for the app + 1-5 GB for local AI models - <a href="https://github.com/veritus-git/BadWords/releases/latest" target="_blank" rel="noopener noreferrer" class="text-emerald">All GitHub Releases</a>
         </p>
       </div>
@@ -152,7 +155,6 @@
         <div>
           <h3 class="footer-heading">Download &amp; Docs</h3>
           <ul class="footer-links">
-            <li><a href="/download">Download (Choose OS)</a></li>
             <li><a href="/download/windows">Windows Setup</a></li>
             <li><a href="/download/mac">macOS Setup</a></li>
             <li><a href="/download/linux">Linux Setup</a></li>
@@ -176,6 +178,6 @@
       </div>
     </div>
   </footer>
-  <script src="/assets/js/main.js?v=20261127c" defer></script>
+  <script src="/assets/js/main.js?v=20261127d" defer></script>
 </body>
 </html>

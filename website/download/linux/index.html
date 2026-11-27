@@ -3,24 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Download BadWords for Linux (Wayland &amp; X11) - Free AI Video Rough Cut</title>
-  <meta name="description" content="Install BadWords v4.1.2 on any Linux distribution (Ubuntu, Fedora, Arch, Debian) with zero sudo required. Uses portable CPython 3.12, Wayland/X11 native support, and NVIDIA CUDA." />
+  <title>Download BadWords for Linux (Wayland &amp; X11) - Local AI Rough Cut</title>
+  <meta name="description" content="Install BadWords v4.1.2 on any Linux distribution in one curl command with zero sudo privileges required. Works on Wayland, X11, Ubuntu, Fedora, and Arch." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://badwords.dev/download/linux" />
 
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="Download BadWords for Linux (Any Distro, Zero Sudo)" />
-  <meta property="og:description" content="One bash command installs BadWords locally into your home directory with portable Python 3.12 and FFmpeg." />
+  <meta property="og:title" content="Download BadWords for Linux (Wayland &amp; X11)" />
+  <meta property="og:description" content="Zero-sudo relocatable CPython 3.12 install across Ubuntu, Fedora, Arch, and immutable Linux distros." />
   <meta property="og:url" content="https://badwords.dev/download/linux" />
   <meta property="og:image" content="https://badwords.dev/assets/img/og-image.png" />
 
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" sizes="180x180" href="/assets/img/apple-touch-icon.png" />
-  <meta name="theme-color" content="#09090b" />
+  <meta name="theme-color" content="#08080a" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/assets/css/styles.css?v=20261127c" />
+  <link rel="stylesheet" href="/assets/css/styles.css?v=20261127d" />
 
   <script type="application/ld+json">
   {
@@ -50,7 +50,7 @@
           <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" /></svg>
           <span>GitHub</span>
         </a>
-        <a href="/download" class="btn btn-sm btn-primary">Switch OS</a>
+        <a href="/download" class="btn btn-sm btn-primary">Download Free</a>
       </div>
       <button id="mobileMenuBtn" type="button" aria-label="Toggle navigation menu" aria-expanded="false" class="mobile-menu-btn">
         <svg id="menuIconOpen" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
@@ -65,7 +65,7 @@
         <a href="/docs" class="mobile-link">Documentation</a>
         <a href="/changelog" class="mobile-link">Changelog</a>
         <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer">GitHub</a>
-        <div class="mt-3"><a href="/download" class="btn btn-md btn-primary" style="width:100%;">Choose OS</a></div>
+        <div class="mt-3"><a href="/download" class="btn btn-md btn-primary" style="width:100%;">Download Free</a></div>
       </div>
     </div>
   </header>
@@ -81,25 +81,18 @@
         <p class="lead">
           Paste the command below into your terminal. Works on Ubuntu, Fedora, Arch, Debian, and immutable distros with zero <code class="kbd">sudo</code> required.
         </p>
-        <div class="mt-5 flex flex-wrap gap-2">
-          <a href="/download/windows" class="pill-link">Switch to Windows</a>
-          <a href="/download/mac" class="pill-link">Switch to macOS</a>
-          <a href="/download/linux" class="pill-link is-active">Linux</a>
-        </div>
       </div>
     </section>
 
-    <section class="section">
-      <div class="container" style="display:flex; flex-direction:column; gap:3rem;">
-        <div>
-          <p class="eyebrow">Step 1 - Launch Setup</p>
-          <h2 class="h2-section" style="font-size:1.55rem;">Paste into your Linux terminal</h2>
-          <div class="terminal-card mt-4" style="max-width:52rem;">
+    <section class="section" style="padding-top:1.5rem;">
+      <div class="container" style="display:flex; flex-direction:column; gap:3.5rem;">
+        <div class="grid grid-12" style="align-items:stretch;">
+          <div class="col-span-7 terminal-card">
             <div class="terminal-head">
-              <span class="mono-meta text-bright">Terminal (bash) - Zero sudo, Portable CPython 3.12</span>
+              <span class="mono-meta text-bright">Step 1 - Paste into your Linux terminal</span>
               <a href="https://github.com/veritus-git/BadWords/blob/main/setupfiles/linux-setup.sh" target="_blank" rel="noopener noreferrer" class="mono-meta" style="text-decoration:underline;">View script source</a>
             </div>
-            <div style="padding:1.25rem;">
+            <div style="padding:1.35rem; display:flex; flex-direction:column; justify-content:space-between; gap:1rem; flex:1;">
               <div class="cmd-box">
                 <div class="cmd-scroll">
                   <span class="font-mono text-xs font-semibold text-emerald" style="user-select:none;">$</span>
@@ -107,44 +100,67 @@
                 </div>
                 <button id="copyCommandBtn" type="button" class="copy-btn">Copy</button>
               </div>
+              <p class="text-sm text-muted" style="margin:0;">
+                Uses relocatable CPython 3.12 in <code class="kbd">~/.local/share/BadWords-runtime/python312</code> without touching system packages, supports native Wayland/X11 DPI scaling, and works even without GCC.
+              </p>
             </div>
+          </div>
+
+          <div class="col-span-5 card" style="display:flex; flex-direction:column; justify-content:space-between; gap:0.85rem;">
+            <div>
+              <p class="eyebrow">Manual Binary &amp; CUDA</p>
+              <h2 class="h3-card mt-2">Standalone Binary Launch</h2>
+              <p class="mt-2 text-sm text-muted">
+                Prefer to run the setup binary manually? Grab <code class="kbd">badwords-setup-linux</code> from <a href="https://github.com/veritus-git/BadWords/releases/latest" target="_blank" rel="noopener noreferrer" class="text-emerald">GitHub Releases</a>:
+              </p>
+            </div>
+            <pre class="text-xs font-mono" style="margin:0; background:var(--bg); padding:0.75rem; border-radius:0.5rem; border:1px solid var(--border); white-space:pre-wrap; word-break:break-word; line-height:1.5;">chmod +x badwords-setup-linux &amp;&amp; ./badwords-setup-linux</pre>
           </div>
         </div>
 
         <div class="grid grid-12" style="align-items:center;">
           <div class="col-span-6">
             <p class="eyebrow">Step 2 - Inside the Setup Window</p>
-            <h2 class="h2-section" style="font-size:1.55rem;">Pick option <span class="text-emerald">1</span> to install</h2>
-            <p class="mt-3 text-sm text-muted">
-              Inside the Setup GUI (or Terminal fallback if your system blocks GUI execution), you get 5 tools:
+            <h2 class="h2-section" style="font-size:1.65rem;">Pick option <span class="text-emerald">1</span> to install</h2>
+            <p class="mt-2 text-sm text-muted">
+              Inside the Setup GUI (or automatic Terminal fallback), pick any of the 5 maintenance options:
             </p>
-            <ul class="bullet-list">
-              <li><span class="badge-green">1 - Fresh Install / Update</span> <span><strong>Pick this first!</strong> Installs BadWords, portable Python 3.12, FFmpeg, desktop shortcut, and <code class="kbd">~/.local/bin/badwords</code>.</span></li>
-              <li><span class="kbd">2 - Repair</span> <span>Verifies ABI imports and restores missing dependencies without losing models or saves.</span></li>
-              <li><span class="kbd">3 - Move</span> <span>Relocates the installation folder cleanly.</span></li>
-              <li><span class="kbd">4 - Reset</span> / <span class="kbd">5 - Uninstall</span> <span>Wipes cleanly or removes BadWords and shortcuts.</span></li>
-            </ul>
+            <div class="setup-opts">
+              <div class="setup-opt is-recommended">
+                <span class="setup-num">1</span>
+                <div>
+                  <div class="setup-opt-title">Fresh Install / Update <span class="setup-tag">Pick this first</span></div>
+                  <div class="setup-opt-desc">Installs BadWords, portable Python 3.12, FFmpeg, desktop shortcut, and <code class="kbd">~/.local/bin/badwords</code>.</div>
+                </div>
+              </div>
+              <div class="setup-opt">
+                <span class="setup-num">2</span>
+                <div>
+                  <div class="setup-opt-title">Repair Installation</div>
+                  <div class="setup-opt-desc">Verifies ABI imports and restores missing dependencies without losing models or saves.</div>
+                </div>
+              </div>
+              <div class="setup-opt">
+                <span class="setup-num">3</span>
+                <div>
+                  <div class="setup-opt-title">Move Installation</div>
+                  <div class="setup-opt-desc">Relocates the installation folder cleanly while updating desktop entries.</div>
+                </div>
+              </div>
+              <div class="setup-opt">
+                <span class="setup-num">4</span>
+                <div>
+                  <div class="setup-opt-title">Reset / 5. Uninstall</div>
+                  <div class="setup-opt-desc">Option 4 clears app state and starts clean; option 5 removes BadWords and shortcuts completely.</div>
+                </div>
+              </div>
+            </div>
           </div>
+
           <div class="col-span-6 tilt-stage">
             <button type="button" data-lightbox-src="/assets/img/gui-setup-preview.webp" data-lightbox-caption="BadWords Setup Window - Press 1 for Fresh Install / Update" class="lightbox-trigger tilt-shot">
-              <img src="/assets/img/gui-setup-preview.webp" alt="BadWords Setup window showing options 1 through 5" width="706" height="606" loading="lazy" />
+              <img src="/assets/img/gui-setup-preview.webp" alt="BadWords Setup window showing options 1 through 5" width="648" height="548" loading="lazy" />
             </button>
-          </div>
-        </div>
-
-        <div class="grid grid-2">
-          <div class="card card-lg">
-            <h3 class="h3-card" style="font-size:1rem;">Manual Binary Download</h3>
-            <p class="mt-2 text-sm text-muted">
-              Download <code class="kbd">badwords-setup-linux</code> from <a href="https://github.com/veritus-git/BadWords/releases/latest" target="_blank" rel="noopener noreferrer" class="text-emerald">GitHub Releases</a> and run:
-            </p>
-            <pre class="mt-3 text-xs font-mono" style="background:var(--bg); padding:0.75rem; border-radius:0.5rem; border:1px solid var(--border); overflow-x:auto;">chmod +x badwords-setup-linux &amp;&amp; ./badwords-setup-linux</pre>
-          </div>
-          <div class="card card-lg">
-            <h3 class="h3-card" style="font-size:1rem;">Wayland, X11 &amp; Portable Python</h3>
-            <p class="mt-2 text-sm text-muted">
-              Uses relocatable CPython 3.12 in <code class="kbd">~/.local/share/BadWords-runtime/python312</code> without touching system packages, supports native Wayland/X11 DPI scaling, and works even without GCC installed.
-            </p>
           </div>
         </div>
       </div>
@@ -170,7 +186,6 @@
         <div>
           <h3 class="footer-heading">Download &amp; Docs</h3>
           <ul class="footer-links">
-            <li><a href="/download">Download (Choose OS)</a></li>
             <li><a href="/download/windows">Windows Setup</a></li>
             <li><a href="/download/mac">macOS Setup</a></li>
             <li><a href="/download/linux">Linux Setup</a></li>
@@ -204,6 +219,6 @@
       <div class="lightbox-frame"><img id="lightboxImg" src="" alt="" /></div>
     </div>
   </div>
-  <script src="/assets/js/main.js?v=20261127c" defer></script>
+  <script src="/assets/js/main.js?v=20261127d" defer></script>
 </body>
 </html>

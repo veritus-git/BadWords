@@ -28,12 +28,12 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/assets/img/favicon-16x16.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/assets/img/apple-touch-icon.png" />
   <link rel="manifest" href="/site.webmanifest" />
-  <meta name="theme-color" content="#09090b" />
+  <meta name="theme-color" content="#08080a" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/assets/css/styles.css?v=20261127c" />
+  <link rel="stylesheet" href="/assets/css/styles.css?v=20261127d" />
 
   <script type="application/ld+json">
   {
@@ -156,36 +156,28 @@
   <main>
     <section class="section-hero glow-top-center">
       <div class="container text-center">
-        <div class="hero-badge">
-          <span class="hero-badge-dot" aria-hidden="true"></span>
-          <span>v4.1.2 Early Access - 100% Local &amp; MIT Open Source</span>
-        </div>
-
         <h1 class="h1-hero">
-          Cleaner Timelines <span class="text-gradient-emerald">Faster.</span>
+          Cleaner Timelines<br>
+          <span class="text-gradient-emerald">Faster.</span>
         </h1>
 
         <p class="lead mx-auto">
-          Stop scrubbing hours of dialogue waveforms. BadWords transcribes your footage offline on your own GPU, automatically highlights mistakes, retakes, and silences, and lets you rough-cut video simply by editing text.
+          Free, 100% local AI rough cut studio. Transcribe dialogue on your own GPU, strip silences and bad takes by editing text like a document, and export a linked timeline to DaVinci Resolve, Premiere Pro, or Final Cut Pro.
         </p>
 
         <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <a href="#why" class="btn btn-lg btn-secondary">See How It Works</a>
           <a href="/download" class="btn btn-lg btn-primary">
             <span>Download BadWords Free</span>
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16" />
             </svg>
           </a>
-          <a href="#how" class="btn btn-lg btn-secondary">See How It Works</a>
         </div>
 
-        <ol class="flow-pills" aria-label="BadWords workflow summary">
-          <li>1. Drop Files or Open Resolve</li>
-          <li class="flow-sep" aria-hidden="true">-&gt;</li>
-          <li>2. Edit Text &amp; Tune Silence</li>
-          <li class="flow-sep" aria-hidden="true">-&gt;</li>
-          <li>3. Export Clean Timeline</li>
-        </ol>
+        <p class="mono-meta mt-5">
+          v4.1.2 Early Access - Windows, macOS (Apple Silicon MLX &amp; Intel), Linux - MIT Open Source
+        </p>
 
         <div class="mt-12 tilt-stage">
           <button
@@ -197,7 +189,7 @@
           >
             <img
               src="/assets/img/hero-workspace.webp"
-              alt="BadWords v4 desktop interface showing verbatim transcript editing, silence sliders, and cut waveform preview"
+              alt="BadWords v4.1.2 desktop interface showing verbatim transcript editing, silence sliders, and cut waveform preview"
               width="1460"
               height="860"
               loading="eager"
@@ -207,115 +199,152 @@
       </div>
     </section>
 
-    <section class="section">
+    <section id="why" class="section">
       <div class="container">
         <div class="text-center mx-auto" style="max-width:44rem;">
-          <p class="eyebrow">What It Actually Does</p>
-          <h2 class="h2-section">Your 80% rough-cut assistant</h2>
+          <p class="eyebrow">What BadWords Does</p>
+          <h2 class="h2-section">Automate 80% of your rough cut locally</h2>
           <p class="sublead mx-auto">
-            BadWords is a pre-edit desktop studio, not a cloud subscription editor. Give it raw talking-head video, podcasts, or interviews - get back a tight, clean timeline ready for creative finishing.
+            BadWords is a pre-edit desktop workstation, not a cloud subscription editor. Give it raw talking-head video, podcasts, interviews, or an open Resolve timeline - get back a clean cut timeline ready for finishing.
           </p>
         </div>
 
-        <div class="grid grid-3 mt-10">
-          <article class="card card-lg card-hover text-center">
-            <p class="eyebrow">01 - What goes in</p>
-            <h3 class="h3-card mt-2">Raw Footage or Resolve Timeline</h3>
-            <p class="mt-3 text-sm text-muted">
-              Drop MP4, MOV, MKV, or WAV files directly from disk, or connect straight to DaVinci Resolve (Free 21.1+ via Lua Bridge or Studio). Optional script (<code class="kbd">.txt</code>, <code class="kbd">.docx</code>, <code class="kbd">.pdf</code>) accepted.
+        <div class="grid grid-2 mt-10">
+          <div class="card card-lg">
+            <p class="eyebrow eyebrow-muted">Before</p>
+            <h3 class="h3-card mt-2">Manual Timeline Scrubbing</h3>
+            <ul class="bullet-list text-muted">
+              <li><span class="font-mono text-xs">-</span><span>Spending hours zooming into waveforms on podcasts, interviews, or gameplays just to remove dead air.</span></li>
+              <li><span class="font-mono text-xs">-</span><span>Re-listening to three or four repeated takes on scripted videos to find the single clean sentence.</span></li>
+              <li><span class="font-mono text-xs">-</span><span>Manually cutting every "um", stutter, false start, and desk bump across long dialogue tracks.</span></li>
+              <li><span class="font-mono text-xs">-</span><span>Paying monthly per-hour cloud bills or waiting for multi-gigabyte 4K footage to upload.</span></li>
+            </ul>
+          </div>
+
+          <div class="card card-lg card-accent">
+            <p class="eyebrow">With BadWords</p>
+            <h3 class="h3-card mt-2">Text-Based Rough Cutting</h3>
+            <ul class="bullet-list">
+              <li><span class="bullet-dot"></span><span>Read a word-for-word transcript and cross out mistakes with keys 1-4 instead of scrubbing waveforms.</span></li>
+              <li><span class="bullet-dot"></span><span>Compare recordings against your script (<code class="kbd">.txt</code>, <code class="kbd">.docx</code>, <code class="kbd">.pdf</code>) to spot deviations immediately.</span></li>
+              <li><span class="bullet-dot"></span><span>Tune silence cuts and island absorption live in under 5 ms in RAM with real-time Spacebar cut skipping.</span></li>
+              <li><span class="bullet-dot"></span><span>Export a brand-new, non-destructive linked timeline to Resolve, Premiere Pro, or Final Cut - 100% free.</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="grid grid-4 mt-8">
+          <article class="card">
+            <span class="mono-meta text-emerald font-semibold">01</span>
+            <h4 class="h3-card mt-3" style="font-size:1rem;">Input Source</h4>
+            <p class="mt-2 text-sm text-muted">
+              Drop MP4, MOV, MKV, or WAV files in Standalone Mode, or connect straight to DaVinci Resolve Free 21.1+ / Studio.
             </p>
           </article>
-
-          <article class="card card-lg card-accent card-hover text-center">
-            <p class="eyebrow">02 - What BadWords does</p>
-            <h3 class="h3-card mt-2">Turns Audio into Editable Text</h3>
-            <p class="mt-3 text-sm text-muted">
-              Transcribes word-for-word offline, strips dead air in under 5 ms in RAM, flags "ums" and repeated takes in Red and Blue, and skips cut sections live when you press Space.
+          <article class="card">
+            <span class="mono-meta text-emerald font-semibold">02</span>
+            <h4 class="h3-card mt-3" style="font-size:1rem;">Transcribe Offline</h4>
+            <p class="mt-2 text-sm text-muted">
+              Faster-Whisper (CUDA) or Apple Silicon MLX writes verbatim words and timestamps across ~100 languages.
             </p>
           </article>
-
-          <article class="card card-lg card-hover text-center">
-            <p class="eyebrow">03 - What comes out</p>
-            <h3 class="h3-card mt-2">Clean, Linked Timeline in Your NLE</h3>
-            <p class="mt-3 text-sm text-muted">
-              Creates a brand-new timeline with linked audio and video (never overwriting your source) or exports FCP7 XML, FCPXML, OTIO, or EDL for Premiere Pro and Final Cut Pro.
+          <article class="card">
+            <span class="mono-meta text-emerald font-semibold">03</span>
+            <h4 class="h3-card mt-3" style="font-size:1rem;">Edit &amp; Tune</h4>
+            <p class="mt-2 text-sm text-muted">
+              Color-code retakes (<span class="text-rose">Red</span>, <span class="text-sky">Blue</span>, <span class="text-emerald">Green</span>), diff scripts, and slide silence thresholds in RAM.
+            </p>
+          </article>
+          <article class="card">
+            <span class="mono-meta text-emerald font-semibold">04</span>
+            <h4 class="h3-card mt-3" style="font-size:1rem;">Export Timeline</h4>
+            <p class="mt-2 text-sm text-muted">
+              Assemble a fresh Resolve timeline (XML or <code class="kbd">.drt</code>) or export FCP7 XML, FCPXML, OTIO, or EDL.
             </p>
           </article>
         </div>
       </div>
     </section>
 
-    <section id="how" class="section glow-stage">
+    <section id="features" class="section">
       <div class="container">
         <div class="text-center mx-auto" style="max-width:44rem;">
-          <p class="eyebrow">Interactive Walkthrough</p>
-          <h2 class="h2-section">Four steps, one clean window</h2>
+          <p class="eyebrow">Workspace Tour</p>
+          <h2 class="h2-section">Built for real editing sessions</h2>
           <p class="sublead mx-auto">
-            See how a raw 18-minute recording turns into an 11-minute rough cut without scrubbing a single waveform by hand. Click any step to inspect.
+            Switch tabs to inspect real v4.1.2 screens across transcription, script alignment, fast silence, standalone files, and timeline assembly.
           </p>
         </div>
 
-        <div class="demo-grid mt-10">
-          <ol class="demo-steps" role="tablist" aria-label="Rough cut workflow steps">
-            <li>
-              <button type="button" role="tab" aria-selected="true" class="demo-step is-active">
-                <span class="demo-step-num">01</span>
-                <span>
-                  <span class="demo-step-title">Transcribe locally</span>
-                  <span class="demo-step-desc">Faster-Whisper (CUDA) or Apple MLX writes every stutter, pause, and false start - 0 bytes uploaded.</span>
-                </span>
-                <span class="demo-progress" aria-hidden="true"></span>
-              </button>
-            </li>
-            <li>
-              <button type="button" role="tab" aria-selected="false" class="demo-step">
-                <span class="demo-step-num">02</span>
-                <span>
-                  <span class="demo-step-title">Spot mistakes &amp; silences</span>
-                  <span class="demo-step-desc">Flags fillers (Red), retakes (Blue), script typos (Green), and pauses (-42 dB) automatically.</span>
-                </span>
-                <span class="demo-progress" aria-hidden="true"></span>
-              </button>
-            </li>
-            <li>
-              <button type="button" role="tab" aria-selected="false" class="demo-step">
-                <span class="demo-step-num">03</span>
-                <span>
-                  <span class="demo-step-title">Edit like a document</span>
-                  <span class="demo-step-desc">Strike or restore words with keys 1-4, slide silence padding in &lt;5 ms, and hear cut skips live.</span>
-                </span>
-                <span class="demo-progress" aria-hidden="true"></span>
-              </button>
-            </li>
-            <li>
-              <button type="button" role="tab" aria-selected="false" class="demo-step">
-                <span class="demo-step-num">04</span>
-                <span>
-                  <span class="demo-step-title">Assemble or export</span>
-                  <span class="demo-step-desc">Send a linked timeline straight to DaVinci Resolve or export XML, FCPXML, OTIO, or EDL.</span>
-                </span>
-                <span class="demo-progress" aria-hidden="true"></span>
-              </button>
-            </li>
-          </ol>
+        <div class="grid grid-12 mt-10">
+          <div class="feature-tab-list col-span-4" role="tablist" aria-label="BadWords features">
+            <button type="button" role="tab" aria-selected="true" data-feature-tab="verbatim" class="feature-tab is-active">
+              <div class="feature-tab-num">01</div>
+              <div class="feature-tab-title">True Verbatim Transcription</div>
+              <div class="feature-tab-sub">Catches every stutter, "um", and false start word-for-word.</div>
+            </button>
+            <button type="button" role="tab" aria-selected="false" data-feature-tab="script" class="feature-tab">
+              <div class="feature-tab-num">02</div>
+              <div class="feature-tab-title">Smart Script Comparison</div>
+              <div class="feature-tab-sub">DNA-inspired alignment highlights only deviations from your script.</div>
+            </button>
+            <button type="button" role="tab" aria-selected="false" data-feature-tab="silence" class="feature-tab">
+              <div class="feature-tab-num">03</div>
+              <div class="feature-tab-title">Live Silence &amp; Waveform</div>
+              <div class="feature-tab-sub">Auto-norm -42 dB, island absorption, and &lt;5 ms RAM sliders.</div>
+            </button>
+            <button type="button" role="tab" aria-selected="false" data-feature-tab="editor" class="feature-tab">
+              <div class="feature-tab-num">04</div>
+              <div class="feature-tab-title">Standalone Mode &amp; Multi-NLE</div>
+              <div class="feature-tab-sub">Drop local video/audio files and export XML, FCPXML, OTIO, EDL.</div>
+            </button>
+            <button type="button" role="tab" aria-selected="false" data-feature-tab="assembly" class="feature-tab">
+              <div class="feature-tab-num">05</div>
+              <div class="feature-tab-title">Assembly Panel &amp; Heatmap</div>
+              <div class="feature-tab-sub">Per-color cut or marker rules, frame-accurate XML, and .drt.</div>
+            </button>
+          </div>
 
-          <div class="demo-stage" aria-live="polite">
-            <div class="demo-stage-bar">
-              <span id="demoStageLabel" class="mono-meta text-emerald">Step 01 - Local Faster-Whisper / MLX</span>
-              <button id="demoPauseBtn" type="button" aria-pressed="false" class="btn btn-sm btn-surface font-mono" style="padding:0.3rem 0.7rem;">Pause</button>
-            </div>
-            <div class="demo-stage-body">
-              <div id="demoTranscript" class="demo-transcript"></div>
-              <div class="demo-metrics">
-                <span id="demoMetricLeft" class="text-muted">Processing locally on GPU</span>
-                <span id="demoMetricRight" class="text-emerald font-semibold">Verbatim timestamps ready</span>
+          <div class="card col-span-8">
+            <div class="flex flex-wrap items-center justify-between gap-3" style="border-bottom:1px solid var(--border); padding-bottom:0.9rem;">
+              <h3 id="featureTitle" class="h3-card">True Verbatim Transcription</h3>
+              <div id="assemblySubToggle" class="subtab-group hidden">
+                <button type="button" data-assembly-view="panel" aria-selected="true" class="assembly-subtab is-active">Assembly Panel</button>
+                <button type="button" data-assembly-view="heatmap" aria-selected="false" class="assembly-subtab">Resolve Heatmap</button>
               </div>
             </div>
+
+            <div class="mt-4">
+              <button
+                id="featureLightboxBtn"
+                type="button"
+                data-lightbox-src="/assets/img/hero-workspace.webp"
+                data-lightbox-caption="True Verbatim Transcription - Every word, stutter, and silence live on one screen"
+                class="lightbox-trigger feature-preview-btn"
+              >
+                <div class="feature-stage-aspect">
+                  <img
+                    id="featurePreviewImg"
+                    src="/assets/img/hero-workspace.webp"
+                    alt="BadWords v4.1.2 desktop editor displaying verbatim transcript, silence sliders, and cut regions"
+                    width="1460"
+                    height="860"
+                    loading="lazy"
+                  />
+                </div>
+              </button>
+            </div>
+
+            <ul id="featureBullets" class="bullet-list" style="min-height:108px;">
+              <li><span class="bullet-dot"></span><span>Faster-Whisper &amp; Apple MLX tuned to preserve stutters, "ums", and false starts instead of hiding mistakes.</span></li>
+              <li><span class="bullet-dot"></span><span>Marks unintelligible mumbling as (...) and lets you audition every edit by pressing Space.</span></li>
+              <li><span class="bullet-dot"></span><span>Streams word-level timestamps in ~100 languages completely offline on your GPU or CPU.</span></li>
+            </ul>
           </div>
         </div>
 
         <div class="mt-8 flex flex-wrap justify-center gap-3">
-          <a href="/features" class="btn btn-md btn-secondary">Explore All Features &amp; Screenshots</a>
+          <a href="/features" class="btn btn-md btn-secondary">All Features &amp; Screenshots</a>
           <a href="/compare" class="btn btn-md btn-secondary">Compare vs Gling &amp; Descript</a>
         </div>
       </div>
@@ -323,31 +352,26 @@
 
     <section class="section">
       <div class="container">
-        <div class="text-center mx-auto" style="max-width:44rem;">
-          <p class="eyebrow">Built For Real Editors</p>
-          <h2 class="h2-section">Zero cloud lock-in, zero monthly bills</h2>
-        </div>
-
-        <div class="grid grid-3 mt-10">
+        <div class="grid grid-3">
           <div class="card card-lg">
             <p class="eyebrow">Privacy</p>
             <h3 class="h3-card mt-2">100% Local &amp; Offline</h3>
             <p class="mt-3 text-sm text-muted">
-              Your footage, client NDAs, transcripts, and scripts stay strictly on your own drive. Works completely offline after downloading your chosen Whisper model (~1-5 GB).
+              No cloud processing, no monthly per-hour limits, and no account logins. Footage, client NDAs, and transcripts stay strictly on your own drive.
             </p>
           </div>
           <div class="card card-lg">
-            <p class="eyebrow">Performance</p>
+            <p class="eyebrow">Hardware</p>
             <h3 class="h3-card mt-2">CUDA, Apple MLX &amp; CPU</h3>
             <p class="mt-3 text-sm text-muted">
-              NVIDIA CUDA acceleration on Windows/Linux, native Apple Silicon M1-M5 Metal MLX (up to ~11x faster than CPU), plus safe CPU fallback on any laptop.
+              Runs locally on NVIDIA RTX GPUs (CUDA), Apple Silicon M1-M5 via native Metal MLX (up to ~11x faster than CPU), or standard CPU fallback.
             </p>
           </div>
           <div class="card card-lg">
             <p class="eyebrow">Compatibility</p>
             <h3 class="h3-card mt-2">Resolve Free 21.1+ &amp; Any NLE</h3>
             <p class="mt-3 text-sm text-muted">
-              Includes the custom Lua Bridge for DaVinci Resolve Free 21.1+, native Studio support (XML or .drt), plus standalone FCP7 XML, FCPXML, OTIO, and EDL exports.
+              Includes the custom Lua Bridge for DaVinci Resolve Free 21.1+, native Studio workflows (XML or .drt), plus standalone FCPXML, OTIO, and EDL.
             </p>
           </div>
         </div>
@@ -359,7 +383,7 @@
         <p class="eyebrow">Open Source &amp; Community</p>
         <h2 class="h2-section">Ready to cut your editing time?</h2>
         <p class="sublead mx-auto">
-          BadWords is built by Simon (Szymon Wolarz) and shared free under the MIT license. Join editors on Reddit, report bugs on GitHub, or help keep development moving.
+          Built by Simon (Szymon Wolarz) and released free for everyone under the MIT license. Join editors on Reddit, report bugs on GitHub, or support development.
         </p>
 
         <div class="mt-8 flex flex-wrap justify-center gap-3">
@@ -400,7 +424,6 @@
         <div>
           <h3 class="footer-heading">Download &amp; Docs</h3>
           <ul class="footer-links">
-            <li><a href="/download">Download (Choose OS)</a></li>
             <li><a href="/download/windows">Windows Setup</a></li>
             <li><a href="/download/mac">macOS Setup</a></li>
             <li><a href="/download/linux">Linux Setup</a></li>
@@ -435,6 +458,6 @@
     </div>
   </div>
 
-  <script src="/assets/js/main.js?v=20261127c" defer></script>
+  <script src="/assets/js/main.js?v=20261127d" defer></script>
 </body>
 </html>
