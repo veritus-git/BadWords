@@ -28,45 +28,7 @@
     console.error('Mobile nav init error:', err);
   }
 
-  // 2. Smooth 3D Pointer Tilt on Showcase Windows (No Glow / No Shadow)
-  try {
-    const motionReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const finePointer = !window.matchMedia || window.matchMedia('(pointer: fine)').matches;
-
-    if (!motionReduced && finePointer) {
-      document.querySelectorAll('.tilt-stage').forEach(function (stage) {
-        let rafId = 0;
-        let tiltX = 0.8;
-        let tiltY = -1.0;
-
-        const paint = function () {
-          stage.style.setProperty('--tilt-x', tiltX.toFixed(2) + 'deg');
-          stage.style.setProperty('--tilt-y', tiltY.toFixed(2) + 'deg');
-          rafId = 0;
-        };
-
-        stage.addEventListener('pointermove', function (e) {
-          if (window.innerWidth <= 768) return;
-          const rect = stage.getBoundingClientRect();
-          tiltX = -((e.clientY - rect.top - rect.height / 2) / rect.height) * 3.5;
-          tiltY = ((e.clientX - rect.left - rect.width / 2) / rect.width) * 4.5;
-          stage.classList.add('is-moving');
-          if (!rafId) rafId = window.requestAnimationFrame(paint);
-        }, { passive: true });
-
-        stage.addEventListener('pointerleave', function () {
-          tiltX = 0.8;
-          tiltY = -1.0;
-          stage.classList.remove('is-moving');
-          if (!rafId) rafId = window.requestAnimationFrame(paint);
-        }, { passive: true });
-      });
-    }
-  } catch (err) {
-    console.error('Tilt init error:', err);
-  }
-
-  // 3. Interactive 5-Tab Feature Tour (Home Page)
+  // 2. Interactive 5-Tab Feature Tour (Home Page)
   try {
     const featureTabs = document.querySelectorAll('.feature-tab');
     const featureTitle = document.getElementById('featureTitle');
@@ -80,66 +42,66 @@
       const FEATURE_DATA = {
         verbatim: {
           title: 'True Verbatim Transcription',
-          src: '/assets/img/hero-workspace.webp',
-          alt: 'BadWords v4.1.2 desktop editor displaying verbatim transcript, silence sliders, and cut regions',
-          caption: 'True Verbatim Transcription - Every word, stutter, and silence live on one screen',
+          src: '/assets/img/transcript-canvas.webp',
+          alt: 'True Verbatim Transcription canvas in BadWords',
+          caption: 'True Verbatim Transcription - Word-level transcript canvas',
           bullets: [
-            'Faster-Whisper & Apple MLX tuned to preserve stutters, "ums", and false starts instead of hiding mistakes.',
-            'Marks unintelligible mumbling as (...) and lets you audition every edit by pressing Space.',
-            'Streams word-level timestamps in ~100 languages completely offline on your GPU or CPU.'
+            'Faster-Whisper & Apple MLX tuned to catch every stutter, "um", and false start instead of smoothing speech.',
+            'Marks completely unintelligible audio as (...) so you can inspect it manually.',
+            'Live chunked streaming with word-level timestamps across ~100 languages for frame-accurate cuts.'
           ]
         },
         script: {
           title: 'Smart Script Comparison',
-          src: '/assets/img/feature-script-diff.webp',
-          alt: 'BadWords v4.1.2 Script Comparison panel comparing pasted text against spoken dialogue',
-          caption: 'Smart Script Comparison - Highlight only deviations from your script',
+          src: '/assets/img/script-sbs.webp',
+          alt: 'Smart Script Comparison side-by-side view in BadWords',
+          caption: 'Smart Script Comparison - Side-by-side DNA-inspired diff',
           bullets: [
-            'DNA-inspired alignment skips clean 1:1 takes and isolates off-script lines or repeated takes.',
-            'Extracts technical terms, acronyms, and brand names from .txt, .docx, and .pdf files before transcription.',
-            'Includes Side-by-Side Comparison View and Standalone Auto-Analyze for unscripted recordings.'
+            'DNA-inspired alignment highlights only deviations, mistakes, and retakes so you skip clean 1:1 matches.',
+            'Automatically extracts technical terms and names from your script to boost AI transcription accuracy.',
+            'Imports .txt, .docx, and .pdf scripts directly, with a side-by-side script comparison view.'
           ]
         },
         silence: {
-          title: 'Instant Silence & Fast Silence',
-          src: '/assets/img/feature-fast-silence.webp',
-          alt: 'BadWords v4.1.2 Silence Detection tab with real-time dB sliders and waveform cut regions',
-          caption: 'Fast Silence & Waveform - Instant in-RAM recalculation under 5 ms',
+          title: 'Instant Silence Detection & Fast Silence',
+          src: '/assets/img/fast-silence.webp',
+          alt: 'Instant Silence Detection and Fast Silence controls in BadWords',
+          caption: 'Instant Silence Detection & Fast Silence - Sub-5 ms RAM tuning',
           bullets: [
-            'Automatic loudness normalization keeps the -42 dB threshold reliable across quiet or loud mics.',
-            'Island absorption merges tiny coughs or desk bumps back into silence cuts automatically.',
-            'Adjust threshold, pause ratio, and padding live in RAM - or cut pauses without transcribing via Fast Silence.'
+            'Auto-normalized audio makes the -42 dB silence threshold work out of the box across microphones.',
+            'Island absorption swallows random short noises like desk bumps or coughs inside pauses automatically.',
+            'Live sliders recalculate in <5 ms in RAM, and Fast Silence cuts an entire timeline in seconds without transcription.'
           ]
         },
         editor: {
           title: 'Standalone Mode & Multi-NLE Export',
-          src: '/assets/img/feature-welcome-standalone.webp',
-          alt: 'BadWords v4.1.2 Standalone File Mode welcome workspace with multi-file drop zone',
-          caption: 'Standalone Mode - Work directly from local video/audio files without Resolve',
+          src: '/assets/img/welcome-screen.webp',
+          alt: 'BadWords Standalone File Mode and DaVinci Resolve Welcome screen',
+          caption: 'Standalone Mode - Drag and drop video or audio files without DaVinci Resolve',
           bullets: [
-            'Drop MP4, MOV, MKV, or WAV files directly from disk with smooth background 360p preview proxies.',
-            'Edit visually via Notepad text selection, Marquee drag box, or brush keys 1-4.',
-            'Export frame-accurate cut timelines to FCP7 XML, Apple FCPXML, OpenTimelineIO (.otio), or CMX 3600 EDL.'
+            'Drop MP4, MOV, MKV, or WAV files directly from disk with smooth automatic background 360p proxies.',
+            'Marquee box or brush selection with live strikethrough on cut words and Spacebar cut skipping.',
+            'Export clean cut timelines to FCP7 XML, Apple FCPXML, OpenTimelineIO (.otio), or CMX 3600 EDL.'
           ]
         },
         assembly: {
           title: 'Assembly Panel & Timeline Heatmap',
           views: {
             panel: {
-              src: '/assets/img/feature-assembly.webp',
-              alt: 'BadWords v4.1.2 Assembly Options panel showing per-color cut and marker toggles',
+              src: '/assets/img/assembly-panel.webp',
+              alt: 'BadWords Assembly Options panel showing per-color cut and marker toggles',
               caption: 'Assembly Panel - Per-color cut or timeline marker rules'
             },
             heatmap: {
               src: '/assets/img/heatmap-preview.webp',
               alt: 'DaVinci Resolve timeline heatmap with linked color-coded clips generated by BadWords',
-              caption: 'Resolve Timeline Heatmap - Non-destructive linked clips with markers'
+              caption: 'Resolve Timeline Heatmap - Linked clips with color markers'
             }
           },
           bullets: [
-            'Choose per marker color whether BadWords cuts a clip or leaves colored Resolve markers as an editing heatmap.',
-            'Exact drop-frame timing (23.976 / 29.97 / 59.94 fps) with linked FCP7 XML default or Studio .drt preservation.',
-            'Every Assemble generates a brand-new timeline copy so your original sequence and source files are untouched.'
+            'Decide per color whether to auto-cut or leave as colored clip markers on a brand-new non-destructive timeline.',
+            'Frame-accurate cuts on 23.976 / 29.97 / 59.94 fps, with optional Studio .drt pipeline to preserve Color, Fusion, and Fairlight.',
+            'Project saves (.bws) include autosave and crash recovery, plus FCPXML fallback on Resolve Free 21.1+.'
           ]
         }
       };
@@ -210,7 +172,7 @@
     console.error('Feature showcase error:', err);
   }
 
-  // 4. Clipboard Copy Button on Download Pages
+  // 3. Clipboard Copy Button on Download Pages
   try {
     const osCommand = document.getElementById('osCommand');
     const copyBtn = document.getElementById('copyCommandBtn');
@@ -247,7 +209,7 @@
     console.error('Copy button error:', err);
   }
 
-  // 5. Fullscreen Lightbox Modal
+  // 4. Fullscreen Lightbox Modal
   try {
     const modal = document.getElementById('lightboxModal');
     const modalImg = document.getElementById('lightboxImg');
@@ -297,7 +259,7 @@
     console.error('Lightbox error:', err);
   }
 
-  // 6. Changelog Version Group Filter
+  // 5. Changelog Version Group Filter
   try {
     const filterBtns = document.querySelectorAll('[data-changelog-filter]');
     const releaseCards = document.querySelectorAll('[data-release-major]');
@@ -318,7 +280,7 @@
     console.error('Changelog filter error:', err);
   }
 
-  // 7. Docs Search + Match Counter + Active TOC Highlighter
+  // 6. Docs Search + Match Counter + Active TOC Highlighter
   try {
     const searchInput = document.getElementById('docsSearchInput');
     const clearBtn = document.getElementById('docsSearchClear');

@@ -4,23 +4,23 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Download BadWords for Windows 10 &amp; 11 - Local AI Rough Cut Studio</title>
-  <meta name="description" content="Download BadWords v4.1.2 for Windows 10 and 11 (badwords-setup-windows.exe) or install in one PowerShell command. Zero Admin permissions required." />
+  <meta name="description" content="Install BadWords v4.1.2 on Windows 10 and 11 via one PowerShell command or direct badwords-setup-windows.exe download. Zero Admin permissions required." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://badwords.dev/download/windows" />
 
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Download BadWords for Windows 10 &amp; 11" />
-  <meta property="og:description" content="Direct .exe installer or one-command PowerShell setup. Supports NVIDIA CUDA GPUs and CPU laptops, zero Admin needed." />
+  <meta property="og:description" content="One-line PowerShell install or direct .exe installer. Supports NVIDIA CUDA GPUs and CPU laptops without Admin privileges." />
   <meta property="og:url" content="https://badwords.dev/download/windows" />
   <meta property="og:image" content="https://badwords.dev/assets/img/og-image.png" />
 
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" sizes="180x180" href="/assets/img/apple-touch-icon.png" />
-  <meta name="theme-color" content="#111215" />
+  <meta name="theme-color" content="#0d0e10" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/assets/css/styles.css?v=20261127f" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/styles.css?v=20261127g" />
 
   <script type="application/ld+json">
   {
@@ -71,7 +71,7 @@
   </header>
 
   <main>
-    <section class="section-subhero glow-top-center">
+    <section class="section-subhero section-glow-tl">
       <div class="container">
         <nav class="breadcrumb" aria-label="Breadcrumb">
           <a href="/">Home</a><span>/</span><a href="/download">Download</a><span>/</span><span>Windows</span>
@@ -79,72 +79,79 @@
         <p class="eyebrow">Windows 10 &amp; 11 (64-bit)</p>
         <h1 class="h1-page">Download BadWords for Windows</h1>
         <p class="lead">
-          Free MIT open source - installs cleanly into your user folder without Administrator permissions. Supports NVIDIA CUDA GPUs and standard CPU PCs.
+          Choose whichever method you prefer below - both launch the exact same BadWords Setup wizard with zero Administrator permissions required.
         </p>
       </div>
     </section>
 
-    <section class="section" style="padding-top:1.5rem;">
-      <div class="container">
-        <div class="grid grid-12" style="align-items:center;">
-          <div class="col-span-6 card card-lg">
-            <a href="/dl/windows" class="btn btn-lg btn-primary" style="width:100%;">
-              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16" />
-              </svg>
-              <span>Download Windows Installer (.exe)</span>
-            </a>
-            <p class="mono-meta text-center mt-2">
-              v4.1.2 - 10.5 MB (.exe) - Requires ~4 GB app + AI model
-            </p>
-
-            <div class="dl-steps">
-              <div class="dl-step">
-                <span class="dl-step-num">1</span>
-                <div>
-                  <div class="dl-step-title">Run the downloaded file</div>
-                  <div class="dl-step-desc">Double-click <code class="kbd">badwords-setup-windows.exe</code> to open the BadWords Setup window (shown on the right).</div>
-                </div>
+    <section class="section">
+      <div class="container" style="display:flex; flex-direction:column; gap:3.5rem;">
+        <div class="grid grid-2" style="align-items:stretch;">
+          <div class="card card-lg" style="display:flex; flex-direction:column; justify-content:space-between; gap:1rem;">
+            <div>
+              <div class="flex items-center justify-between gap-2">
+                <p class="eyebrow">Option A - PowerShell</p>
+                <a href="https://github.com/veritus-git/BadWords/blob/main/setupfiles/windows-setup.ps1" target="_blank" rel="noopener noreferrer" class="mono-meta" style="text-decoration:underline;">View script source</a>
               </div>
-              <div class="dl-step">
-                <span class="dl-step-num">2</span>
-                <div>
-                  <div class="dl-step-title">Choose option 1 (Fresh Install / Update)</div>
-                  <div class="dl-step-desc">It automatically downloads BadWords, FFmpeg, Whisper, and links DaVinci Resolve. You can use the same file later to Repair (2), Move (3), Reset (4), or Uninstall (5).</div>
-                </div>
-              </div>
-              <div class="dl-step">
-                <span class="dl-step-num">3</span>
-                <div>
-                  <div class="dl-step-title">Launch BadWords from Desktop or Start Menu</div>
-                  <div class="dl-step-desc">NVIDIA driver 525+ uses CUDA automatically; laptops without NVIDIA GPUs switch cleanly to CPU mode.</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="dl-alt-box">
-              <p class="text-xs text-muted" style="margin:0 0 0.5rem;">
-                Windows Smart App Control warning? Because BadWords is free without a $400/yr certificate, paste this line into <strong>PowerShell</strong> instead for the identical setup:
+              <h2 class="h3-card mt-2">One-line terminal install</h2>
+              <p class="mt-2 text-sm text-muted">
+                Open <strong>PowerShell</strong> from the Start Menu and paste this command. Automatically falls back to an identical terminal wizard if Windows Smart App Control blocks unsigned apps.
               </p>
-              <div class="cmd-box">
-                <div class="cmd-scroll">
-                  <span class="font-mono text-xs font-semibold text-emerald" style="user-select:none;">PS&gt;</span>
-                  <code id="osCommand" class="cmd-code">irm "https://badwords.dev/raw/windows" | iex</code>
-                </div>
-                <button id="copyCommandBtn" type="button" class="copy-btn">Copy</button>
+            </div>
+            <div class="cmd-box">
+              <div class="cmd-scroll">
+                <span class="font-mono text-xs font-semibold text-emerald" style="user-select:none;">PS&gt;</span>
+                <code id="osCommand" class="cmd-code">irm "https://badwords.dev/raw/windows" | iex</code>
               </div>
+              <button id="copyCommandBtn" type="button" class="copy-btn">Copy</button>
             </div>
           </div>
 
-          <div class="col-span-6" style="display:flex; flex-direction:column; gap:1.25rem;">
-            <div class="tilt-stage">
-              <button type="button" data-lightbox-src="/assets/img/gui-setup-preview.webp" data-lightbox-caption="BadWords Setup Window - Press 1 for Fresh Install / Update" class="lightbox-trigger tilt-shot">
-                <img src="/assets/img/gui-setup-preview.webp" alt="BadWords Setup window showing options 1 through 5" width="648" height="548" loading="lazy" />
-              </button>
+          <div class="card card-lg" style="display:flex; flex-direction:column; justify-content:space-between; gap:1rem;">
+            <div>
+              <div class="flex items-center justify-between gap-2">
+                <p class="eyebrow">Option B - Direct File</p>
+                <span class="mono-meta">v4.1.2 - 10.5 MB</span>
+              </div>
+              <h2 class="h3-card mt-2">Download standalone installer</h2>
+              <p class="mt-2 text-sm text-muted">
+                Download <code class="kbd">badwords-setup-windows.exe</code> and double-click to launch. Because BadWords is free without a $400/yr certificate, right-click -&gt; Properties -&gt; Unblock if Windows warns.
+              </p>
             </div>
-            <p class="mono-meta text-center" style="margin:0;">
-              Click preview to enlarge - All versions archived on <a href="https://github.com/veritus-git/BadWords/releases/latest" target="_blank" rel="noopener noreferrer" class="text-emerald">GitHub Releases</a>
-            </p>
+            <a href="/dl/windows" class="btn btn-md btn-primary" style="width:100%;">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16" />
+              </svg>
+              <span>Download badwords-setup-windows.exe</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="grid grid-12" style="align-items:center;">
+          <div class="col-span-6">
+            <p class="eyebrow">How Installation Works</p>
+            <h2 class="h2-section" style="font-size:1.65rem;">Pick option 1 in the setup window</h2>
+
+            <ol class="plain-steps">
+              <li>
+                <div class="plain-step-title"><span class="plain-step-num">01.</span>Start BadWords Setup</div>
+                <p class="plain-step-desc">Run either the PowerShell command or the downloaded <code class="kbd">.exe</code> file. Both open the window shown on the right.</p>
+              </li>
+              <li>
+                <div class="plain-step-title"><span class="plain-step-num">02.</span>Choose option 1 (Fresh Install / Update)</div>
+                <p class="plain-step-desc">Deploys BadWords, isolated Python 3.12, FFmpeg, Whisper, and DaVinci Resolve scripts into your user folder (~4 GB app + 1-5 GB AI model). Options 2-5 let you Repair, Move, Reset, or Uninstall anytime later.</p>
+              </li>
+              <li>
+                <div class="plain-step-title"><span class="plain-step-num">03.</span>Launch BadWords</div>
+                <p class="plain-step-desc">Open BadWords from your Desktop or Start Menu. NVIDIA driver 525+ enables CUDA automatically; laptops without NVIDIA GPUs run cleanly on CPU.</p>
+              </li>
+            </ol>
+          </div>
+
+          <div class="col-span-6 tilt-stage">
+            <button type="button" data-lightbox-src="/assets/img/gui-setup-preview.webp" data-lightbox-caption="BadWords Setup Window - Press 1 for Fresh Install / Update" class="lightbox-trigger tilt-shot">
+              <img src="/assets/img/gui-setup-preview.webp" alt="BadWords Setup window showing options 1 through 5" width="648" height="548" loading="lazy" />
+            </button>
           </div>
         </div>
       </div>
@@ -203,6 +210,6 @@
       <div class="lightbox-frame"><img id="lightboxImg" src="" alt="" /></div>
     </div>
   </div>
-  <script src="/assets/js/main.js?v=20261127f" defer></script>
+  <script src="/assets/js/main.js?v=20261127g" defer></script>
 </body>
 </html>
