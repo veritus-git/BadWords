@@ -1,6 +1,83 @@
 (function () {
   'use strict';
 
+  // 0. Lightweight OS Detection (for subtle recommendation on /download & hero button)
+  const detectUserOS = function () {
+    try {
+      const ua = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent || '').toLowerCase();
+      if (ua.indexOf('win') !== -1) return 'windows';
+      if (ua.indexOf('mac') !== -1) return 'mac';
+      if (ua.indexOf('linux') !== -1 || ua.indexOf('x11') !== -1) return 'linux';
+    } catch (_) {}
+    return null;
+  };
+
+  try {
+    const os = detectUserOS();
+    const osCards = document.querySelectorAll('[data-os-card]');
+    if (osCards.length) {
+      const targetOS = os || 'windows';
+      osCards.forEach(function (card) {
+        const isMatch = card.getAttribute('data-os-card') === targetOS;
+        card.classList.toggle('is-recommended', isMatch && Boolean(os));
+        const cta = card.querySelector('.os-card-cta');
+        if (cta) {
+          cta.classList.toggle('btn-primary', isMatch);
+          cta.classList.toggle('btn-surface', !isMatch);
+        }
+      });
+    }
+
+    const heroCta = document.getElementById('heroDownloadBtn');
+    const heroCtaLabel = document.getElementById('heroDownloadLabel');
+    if (heroCta && heroCtaLabel && os) {
+      const osMap = {
+        windows: { href: '/download/windows', label: 'Download for Windows' },
+        mac: { href: '/download/mac', label: 'Download for macOS' },
+        linux: { href: '/download/linux', label: 'Download for Linux' }
+      };
+      if (osMap[os]) {
+        heroCta.setAttribute('href', osMap[os].href);
+        heroCtaLabel.textContent = osMap[os].label;
+      }
+    }
+  } catch (err) {
+    console.error('OS hint init error:', err);
+  }
+
+  // 0b. Subtle 3D Cursor Tilt on Hero App Showcase (pleofon-style)
+  try {
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const finePointer = window.matchMedia('(pointer: fine)');
+    const stage = document.querySelector('.hero-showcase');
+    if (stage) {
+      let frame = 0;
+      let tx = 1.5;
+      let ty = -2;
+      const paintTilt = function () {
+        stage.style.setProperty('--tilt-x', tx.toFixed(2) + 'deg');
+        stage.style.setProperty('--tilt-y', ty.toFixed(2) + 'deg');
+        frame = 0;
+      };
+      stage.addEventListener('pointermove', function (e) {
+        if (motion.matches || !finePointer.matches || window.innerWidth <= 760) return;
+        const box = stage.getBoundingClientRect();
+        tx = -(e.clientY - box.top - box.height / 2) / box.height * 3.2;
+        ty = (e.clientX - box.left - box.width / 2) / box.width * 4.2;
+        stage.classList.add('is-moving');
+        if (!frame) frame = requestAnimationFrame(paintTilt);
+      }, { passive: true });
+      stage.addEventListener('pointerleave', function () {
+        tx = 1.5;
+        ty = -2;
+        stage.classList.remove('is-moving');
+        if (!frame) frame = requestAnimationFrame(paintTilt);
+      }, { passive: true });
+    }
+  } catch (err) {
+    console.error('Hero tilt init error:', err);
+  }
+
   // 1. Mobile Navigation Toggle
   try {
     const btn = document.getElementById('mobileMenuBtn');
@@ -33,6 +110,7 @@
     const featureTabs = document.querySelectorAll('.feature-tab');
     const featureTitle = document.getElementById('featureTitle');
     const featurePreviewImg = document.getElementById('featurePreviewImg');
+    const featureStageBox = document.getElementById('featureStageBox');
     const featureLightboxBtn = document.getElementById('featureLightboxBtn');
     const featureBullets = document.getElementById('featureBullets');
     const assemblySubToggle = document.getElementById('assemblySubToggle');
@@ -45,6 +123,7 @@
           src: '/assets/img/transcript-canvas.webp',
           alt: 'True Verbatim Transcription canvas in BadWords',
           caption: 'True Verbatim Transcription - Word-level transcript canvas',
+          contain: false,
           bullets: [
             'Faster-Whisper & Apple MLX tuned to catch every stutter, "um", and false start instead of smoothing speech.',
             'Marks completely unintelligible audio as (...) so you can inspect it manually.',
@@ -56,6 +135,7 @@
           src: '/assets/img/script-sbs.webp',
           alt: 'Smart Script Comparison side-by-side view in BadWords',
           caption: 'Smart Script Comparison - Side-by-side DNA-inspired diff',
+          contain: false,
           bullets: [
             'DNA-inspired alignment highlights only deviations, mistakes, and retakes so you skip clean 1:1 matches.',
             'Automatically extracts technical terms and names from your script to boost AI transcription accuracy.',
@@ -67,6 +147,7 @@
           src: '/assets/img/fast-silence.webp',
           alt: 'Instant Silence Detection and Fast Silence controls in BadWords',
           caption: 'Instant Silence Detection & Fast Silence - Sub-5 ms RAM tuning',
+          contain: false,
           bullets: [
             'Auto-normalized audio makes the -42 dB silence threshold work out of the box across microphones.',
             'Island absorption swallows random short noises like desk bumps or coughs inside pauses automatically.',
@@ -78,6 +159,7 @@
           src: '/assets/img/welcome-screen.webp',
           alt: 'BadWords Standalone File Mode and DaVinci Resolve Welcome screen',
           caption: 'Standalone Mode - Drag and drop video or audio files without DaVinci Resolve',
+          contain: false,
           bullets: [
             'Drop MP4, MOV, MKV, or WAV files directly from disk with smooth automatic background 360p proxies.',
             'Marquee box or brush selection with live strikethrough on cut words and Spacebar cut skipping.',
@@ -90,12 +172,14 @@
             panel: {
               src: '/assets/img/assembly-panel.webp',
               alt: 'BadWords Assembly Options panel showing per-color cut and marker toggles',
-              caption: 'Assembly Panel - Per-color cut or timeline marker rules'
+              caption: 'Assembly Panel - Per-color cut or timeline marker rules',
+              contain: true
             },
             heatmap: {
               src: '/assets/img/heatmap-preview.webp',
               alt: 'DaVinci Resolve timeline heatmap with linked color-coded clips generated by BadWords',
-              caption: 'Resolve Timeline Heatmap - Linked clips with color markers'
+              caption: 'Resolve Timeline Heatmap - Linked clips with color markers',
+              contain: false
             }
           },
           bullets: [
@@ -108,9 +192,12 @@
 
       let currentAssemblyView = 'panel';
 
-      const setMedia = function (src, alt, caption) {
+      const setMedia = function (src, alt, caption, contain) {
         featurePreviewImg.src = src;
         featurePreviewImg.alt = alt;
+        if (featureStageBox) {
+          featureStageBox.classList.toggle('is-contain', Boolean(contain));
+        }
         if (featureLightboxBtn) {
           featureLightboxBtn.setAttribute('data-lightbox-src', src);
           featureLightboxBtn.setAttribute('data-lightbox-caption', caption);
@@ -125,10 +212,10 @@
         if (key === 'assembly' && data.views) {
           if (assemblySubToggle) assemblySubToggle.classList.remove('hidden');
           const v = data.views[currentAssemblyView] || data.views.panel;
-          setMedia(v.src, v.alt, v.caption);
+          setMedia(v.src, v.alt, v.caption, v.contain);
         } else {
           if (assemblySubToggle) assemblySubToggle.classList.add('hidden');
-          setMedia(data.src, data.alt, data.caption);
+          setMedia(data.src, data.alt, data.caption, data.contain);
         }
 
         featureBullets.innerHTML = '';
