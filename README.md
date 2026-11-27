@@ -163,7 +163,7 @@ The absolute easiest way to start the setup. It securely downloads and runs the 
 Open the Start Menu, search for **PowerShell**, open it, paste the following command, and press **Enter**:
 
 ```powershell
-irm "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/windows-setup.ps1" | iex
+irm "https://badwords.dev/raw/windows" | iex
 ```
 
 <br>
@@ -172,7 +172,7 @@ irm "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/wind
 Open the **Terminal** app (search with Spotlight `Cmd + Space`), paste the following command, and press **Enter**:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/mac-setup.sh" | bash
+curl -fsSL "https://badwords.dev/raw/mac" | bash
 ```
 
 <br>
@@ -181,7 +181,7 @@ curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfil
 Open your terminal, paste the following command, and press **Enter**:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/veritus-git/BadWords/main/setupfiles/linux-setup.sh" | bash
+curl -fsSL "https://badwords.dev/raw/linux" | bash
 ```
 
 <br>
