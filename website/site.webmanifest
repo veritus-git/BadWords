@@ -1,0 +1,21 @@
+{
+  "name": "BadWords - AI Rough Cut Studio",
+  "short_name": "BadWords",
+  "description": "Free, 100% local open-source AI rough cut studio for DaVinci Resolve, Premiere Pro, and Final Cut Pro.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#168f4d",
+  "icons": [
+    {
+      "src": "/assets/img/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/img/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

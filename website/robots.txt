@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /raw/
+
+Sitemap: https://badwords.dev/sitemap.xml

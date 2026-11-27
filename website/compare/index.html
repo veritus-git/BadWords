@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BadWords vs Gling, Descript &amp; DaVinci Resolve Studio - Free Local Alternative</title>
+  <meta name="description" content="Looking for a free, open-source Gling alternative or offline Descript alternative? Compare BadWords v4 vs Gling, Descript, TimeBolt, and DaVinci Resolve Studio built-in transcription." />
+  <meta name="keywords" content="free gling alternative, free descript alternative, offline descript alternative, open source rough cut editor, free AI silence remover, DaVinci Resolve Free text editing" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <link rel="canonical" href="https://badwords.dev/compare" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="BadWords" />
+  <meta property="og:title" content="BadWords vs Gling, Descript &amp; Resolve Studio - Free Local Alternative" />
+  <meta property="og:description" content="Zero subscriptions, zero cloud uploads. See how BadWords stacks up against Gling, Descript, and DaVinci Resolve Studio." />
+  <meta property="og:url" content="https://badwords.dev/compare" />
+  <meta property="og:image" content="https://badwords.dev/assets/img/og-image.png" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="BadWords vs Gling &amp; Descript - Free Local Alternative" />
+  <meta name="twitter:description" content="Save $180-$360/year and keep raw footage off cloud servers." />
+  <meta name="twitter:image" content="https://badwords.dev/assets/img/og-image.png" />
+
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/img/apple-touch-icon.png" />
+  <meta name="theme-color" content="#09090b" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://badwords.dev/" },
+          { "@type": "ListItem", "position": 2, "name": "Compare", "item": "https://badwords.dev/compare" }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How is BadWords different from Gling?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Gling charges a monthly subscription and requires uploading audio/video to cloud servers. BadWords is completely free (MIT open source), processes everything offline on your own GPU or CPU, adds script comparison (.txt/.docx/.pdf), and integrates directly with DaVinci Resolve Free 21.1+ and Studio."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can BadWords replace Descript for rough cutting?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "If you use Descript mainly to transcribe, delete bad takes, remove filler words and silences, and export XML to Premiere Pro, Final Cut Pro, or DaVinci Resolve, BadWords replaces that workflow locally for free with no upload limits."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Why use BadWords if I already own DaVinci Resolve Studio?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Resolve Studio's built-in transcription smooths out stutters and does not offer script diffing, island-absorbed live RAM silence sliders, or per-color timeline heatmaps. BadWords acts as a specialized pre-edit workstation and keeps optional .drt or linked FCP7 XML workflows."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="brand-link"><img src="/assets/img/banner.svg" alt="BadWords" width="142" height="28" class="brand-logo" /></a>
+      <nav class="desktop-nav" aria-label="Primary Navigation">
+        <a href="/features">Features</a>
+        <a href="/compare" class="is-active">Compare</a>
+        <a href="/davinci-resolve">DaVinci Resolve</a>
+        <a href="/docs">Docs</a>
+        <a href="/changelog">Changelog</a>
+      </nav>
+      <div class="header-actions">
+        <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary">GitHub</a>
+        <a href="/download" class="btn btn-sm btn-primary">Download Free</a>
+      </div>
+      <button id="mobileMenuBtn" type="button" aria-label="Toggle navigation menu" aria-expanded="false" class="mobile-menu-btn">
+        <svg id="menuIconOpen" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
+        <svg id="menuIconClose" class="hidden" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <div id="mobileMenuPanel" class="mobile-menu-panel hidden">
+      <div class="mobile-menu-links">
+        <a href="/features" class="mobile-link">Features</a>
+        <a href="/compare" class="mobile-link is-active">Compare</a>
+        <a href="/davinci-resolve" class="mobile-link">DaVinci Resolve</a>
+        <a href="/docs" class="mobile-link">Documentation</a>
+        <a href="/changelog" class="mobile-link">Changelog</a>
+        <div class="mt-3"><a href="/download" class="btn btn-md btn-primary" style="width:100%;">Download Free</a></div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="section-hero section-glow-tl" style="padding-bottom:3.5rem;">
+      <div class="container">
+        <nav class="breadcrumb" aria-label="Breadcrumb">
+          <a href="/">Home</a><span>/</span><span>Compare</span>
+        </nav>
+        <p class="eyebrow">Alternatives &amp; Benchmarks</p>
+        <h1 class="h1-page">The free, local alternative to Gling and Descript</h1>
+        <p class="lead">
+          Keep your client footage on your own drives, eliminate monthly per-hour transcription fees, and export frame-accurate cuts straight to your NLE.
+        </p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="table-wrap">
+          <table class="compare-table">
+            <thead>
+              <tr>
+                <th scope="col" style="width:22%;">Capability</th>
+                <th scope="col" class="col-bw-head" style="width:26%;">BadWords v4 (MIT)</th>
+                <th scope="col" style="width:18%;">Gling</th>
+                <th scope="col" style="width:18%;">Descript</th>
+                <th scope="col" style="width:16%;">Resolve Studio</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Cost</th>
+                <td class="col-bw-cell">$0 forever (Open Source)</td>
+                <td class="text-muted">~$15-$20 / month</td>
+                <td class="text-muted">~$16-$35 / month</td>
+                <td class="text-muted">$295 one-time</td>
+              </tr>
+              <tr>
+                <th scope="row">Processing Location</th>
+                <td class="col-bw-cell">100% Local (CUDA / MLX / CPU)</td>
+                <td class="text-muted">Cloud upload</td>
+                <td class="text-muted">Cloud upload</td>
+                <td class="text-body">Local</td>
+              </tr>
+              <tr>
+                <th scope="row">Hour / File Limits</th>
+                <td class="col-bw-cell">Unlimited (your hardware)</td>
+                <td class="text-muted">Monthly hour caps</td>
+                <td class="text-muted">Monthly hour caps</td>
+                <td class="text-body">Unlimited</td>
+              </tr>
+              <tr>
+                <th scope="row">DaVinci Resolve Free 21.1+</th>
+                <td class="col-bw-cell">Built-in Lua Bridge + XML</td>
+                <td class="text-muted">Manual XML only</td>
+                <td class="text-muted">Manual XML only</td>
+                <td class="text-muted">Not supported</td>
+              </tr>
+              <tr>
+                <th scope="row">Premiere / FCP / OTIO Export</th>
+                <td class="col-bw-cell">FCP7 XML, FCPXML, OTIO, EDL</td>
+                <td class="text-body">XML / FCPXML</td>
+                <td class="text-body">XML / FCPXML</td>
+                <td class="text-muted">Resolve only</td>
+              </tr>
+              <tr>
+                <th scope="row">Script Comparison (.docx/.pdf)</th>
+                <td class="col-bw-cell">DNA-inspired diff + tech terms</td>
+                <td class="text-muted">No</td>
+                <td class="text-muted">No</td>
+                <td class="text-muted">No</td>
+              </tr>
+              <tr>
+                <th scope="row">Verbatim Stutters &amp; Inaudibles</th>
+                <td class="col-bw-cell">Preserves stutters + (...) flags</td>
+                <td class="text-muted">Standard text</td>
+                <td class="text-muted">Standard text</td>
+                <td class="text-muted">Smooths speech</td>
+              </tr>
+              <tr>
+                <th scope="row">Silence Sliders Speed</th>
+                <td class="col-bw-cell">&lt;5 ms live in RAM + islands</td>
+                <td class="text-muted">Server / slow</td>
+                <td class="text-muted">Render wait</td>
+                <td class="text-muted">Static threshold</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="grid grid-3 mt-12">
+          <div class="card card-lg">
+            <p class="eyebrow">vs Gling</p>
+            <h2 class="h3-card mt-2">No cloud queues or hour caps</h2>
+            <p class="mt-3 text-sm text-muted">
+              Long 4K podcasts and gameplay sessions take ages to upload to cloud tools and burn through monthly quotas fast. BadWords reads local audio directly, supports Apple Silicon MLX and NVIDIA CUDA, and adds DNA-inspired script comparison for scripted channels.
+            </p>
+          </div>
+          <div class="card card-lg">
+            <p class="eyebrow">vs Descript</p>
+            <h2 class="h3-card mt-2">Built for NLE editors, not lock-in</h2>
+            <p class="mt-3 text-sm text-muted">
+              Descript tries to replace your entire editor behind a subscription and proprietary cloud project. BadWords focuses purely on turning raw dialogue into a clean, frame-accurate XML/EDL or Resolve timeline so you finish grading and sound in your real NLE.
+            </p>
+          </div>
+          <div class="card card-lg">
+            <p class="eyebrow">vs Resolve Studio</p>
+            <h2 class="h3-card mt-2">Works on Resolve Free 21.1+ too</h2>
+            <p class="mt-3 text-sm text-muted">
+              Even if you have Resolve Studio, BadWords catches stutters Resolve smooths over, supports script diffing, and builds colored timeline heatmaps. And if you use Resolve Free, BadWords gives you text-based rough cutting for $0.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <p class="eyebrow">FAQ</p>
+        <h2 class="h2-section">Frequently asked questions</h2>
+        <div class="mt-8" style="display:flex; flex-direction:column; gap:0.85rem; max-width:52rem;">
+          <details class="faq-item" open>
+            <summary><span>How fast does local AI transcription run without paying for cloud GPUs?</span><span class="mono-meta">+</span></summary>
+            <p>On an NVIDIA RTX GPU (CUDA) or Apple Silicon M1-M5 Mac (native MLX, up to ~11x faster than CPU), a 30-minute video typically transcribes in under a few minutes. On CPU-only laptops, Medium or Large Turbo still runs completely offline without internet.</p>
+          </details>
+          <details class="faq-item">
+            <summary><span>Are my client videos or NDA interviews ever uploaded anywhere?</span><span class="mono-meta">+</span></summary>
+            <p>Never. All audio extraction, Whisper inference, script diffing, and timeline assembly happen strictly on your own disk and RAM. See our <a href="/privacy" class="text-emerald">Privacy Policy</a> for details on optional anonymous telemetry.</p>
+          </details>
+          <details class="faq-item">
+            <summary><span>Which NLEs can import timelines cut with BadWords?</span><span class="mono-meta">+</span></summary>
+            <p>DaVinci Resolve (Free 21.1+, Free &lt;=21.0, and Studio), Adobe Premiere Pro, Apple Final Cut Pro, CapCut/Kdenlive/Reaper (via OTIO/EDL/FCP7 XML). Original media clips stay linked and untouched.</p>
+          </details>
+        </div>
+
+        <div class="mt-10 flex flex-wrap gap-3">
+          <a href="/download" class="btn btn-md btn-primary">Download BadWords Free</a>
+          <a href="/davinci-resolve" class="btn btn-md btn-secondary">DaVinci Resolve Integration</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-bottom" style="margin-top:0; border-top:none; padding-top:0;">
+        <span>BadWords v4.1.2 - MIT Open Source (c) 2026 Szymon Wolarz</span>
+        <span><a href="/">Home</a> - <a href="/features">Features</a> - <a href="/docs">Docs</a> - <a href="/download">Download</a> - <a href="/privacy">Privacy</a></span>
+      </div>
+    </div>
+  </footer>
+  <script src="/assets/js/main.js" defer></script>
+</body>
+</html>

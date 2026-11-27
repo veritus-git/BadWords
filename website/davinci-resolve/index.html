@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DaVinci Resolve Free 21.1+ &amp; Studio Integration - BadWords</title>
+  <meta name="description" content="How BadWords connects to DaVinci Resolve Free 21.1+ (via Lua Bridge), Free 21.0 and older, and Studio. Learn about linked FCP7 XML timelines, .drt mode, and timeline heatmaps." />
+  <meta name="keywords" content="DaVinci Resolve Free text editing, DaVinci Resolve 21.1 external scripting workaround, BadWords Bridge Lua, auto cut silence DaVinci Resolve Free, FCP7 XML linked clips Resolve" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <link rel="canonical" href="https://badwords.dev/davinci-resolve" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="BadWords" />
+  <meta property="og:title" content="DaVinci Resolve Free 21.1+ &amp; Studio Integration - BadWords" />
+  <meta property="og:description" content="Text-based rough cutting and silence removal for both DaVinci Resolve Free (via Lua Bridge) and Studio." />
+  <meta property="og:url" content="https://badwords.dev/davinci-resolve" />
+  <meta property="og:image" content="https://badwords.dev/assets/img/og-image.png" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="BadWords for DaVinci Resolve Free 21.1+ &amp; Studio" />
+  <meta name="twitter:description" content="Full Lua Bridge support, linked A/V clips via FCP7 XML, and colored timeline heatmaps." />
+  <meta name="twitter:image" content="https://badwords.dev/assets/img/og-image.png" />
+
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/img/apple-touch-icon.png" />
+  <meta name="theme-color" content="#09090b" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://badwords.dev/" },
+      { "@type": "ListItem", "position": 2, "name": "DaVinci Resolve", "item": "https://badwords.dev/davinci-resolve" }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="brand-link"><img src="/assets/img/banner.svg" alt="BadWords" width="142" height="28" class="brand-logo" /></a>
+      <nav class="desktop-nav" aria-label="Primary Navigation">
+        <a href="/features">Features</a>
+        <a href="/compare">Compare</a>
+        <a href="/davinci-resolve" class="is-active">DaVinci Resolve</a>
+        <a href="/docs">Docs</a>
+        <a href="/changelog">Changelog</a>
+      </nav>
+      <div class="header-actions">
+        <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary">GitHub</a>
+        <a href="/download" class="btn btn-sm btn-primary">Download Free</a>
+      </div>
+      <button id="mobileMenuBtn" type="button" aria-label="Toggle navigation menu" aria-expanded="false" class="mobile-menu-btn">
+        <svg id="menuIconOpen" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
+        <svg id="menuIconClose" class="hidden" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <div id="mobileMenuPanel" class="mobile-menu-panel hidden">
+      <div class="mobile-menu-links">
+        <a href="/features" class="mobile-link">Features</a>
+        <a href="/compare" class="mobile-link">Compare</a>
+        <a href="/davinci-resolve" class="mobile-link is-active">DaVinci Resolve</a>
+        <a href="/docs" class="mobile-link">Documentation</a>
+        <a href="/changelog" class="mobile-link">Changelog</a>
+        <div class="mt-3"><a href="/download" class="btn btn-md btn-primary" style="width:100%;">Download Free</a></div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="section-hero section-glow-tl" style="padding-bottom:3.5rem;">
+      <div class="container">
+        <nav class="breadcrumb" aria-label="Breadcrumb">
+          <a href="/">Home</a><span>/</span><span>DaVinci Resolve</span>
+        </nav>
+        <p class="eyebrow">NLE Integration</p>
+        <h1 class="h1-page">Built for DaVinci Resolve Free 21.1+ and Studio</h1>
+        <p class="lead">
+          Seamless workflow across every DaVinci Resolve edition - including full Lua Bridge compatibility for Resolve Free 21.1+ and linked A/V clip preservation via FCP7 XML.
+        </p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="grid grid-3">
+          <div class="card card-lg card-accent">
+            <p class="eyebrow">Resolve Free 21.1+ / 22+</p>
+            <h2 class="h3-card mt-2">Bridge Mode (Lua)</h2>
+            <p class="mt-3 text-sm text-muted">
+              Blackmagic disabled external Python scripting and <code class="kbd">.drt</code> exports in Free 21.1+. BadWords solves both automatically:
+            </p>
+            <ol class="mt-3 text-sm text-body" style="padding-left:1.15rem;">
+              <li>Open your project in DaVinci Resolve.</li>
+              <li>Click <strong>Workspace -&gt; Scripts -&gt; BadWords Bridge</strong> once per session.</li>
+              <li>Launch BadWords from your Desktop or Start Menu - it connects and assembles linked FCP7 XML timelines automatically.</li>
+            </ol>
+          </div>
+
+          <div class="card card-lg">
+            <p class="eyebrow">Resolve Studio (All Versions)</p>
+            <h2 class="h3-card mt-2">Native IPC or Embedded</h2>
+            <p class="mt-3 text-sm text-muted">
+              Run BadWords as a standalone desktop window (enable <em>Preferences -&gt; System -&gt; General -&gt; External scripting: Local</em>) or launch inside Resolve via <strong>Workspace -&gt; Scripts -&gt; BadWords</strong>.
+            </p>
+            <p class="mt-3 text-sm text-muted">
+              Choose <strong>FCP7 XML</strong> (default, linked video + audio) or switch to <strong>Native .drt</strong> in Settings if you need to preserve Fusion comps, Color node grades, or Fairlight FX.
+            </p>
+          </div>
+
+          <div class="card card-lg">
+            <p class="eyebrow">Resolve Free (21.0 &amp; Older)</p>
+            <h2 class="h3-card mt-2">Embedded or Bridge</h2>
+            <p class="mt-3 text-sm text-muted">
+              Launch directly via <strong>Workspace -&gt; Scripts -&gt; BadWords</strong> inside Resolve, or use <strong>BadWords Bridge</strong> for an independent desktop window. Both FCP7 XML and <code class="kbd">.drt</code> assembly work cleanly.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid grid-12 mt-12" style="align-items:center;">
+          <div class="col-span-5">
+            <p class="eyebrow">Timeline Heatmap</p>
+            <h2 class="h2-section" style="font-size:1.75rem;">Keep full control with color markers</h2>
+            <p class="mt-3 text-sm text-muted">
+              AI is great at removing obvious dead air and stutters, but subtle comedic timing belongs to the editor. BadWords lets you auto-cut certain colors (e.g. Red fillers) while leaving Blue retakes or Green script deviations as native Resolve timeline markers.
+            </p>
+            <ul class="bullet-list">
+              <li><span class="bullet-dot"></span><span><strong class="text-bright">Ctrl+Click</strong> any word in BadWords to jump the DaVinci Resolve playhead straight to that frame.</span></li>
+              <li><span class="bullet-dot"></span><span>Optional 360p background video proxy renders complex Resolve timelines smoothly without fighting Whisper VRAM.</span></li>
+            </ul>
+          </div>
+          <div class="col-span-7">
+            <button type="button" data-lightbox-src="/assets/img/heatmap-preview.webp" data-lightbox-caption="DaVinci Resolve Timeline Heatmap with Linked A/V Clips and Color Markers" class="lightbox-trigger preview-frame">
+              <div class="preview-box">
+                <img src="/assets/img/heatmap-preview.webp" alt="DaVinci Resolve timeline showing linked green and blue clips generated by BadWords" width="2124" height="1204" loading="lazy" />
+                <span class="preview-badge">Click to enlarge</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="h2-section" style="font-size:1.75rem;">Ready to connect BadWords to Resolve?</h2>
+          <p class="sublead">The installer configures DaVinci Resolve scripts paths automatically on Windows, macOS (including App Store containers), and Linux.</p>
+        </div>
+        <div class="flex flex-wrap gap-3">
+          <a href="/download" class="btn btn-md btn-primary">Download Installer</a>
+          <a href="/docs#davinci-resolve" class="btn btn-md btn-secondary">Read Resolve Docs</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-bottom" style="margin-top:0; border-top:none; padding-top:0;">
+        <span>BadWords v4.1.2 - Not affiliated with Blackmagic Design.</span>
+        <span><a href="/">Home</a> - <a href="/features">Features</a> - <a href="/compare">Compare</a> - <a href="/docs">Docs</a> - <a href="/download">Download</a></span>
+      </div>
+    </div>
+  </footer>
+
+  <div id="lightboxModal" class="lightbox-modal" role="dialog" aria-modal="true" aria-labelledby="lightboxCaption">
+    <div class="lightbox-inner">
+      <div class="lightbox-top">
+        <p id="lightboxCaption" class="mono-meta" style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></p>
+        <button id="lightboxCloseBtn" type="button" aria-label="Close fullscreen preview" class="btn btn-sm btn-surface font-mono">Esc</button>
+      </div>
+      <div class="lightbox-frame"><img id="lightboxImg" src="" alt="" /></div>
+    </div>
+  </div>
+  <script src="/assets/js/main.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Changelog - BadWords Release History (v4.1.2)</title>
+  <meta name="description" content="BadWords release notes and version history: v4.1.2 macOS &amp; Resolve Bridge stability, v4.1.1 Windows 11 startup hardening, v4.1.0 UI scaling &amp; Rust static binaries, and v4.0 standalone mode." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://badwords.dev/changelog" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Changelog - BadWords Release History" />
+  <meta property="og:description" content="Track every release and improvement in BadWords v4." />
+  <meta property="og:url" content="https://badwords.dev/changelog" />
+  <meta property="og:image" content="https://badwords.dev/assets/img/og-image.png" />
+
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/img/apple-touch-icon.png" />
+  <meta name="theme-color" content="#09090b" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/css/styles.css" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://badwords.dev/" },
+      { "@type": "ListItem", "position": 2, "name": "Changelog", "item": "https://badwords.dev/changelog" }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="brand-link"><img src="/assets/img/banner.svg" alt="BadWords" width="142" height="28" class="brand-logo" /></a>
+      <nav class="desktop-nav" aria-label="Primary Navigation">
+        <a href="/features">Features</a>
+        <a href="/compare">Compare</a>
+        <a href="/davinci-resolve">DaVinci Resolve</a>
+        <a href="/docs">Docs</a>
+        <a href="/changelog" class="is-active">Changelog</a>
+      </nav>
+      <div class="header-actions">
+        <a href="https://github.com/veritus-git/BadWords" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary">GitHub</a>
+        <a href="/download" class="btn btn-sm btn-primary">Download Free</a>
+      </div>
+      <button id="mobileMenuBtn" type="button" aria-label="Toggle navigation menu" aria-expanded="false" class="mobile-menu-btn">
+        <svg id="menuIconOpen" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
+        <svg id="menuIconClose" class="hidden" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <div id="mobileMenuPanel" class="mobile-menu-panel hidden">
+      <div class="mobile-menu-links">
+        <a href="/features" class="mobile-link">Features</a>
+        <a href="/compare" class="mobile-link">Compare</a>
+        <a href="/davinci-resolve" class="mobile-link">DaVinci Resolve</a>
+        <a href="/docs" class="mobile-link">Documentation</a>
+        <a href="/changelog" class="mobile-link is-active">Changelog</a>
+        <div class="mt-3"><a href="/download" class="btn btn-md btn-primary" style="width:100%;">Download Free</a></div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="section-hero section-glow-tl" style="padding-bottom:3rem;">
+      <div class="container">
+        <nav class="breadcrumb" aria-label="Breadcrumb">
+          <a href="/">Home</a><span>/</span><span>Changelog</span>
+        </nav>
+        <p class="eyebrow">Release Notes</p>
+        <h1 class="h1-page">BadWords Changelog</h1>
+        <p class="lead">
+          Version history for BadWords v4. Full commit details are always public on <a href="https://github.com/veritus-git/BadWords/releases" target="_blank" rel="noopener noreferrer" class="text-emerald">GitHub Releases</a>.
+        </p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container" style="max-width:54rem; display:flex; flex-direction:column; gap:1.5rem;">
+        <article class="card card-lg card-accent">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="h3-card" style="font-size:1.35rem;">v4.1.2 - macOS UX, Resolve Bridge &amp; Search</h2>
+            <span class="mono-meta text-emerald">2026-11-26</span>
+          </div>
+          <ul class="bullet-list">
+            <li><span class="bullet-dot"></span><span><strong>macOS Window &amp; Fullscreen Polish:</strong> Opens cleanly maximized to the desktop on first launch, closes Settings cleanly from Fullscreen Spaces without black flashes or ghost frames, and keeps popups smoothly draggable on Retina displays.</span></li>
+            <li><span class="bullet-dot"></span><span><strong>DaVinci Resolve Bridge &amp; .bws Import:</strong> Read-only Lua timeline queries never switch your active timeline, Native and Bridge timeline fingerprints now match 1:1, and <code class="kbd">.bws</code> exports bundle FCPXML fallback for Resolve Free 21.1+.</span></li>
+            <li><span class="bullet-dot"></span><span><strong>Live Chunked Manual Marks:</strong> Manual color markings made while words stream in are preserved when transcription finishes.</span></li>
+            <li><span class="bullet-dot"></span><span><strong>Faster Search &amp; Auto-Updater Fixes:</strong> Precompiled <code class="kbd">Ctrl+F</code> transcript search, faster Settings search, fixed in-app Update button, and opt-in Bridge/updater crash reporting.</span></li>
+          </ul>
+        </article>
+
+        <article class="card card-lg">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="h3-card" style="font-size:1.35rem;">v4.1.1 - Windows 11 Hardening &amp; Transactional Updates</h2>
+            <span class="mono-meta">2026-11-25</span>
+          </div>
+          <ul class="bullet-list">
+            <li><span class="bullet-dot"></span><span><strong>Windows 11 Dark Surfaces &amp; Safe Boot:</strong> Eliminated white taskbar preview rings and startup bars, added automatic <code class="kbd">BADWORDS_SAFE_BOOT=1</code> fallback on GPU-less PCs, and deferred Resolve DLL loading until Resolve is active.</span></li>
+            <li><span class="bullet-dot"></span><span><strong>Windows Whisper Symlink &amp; Model Integrity Fix:</strong> Avoids unprivileged <code class="kbd">WinError 1314</code> and verifies partial model caches before loading.</span></li>
+            <li><span class="bullet-dot"></span><span><strong>Transactional Installer Updates:</strong> Existing files are replaced only after a valid release package downloads and extracts cleanly.</span></li>
+          </ul>
+        </article>
+
+        <article class="card card-lg">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="h3-card" style="font-size:1.35rem;">v4.1.0 - Unified Scaling, Zero-Sudo Setup &amp; 11 Languages</h2>
+            <span class="mono-meta">2026-11-25</span>
+          </div>
+          <ul class="bullet-list">
+            <li><span class="bullet-dot"></span><span><strong>Unified Cross-Platform UI Scaling (75%-200%):</strong> True Auto OS DPI mode without double-scaling across Windows 11, Linux Wayland/X11, and macOS Retina.</span></li>
+            <li><span class="bullet-dot"></span><span><strong>Zero-Sudo Portable Python 3.12 &amp; Static CRT:</strong> Removed root password prompts on Linux/macOS and eliminated missing <code class="kbd">VCRUNTIME140.dll</code> errors on fresh Windows 11 installs.</span></li>
+            <li><span class="bullet-dot"></span><span><strong>Redesigned 9-Tab Settings &amp; 11-Language Parity:</strong> Added live debounced Settings search, vector SVG icons across all themes, and synced 631 translation keys across all 11 languages.</span></li>
+            <li><span class="bullet-dot"></span><span><strong>Playback End Guard &amp; Proxy Audio:</strong> Clean end-of-timeline playback stop and audio muxing into 360p Resolve video proxies.</span></li>
+          </ul>
+        </article>
+
+        <article class="card card-lg">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="h3-card" style="font-size:1.35rem;">v4.0.0 - Standalone Workstation &amp; Live Waveform</h2>
+            <span class="mono-meta">2026-11-06</span>
+          </div>
+          <ul class="bullet-list">
+            <li><span class="bullet-dot"></span><span>Launched full Standalone Mode (no Resolve required) with FCP7 XML, FCPXML, OTIO, and EDL export.</span></li>
+            <li><span class="bullet-dot"></span><span>Added interactive waveform timeline with real-time cut skipping, sub-5 ms RAM silence sliders, Apple Silicon MLX acceleration (~11x), marquee box selection, and Rust GUI installer.</span></li>
+          </ul>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-bottom" style="margin-top:0; border-top:none; padding-top:0;">
+        <span>BadWords v4.1.2 - MIT Open Source (c) 2026 Szymon Wolarz</span>
+        <span><a href="/">Home</a> - <a href="/features">Features</a> - <a href="/docs">Docs</a> - <a href="/download">Download</a></span>
+      </div>
+    </div>
+  </footer>
+  <script src="/assets/js/main.js" defer></script>
+</body>
+</html>
